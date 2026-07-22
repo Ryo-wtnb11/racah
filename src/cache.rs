@@ -521,6 +521,56 @@ mod tests {
         assert!(c.get(&ka).is_none());
     }
 
+    #[cfg(feature = "cgc-gen")]
+    #[test]
+    fn sun_f_tier_charges_block_bytes_and_evicts_by_bytes() {
+        use super::sun_f_cache::SunFKey;
+        use crate::sun::{f_symbol, FBlock, Irrep};
+        use std::sync::Arc;
+        let irr = |d: &[i64]| Irrep::from_dynkin(d).unwrap();
+        // A real SU(3) F block (8⊗8→8 family: the 2×2×2×2 OM=2 block).
+        let e8 = irr(&[1, 1]);
+        let a = Arc::new(f_symbol(&e8, &e8, &e8, &e8, &e8, &e8).unwrap());
+        // A multiplicity-free (smaller, 1⁴) block: a=1 forces e=3, f=d=6.
+        let triv = Irrep::trivial(3).unwrap();
+        let three = irr(&[1, 0]);
+        let six = irr(&[2, 0]);
+        let b = Arc::new(f_symbol(&triv, &three, &three, &six, &three, &six).unwrap());
+
+        // Charge is the data bytes plus the block shell.
+        assert_eq!(
+            a.value_bytes(),
+            std::mem::size_of_val(a.data()) + std::mem::size_of::<FBlock>()
+        );
+        assert!(a.value_bytes() > b.value_bytes(), "2⁴ block > 1⁴ block");
+
+        // Budget for one entry: inserting the second evicts the oldest.
+        let budget = a.value_bytes() + 2 * std::mem::size_of::<SunFKey>() + 8;
+        let c: FifoCache<SunFKey, Arc<FBlock>> = FifoCache::new(1_000_000, budget);
+        let ka = (
+            e8.clone(),
+            e8.clone(),
+            e8.clone(),
+            e8.clone(),
+            e8.clone(),
+            e8.clone(),
+        );
+        let kb = (
+            triv.clone(),
+            three.clone(),
+            three.clone(),
+            six.clone(),
+            three.clone(),
+            six.clone(),
+        );
+        c.insert(ka.clone(), a);
+        c.insert(kb, b);
+        let (_, _, entries, bytes) = c.snapshot();
+        assert!(entries <= 1, "byte bound not enforced: {entries} entries");
+        assert!(bytes <= budget, "byte bound exceeded: {bytes} > {budget}");
+        assert!(c.get(&ka).is_none(), "oldest not evicted");
+    }
+
     #[test]
     fn reset_clears_entries_and_counters() {
         let c: FifoCache<u32, SignedSqrtRational> = FifoCache::new(16, 1 << 20);
