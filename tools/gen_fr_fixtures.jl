@@ -12,9 +12,11 @@
 #       tests/fixtures/su2_f.txt tests/fixtures/su2_r.txt
 #
 # TensorKitSectors is the F/R oracle. It is loaded transitively via TensorKit;
-# its F/R definitions (src/irreps/su2irrep.jl) are byte-identical from 0.3.4
-# through the 0.3.8 the racah conventions cite, so the version the local depot
-# resolves is faithful. The provenance header records the resolved versions.
+# its F/R definitions (src/irreps/su2irrep.jl) are functionally identical from
+# 0.3.4 (the 0.3.4 file differs only by a scalartype refactor -- same numeric
+# F/R values) and byte-identical across 0.3.6-0.3.8, the version the racah
+# conventions cite, so the version the local depot resolves is faithful. The
+# provenance header records the resolved versions.
 
 using TensorKit
 using Printf
