@@ -8,6 +8,11 @@ coefficient *value* (a different pivot rule, sign convention, tolerance that
 moves a rank cut, descent order, or multiplicity-column order) is a **breaking
 release**, so consumers may key persisted data on the crate version.
 
+The contract is *value agreement within the oracle tolerance*, not cross-process
+bit-identity: the dense backend's parallel reductions are not bit-reproducible,
+so two independent generations of the same coupling can differ by a few ULPs
+(within a single process the cache serializes all readers to one winner value).
+
 The construction is a port of **SUNRepresentations.jl v0.4.0**
 (`~/.julia/packages/SUNRepresentations/BM32Z/src`). Every choice below cites the
 reference `file:symbol`. A reader with this document and the reference source
