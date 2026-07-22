@@ -245,15 +245,23 @@ impl Irrep {
                     }
                     // m' = m with m[k,l] raised by 1. When coef ≠ 0 the GT
                     // betweenness is preserved, so m' is a valid basis pattern;
-                    // the lookup cannot miss (guarded to stay panic-free).
+                    // the lookup cannot miss. A miss would mean the coef/validity
+                    // invariant broke (the reference errors loudly there), so we
+                    // assert it in debug builds and drop the entry in release to
+                    // stay panic-free.
                     let mut mp = m.clone();
                     mp.set(k, l, mkl + 1);
-                    if let Some(&j) = table.get(&mp) {
-                        result[l - 1].push(LadderEntry {
+                    match table.get(&mp) {
+                        Some(&j) => result[l - 1].push(LadderEntry {
                             row: j,
                             col: i,
                             value: signedroot(&coef),
-                        });
+                        }),
+                        None => debug_assert!(
+                            false,
+                            "creation: nonzero coef {coef} but raised pattern {mp:?} \
+                             is not a basis element (GT betweenness invariant broken)"
+                        ),
                     }
                 }
             }
