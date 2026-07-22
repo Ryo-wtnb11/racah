@@ -9,6 +9,7 @@
 
 use num_rational::Ratio;
 
+use crate::cache::{cache_3j, cache_6j};
 use crate::exact::SignedSqrtRational;
 use crate::primefactor::{factorial as pf_factorial, mul_factorial, sum_series, Pf};
 
@@ -40,7 +41,31 @@ fn triangle_ok(a: u32, b: u32, c: u32) -> bool {
 /// Returns exact zero unless all four triangles
 /// `(1,2,3), (1,5,6), (4,2,6), (4,5,3)` are admissible. Uses the Racah
 /// single-sum closed form in big-rational arithmetic.
+///
+/// Transparently served from the process-local [`crate::cache`]: an admissible
+/// label set is keyed by its canonical Regge class ([`canonical_regge_6j`]) and
+/// the exact value is stored once per class (the 6j symmetries preserve value,
+/// so no compensation is needed). A label too large to key ([`ReggeError::
+/// Overflow`]) or non-admissible falls through to the uncached engine, which is
+/// the single source of truth for the value.
 pub fn wigner_6j(dj1: u32, dj2: u32, dj3: u32, dj4: u32, dj5: u32, dj6: u32) -> SignedSqrtRational {
+    match canonical_regge_6j(dj1, dj2, dj3, dj4, dj5, dj6) {
+        Ok(key) => {
+            cache_6j().get_or_compute(key, || wigner_6j_uncached(dj1, dj2, dj3, dj4, dj5, dj6))
+        }
+        Err(_) => wigner_6j_uncached(dj1, dj2, dj3, dj4, dj5, dj6),
+    }
+}
+
+/// The uncached Racah single-sum engine behind [`wigner_6j`].
+fn wigner_6j_uncached(
+    dj1: u32,
+    dj2: u32,
+    dj3: u32,
+    dj4: u32,
+    dj5: u32,
+    dj6: u32,
+) -> SignedSqrtRational {
     if !(triangle_ok(dj1, dj2, dj3)
         && triangle_ok(dj1, dj5, dj6)
         && triangle_ok(dj4, dj2, dj6)
@@ -122,7 +147,37 @@ pub fn wigner_6j(dj1: u32, dj2: u32, dj3: u32, dj4: u32, dj5: u32, dj6: u32) -> 
 /// Returns exact zero unless the labels are admissible: triangle `(1,2,3)`,
 /// `|dm_i| <= dj_i`, `dj_i + dm_i` even for each `i`, and `dm1+dm2+dm3 == 0`.
 /// Condon-Shortley phase, matching the standard closed form.
+///
+/// Transparently served from the process-local [`crate::cache`]. Unlike 6j, the
+/// classical 3j symmetries relate orbit members by a sign, so the cache stores
+/// one representative per canonical class and the [`ReggePhase`] from
+/// [`canonical_regge_3j`] compensates on both store and retrieval — the stored
+/// value is the representative's, and `phase.apply` moves between it and this
+/// input's value. A label too large to key or non-admissible falls through to
+/// the uncached engine.
 pub fn wigner_3j(dj1: u32, dj2: u32, dj3: u32, dm1: i32, dm2: i32, dm3: i32) -> SignedSqrtRational {
+    match canonical_regge_3j(dj1, dj2, dj3, dm1, dm2, dm3) {
+        Ok((key, phase)) => {
+            // Stored value is the representative's: value(rep) = phase.apply(value(input)).
+            // Retrieval undoes it: value(input) = phase.apply(value(rep)).
+            let rep = cache_3j().get_or_compute(key, || {
+                phase.apply(wigner_3j_uncached(dj1, dj2, dj3, dm1, dm2, dm3))
+            });
+            phase.apply(rep)
+        }
+        Err(_) => wigner_3j_uncached(dj1, dj2, dj3, dm1, dm2, dm3),
+    }
+}
+
+/// The uncached closed-form engine behind [`wigner_3j`].
+fn wigner_3j_uncached(
+    dj1: u32,
+    dj2: u32,
+    dj3: u32,
+    dm1: i32,
+    dm2: i32,
+    dm3: i32,
+) -> SignedSqrtRational {
     if !admissible_3j(dj1, dj2, dj3, dm1, dm2, dm3) {
         return SignedSqrtRational::zero();
     }
@@ -348,6 +403,173 @@ pub fn canonical_regge_6j(
     Ok(Regge6j(out))
 }
 
+/// Compensation phase relating a 3j symbol to its canonical Regge
+/// representative.
+///
+/// The *classical* 3j symmetry group has 12 elements: the `3!` column
+/// permutations and the simultaneous m-negation. Even column permutations and
+/// the identity preserve the symbol's value; odd column permutations and
+/// m-negation multiply it by `(-1)^(j1+j2+j3)`. When `j1+j2+j3` is even every
+/// orbit member has the identical value, so the phase collapses to `Plus`.
+/// [`canonical_regge_3j`] returns the single net sign; the cache layer applies
+/// it on both store and retrieval to move between an input and its stored
+/// representative. (WignerSymbols.jl v2.0.0 `WignerSymbols.jl:reorder3j`.)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReggePhase {
+    /// The input and its canonical representative have equal value.
+    Plus,
+    /// The input's value is the representative's, negated.
+    Minus,
+}
+
+impl ReggePhase {
+    /// Apply the compensation to a representative value (`+1` or `-1`).
+    pub fn apply(self, v: SignedSqrtRational) -> SignedSqrtRational {
+        match self {
+            ReggePhase::Plus => v,
+            ReggePhase::Minus => v.neg_value(),
+        }
+    }
+}
+
+/// Canonical Regge key for a 3j symbol.
+///
+/// The six doubled labels — three doubled spins `dj` and three doubled
+/// projections `dm` — of the classical-orbit representative (the
+/// lexicographically maximal image, see `canonicalize3j`). Every
+/// element of the 12-element classical symmetry orbit maps to this same key;
+/// the value relation is carried separately as a [`ReggePhase`], so the key
+/// alone is the orbit invariant.
+///
+/// `dj` is stored as `u16` with the same checked-widening discipline as
+/// [`Regge6j`] (a doubled spin past `u16::MAX` is [`ReggeError::Overflow`]).
+/// `dm` is stored signed in `i32`: once the `dj` gate passes, admissibility
+/// bounds `|dm| <= dj <= u16::MAX`, so `i32` holds it losslessly.
+///
+/// Deviation from the reference: WignerSymbols.jl keys on the derived
+/// `(β1,β2,β3,α1,α2)` reparametrization of these same canonical labels; racah
+/// stores the labels directly (a 1-1 re-encoding), which the orbit test can
+/// read against without reconstructing alphas. (WignerSymbols.jl v2.0.0
+/// `WignerSymbols.jl:_wigner3j`.)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Regge3j {
+    dj: [u16; 3],
+    dm: [i32; 3],
+}
+
+impl Regge3j {
+    /// The canonical doubled spins `(dj1, dj2, dj3)`.
+    pub fn doubled_spins(&self) -> [u16; 3] {
+        self.dj
+    }
+
+    /// The canonical doubled projections `(dm1, dm2, dm3)`.
+    pub fn doubled_projections(&self) -> [i32; 3] {
+        self.dm
+    }
+}
+
+/// Canonicalize a doubled-unit 3j label set over its 12-element classical
+/// symmetry group, returning the representative labels and the net sign `eps`
+/// with `value(input) == eps * value(representative)`.
+///
+/// The group is `S3` (column permutations) times `Z2` (simultaneous
+/// m-negation). Each generator multiplies the symbol by `(-1)^(j1+j2+j3)` when
+/// it is an odd column permutation or an m-negation; even permutations and the
+/// identity preserve it — the phase rule ported from `WignerSymbols.jl:
+/// reorder3j`. The representative is the lexicographically maximal image over
+/// all 12 group elements.
+///
+/// Deviation from the reference: `reorder3j` sorts only by `j` and leaves the
+/// m-order among equal-`j` columns unbroken, so it is *not* a full orbit
+/// invariant (two column-permutations of an equal-`j` symbol get distinct
+/// keys). racah completes the canonicalization — breaking every tie and
+/// tracking the extra permutation's sign — so the acceptance-required
+/// "all 12 images share one key" holds, at the cost of enumerating 12 tuples
+/// (a fixed, tiny constant) instead of the reference's bubble sort.
+fn canonicalize3j(dj: [i64; 3], dm: [i64; 3]) -> ([i64; 3], [i64; 3], i8) {
+    // (column index map, whether the permutation is odd).
+    const PERMS: [([usize; 3], bool); 6] = [
+        ([0, 1, 2], false),
+        ([0, 2, 1], true),
+        ([1, 0, 2], true),
+        ([1, 2, 0], false),
+        ([2, 0, 1], false),
+        ([2, 1, 0], true),
+    ];
+    let j_odd = ((dj[0] + dj[1] + dj[2]) / 2) % 2 != 0;
+
+    let mut best: Option<([i64; 3], [i64; 3])> = None;
+    let mut best_eps = 1i8;
+    for (p, p_odd) in PERMS {
+        let pj = [dj[p[0]], dj[p[1]], dj[p[2]]];
+        let pm = [dm[p[0]], dm[p[1]], dm[p[2]]];
+        for neg in [false, true] {
+            let m = if neg { [-pm[0], -pm[1], -pm[2]] } else { pm };
+            // value(image)/value(input): (-1)^(j1+j2+j3) once per odd generator
+            // (odd permutation and/or m-negation), and +1 whenever J is even.
+            let odd_ops = (p_odd ^ neg) as i8;
+            let eps: i8 = if j_odd && odd_ops == 1 { -1 } else { 1 };
+            let cand = (pj, m);
+            if best.as_ref().is_none_or(|b| cand > *b) {
+                best = Some(cand);
+                best_eps = eps;
+            }
+        }
+    }
+    let (bj, bm) = best.expect("the identity image always seeds `best`");
+    // eps relates input and representative (±1, self-inverse).
+    (bj, bm, best_eps)
+}
+
+/// Canonical Regge key and compensation phase for `(dj1 dj2 dj3; dm1 dm2 dm3)`.
+///
+/// Admissibility is gated first — exactly like [`canonical_regge_6j`] and for
+/// the same reason (the `(1,1,1,1,1,1)`-class lesson): a non-admissible 3j is
+/// exactly zero and has no representative, so it must never produce a key that
+/// could collide with a distinct nonzero symbol. Only then is the label set
+/// reordered to its canonical representative and widened losslessly.
+///
+/// Returns `(key, phase)` such that `value(input) == phase.apply(value(rep))`
+/// where `rep` is the symbol named by `key`. (WignerSymbols.jl v2.0.0
+/// `WignerSymbols.jl:_wigner3j` / `reorder3j`.)
+pub fn canonical_regge_3j(
+    dj1: u32,
+    dj2: u32,
+    dj3: u32,
+    dm1: i32,
+    dm2: i32,
+    dm3: i32,
+) -> Result<(Regge3j, ReggePhase), ReggeError> {
+    if !admissible_3j(dj1, dj2, dj3, dm1, dm2, dm3) {
+        return Err(ReggeError::NonAdmissible);
+    }
+
+    let (dj, dm, sign) = canonicalize3j(
+        [dj1 as i64, dj2 as i64, dj3 as i64],
+        [dm1 as i64, dm2 as i64, dm3 as i64],
+    );
+
+    // dj values only reorder under canonicalization, but widen with the same
+    // checked u16 discipline as Regge6j. dm is bounded by dj (admissibility), so
+    // once the dj gate passes it fits i32 with room to spare; store it signed.
+    let mut dju = [0u16; 3];
+    for (slot, &v) in dju.iter_mut().zip(dj.iter()) {
+        if v > u16::MAX as i64 {
+            return Err(ReggeError::Overflow);
+        }
+        *slot = v as u16;
+    }
+    let dmi = [dm[0] as i32, dm[1] as i32, dm[2] as i32];
+
+    let phase = if sign < 0 {
+        ReggePhase::Minus
+    } else {
+        ReggePhase::Plus
+    };
+    Ok((Regge3j { dj: dju, dm: dmi }, phase))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -457,6 +679,181 @@ mod tests {
             canonical_regge_6j(1, 1, 1, 1, 1, 1).ok(),
             admissible.ok(),
             "non-admissible input must not share a key with an admissible one"
+        );
+    }
+
+    /// The six column permutations (as index maps) times the m-negation give
+    /// the 12-element classical 3j orbit.
+    fn orbit_images(dj: [u32; 3], dm: [i32; 3]) -> Vec<([u32; 3], [i32; 3])> {
+        const PERMS: [[usize; 3]; 6] = [
+            [0, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ];
+        let mut out = Vec::with_capacity(12);
+        for p in PERMS {
+            let pj = [dj[p[0]], dj[p[1]], dj[p[2]]];
+            let pm = [dm[p[0]], dm[p[1]], dm[p[2]]];
+            out.push((pj, pm));
+            out.push((pj, [-pm[0], -pm[1], -pm[2]]));
+        }
+        out
+    }
+
+    #[test]
+    fn regge3j_orbit_same_key_and_phase_compensated_value() {
+        // {1 1 1; 1 0 -1} (doubled 2,2,2 / 2,0,-2). J = 3 is ODD, so the phase
+        // is nontrivial: odd column permutations and m-negation flip the sign.
+        let dj = [2u32, 2, 2];
+        let dm = [2i32, 0, -2];
+
+        let mut key0 = None;
+        let mut rep_value = None;
+        let mut saw_negative_phase = false;
+        for (pj, pm) in orbit_images(dj, dm) {
+            let (key, phase) =
+                canonical_regge_3j(pj[0], pj[1], pj[2], pm[0], pm[1], pm[2]).unwrap();
+            // All 12 images share the canonical key.
+            match key0 {
+                None => key0 = Some(key),
+                Some(k) => assert_eq!(k, key, "orbit image produced a different key"),
+            }
+            // phase.apply(raw value) recovers the single representative value.
+            let raw = wigner_3j(pj[0], pj[1], pj[2], pm[0], pm[1], pm[2]);
+            let compensated = phase.apply(raw.clone());
+            match &rep_value {
+                None => rep_value = Some(compensated),
+                Some(rv) => assert_eq!(
+                    rv, &compensated,
+                    "phase-compensated value differs across the orbit"
+                ),
+            }
+            if phase == ReggePhase::Minus {
+                saw_negative_phase = true;
+                // The phase genuinely acts: raw and compensated differ in sign.
+                assert_ne!(raw, phase.apply(raw.clone()));
+            }
+        }
+        assert!(
+            saw_negative_phase,
+            "J-odd orbit must exercise the Minus phase"
+        );
+    }
+
+    #[test]
+    fn regge3j_even_j_phase_is_always_plus() {
+        // {1 1 2; 1 -1 0} (doubled 2,2,4 / 2,-2,0). J = 4 is EVEN, so every
+        // orbit member has the identical value and the phase is always Plus.
+        let dj = [2u32, 2, 4];
+        let dm = [2i32, -2, 0];
+        for (pj, pm) in orbit_images(dj, dm) {
+            let (_, phase) = canonical_regge_3j(pj[0], pj[1], pj[2], pm[0], pm[1], pm[2]).unwrap();
+            assert_eq!(phase, ReggePhase::Plus, "even-J phase must be Plus");
+        }
+    }
+
+    #[test]
+    fn regge3j_nonadmissible_is_error_not_a_key() {
+        // m-sum nonzero: not an admissible 3j, so no representative and no key.
+        assert_eq!(
+            canonical_regge_3j(2, 2, 2, 2, 2, 0),
+            Err(ReggeError::NonAdmissible)
+        );
+        // |m| > j.
+        assert_eq!(
+            canonical_regge_3j(2, 2, 2, 4, -2, -2),
+            Err(ReggeError::NonAdmissible)
+        );
+        // Triangle parity violation.
+        assert_eq!(
+            canonical_regge_3j(1, 1, 1, 1, -1, 0),
+            Err(ReggeError::NonAdmissible)
+        );
+    }
+
+    #[test]
+    fn cached_3j_matches_uncached_over_grid() {
+        // Every admissible and non-admissible small 3j: the transparently cached
+        // public value must equal the uncached engine, and a repeat call (a
+        // cache hit) must still match. This exercises the ReggePhase
+        // compensation end-to-end across the whole orbit structure.
+        for dj1 in 0..=4u32 {
+            for dj2 in 0..=4u32 {
+                for dj3 in 0..=4u32 {
+                    for dm1 in -4..=4i32 {
+                        for dm2 in -4..=4i32 {
+                            for dm3 in -4..=4i32 {
+                                let raw = wigner_3j_uncached(dj1, dj2, dj3, dm1, dm2, dm3);
+                                let ctx = (dj1, dj2, dj3, dm1, dm2, dm3);
+                                assert_eq!(
+                                    wigner_3j(dj1, dj2, dj3, dm1, dm2, dm3),
+                                    raw,
+                                    "cached != uncached at {ctx:?}"
+                                );
+                                assert_eq!(
+                                    wigner_3j(dj1, dj2, dj3, dm1, dm2, dm3),
+                                    raw,
+                                    "cache-hit != uncached at {ctx:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cached_6j_matches_uncached_over_grid() {
+        for dj1 in 0..=4u32 {
+            for dj2 in 0..=4u32 {
+                for dj3 in 0..=4u32 {
+                    for dj4 in 0..=4u32 {
+                        for dj5 in 0..=4u32 {
+                            for dj6 in 0..=4u32 {
+                                let raw = wigner_6j_uncached(dj1, dj2, dj3, dj4, dj5, dj6);
+                                let ctx = (dj1, dj2, dj3, dj4, dj5, dj6);
+                                assert_eq!(
+                                    wigner_6j(dj1, dj2, dj3, dj4, dj5, dj6),
+                                    raw,
+                                    "cached != uncached at {ctx:?}"
+                                );
+                                assert_eq!(
+                                    wigner_6j(dj1, dj2, dj3, dj4, dj5, dj6),
+                                    raw,
+                                    "cache-hit != uncached at {ctx:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn public_stats_and_reset_smoke() {
+        // The global wrappers aggregate the per-kind caches (rigorously covered
+        // in cache::tests); here just confirm they observe activity and reset
+        // without panicking. Counts are only checked monotonically because the
+        // global cache is shared with other tests running in parallel.
+        let _ = wigner_6j(2, 2, 2, 2, 2, 2);
+        let _ = wigner_3j(2, 2, 2, 2, 0, -2);
+        let s = crate::cache::stats();
+        assert!(s.hits + s.misses >= 1, "activity should register in stats");
+        crate::cache::reset();
+        let _ = crate::cache::stats();
+    }
+
+    #[test]
+    fn regge3j_overflow_reported() {
+        let big = 200_000u32;
+        assert_eq!(
+            canonical_regge_3j(big, big, big, 0, 0, 0),
+            Err(ReggeError::Overflow)
         );
     }
 

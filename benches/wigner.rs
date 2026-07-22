@@ -113,5 +113,81 @@ fn bench_6j_thousands(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_6j, bench_3j, bench_6j_thousands);
+/// The repeated-label regime (issue #5): the same small label sets recur many
+/// thousands of times, as in tensor-network consumption. `racah_warm` primes
+/// the cache once so every iteration is a hit (target: ~hash-lookup cost);
+/// `racah_cold` clears the cache before each batch so every call recomputes the
+/// big-rational sum. The gap between them is the cache's payoff — and it makes
+/// the cold 3j-overlap deficit vs `wigner-symbols` irrelevant here, since a hit
+/// touches no arithmetic. (`wigner-symbols` 0.5.1 has no cache and recomputes
+/// every call; shown as the uncached baseline for context.)
+fn bench_repeated_labels(c: &mut Criterion) {
+    let mut g = c.benchmark_group("repeated_labels");
+
+    let run_racah = || {
+        for &d in SIX_J {
+            black_box(wigner_6j(
+                d[0] as u32,
+                d[1] as u32,
+                d[2] as u32,
+                d[3] as u32,
+                d[4] as u32,
+                d[5] as u32,
+            ));
+        }
+        for &d in THREE_J {
+            black_box(wigner_3j(d[0] as u32, d[1] as u32, d[2] as u32, 0, 0, 0));
+        }
+    };
+
+    // Warm: prime the cache once, then every measured iteration is a hit.
+    racah::cache::reset();
+    run_racah();
+    g.bench_function("racah_warm", |b| b.iter(run_racah));
+
+    // Cold: clear before each batch so every call misses and recomputes.
+    g.bench_function("racah_cold", |b| {
+        b.iter(|| {
+            racah::cache::reset();
+            run_racah();
+        })
+    });
+
+    g.bench_function("wigner_symbols", |b| {
+        b.iter(|| {
+            for &d in SIX_J {
+                let w = Wigner6j {
+                    tj1: d[0],
+                    tj2: d[1],
+                    tj3: d[2],
+                    tj4: d[3],
+                    tj5: d[4],
+                    tj6: d[5],
+                };
+                black_box(w.value());
+            }
+            for &d in THREE_J {
+                let w = Wigner3jm {
+                    tj1: d[0],
+                    tm1: 0,
+                    tj2: d[1],
+                    tm2: 0,
+                    tj3: d[2],
+                    tm3: 0,
+                };
+                black_box(w.value());
+            }
+        })
+    });
+
+    g.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_6j,
+    bench_3j,
+    bench_6j_thousands,
+    bench_repeated_labels
+);
 criterion_main!(benches);
