@@ -436,6 +436,37 @@ mod tests {
         assert_eq!((-3.5f64).value_bytes(), std::mem::size_of::<f64>());
     }
 
+    #[cfg(feature = "cgc-gen")]
+    #[test]
+    fn cgc_tier_charges_storage_bytes_and_evicts_by_bytes() {
+        use super::cgc_cache::CgcKey;
+        use crate::sun::{cgc, Cgc, Irrep};
+        use std::sync::Arc;
+        let irr = |d: &[i64]| Irrep::from_dynkin(d).unwrap();
+        // Two real CGCs of different sizes.
+        let a = Arc::new(cgc(&irr(&[1, 0]), &irr(&[0, 1]), &irr(&[1, 1])).unwrap()); // 3⊗3̄→8
+        let b = Arc::new(cgc(&irr(&[1, 1]), &irr(&[1, 1]), &irr(&[1, 1])).unwrap()); // 8⊗8→8, OM=2
+
+        // The tier charge is exactly the sparse storage bytes (plus key copies).
+        assert!(a.value_bytes() >= a.storage_bytes());
+        assert_eq!(a.value_bytes(), a.storage_bytes());
+
+        // A local CGC-typed cache with a budget that fits only one entry must
+        // evict the oldest when the second is inserted (byte bound is a true
+        // ceiling).
+        let budget = a.value_bytes().max(b.value_bytes()) + 2 * std::mem::size_of::<CgcKey>() + 8;
+        let c: FifoCache<CgcKey, Arc<Cgc>> = FifoCache::new(1_000_000, budget);
+        let ka = (irr(&[1, 0]), irr(&[0, 1]), irr(&[1, 1]));
+        let kb = (irr(&[1, 1]), irr(&[1, 1]), irr(&[1, 1]));
+        c.insert(ka.clone(), a);
+        c.insert(kb, b);
+        let (_, _, entries, bytes) = c.snapshot();
+        assert!(entries <= 1, "byte bound not enforced: {entries} entries");
+        assert!(bytes <= budget, "byte bound exceeded: {bytes} > {budget}");
+        // Oldest (ka) evicted.
+        assert!(c.get(&ka).is_none());
+    }
+
     #[test]
     fn reset_clears_entries_and_counters() {
         let c: FifoCache<u32, SignedSqrtRational> = FifoCache::new(16, 1 << 20);

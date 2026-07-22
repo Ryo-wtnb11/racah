@@ -141,7 +141,5 @@ fn generated_cgc_matches_sunrepresentations_signed_elementwise() {
         om_channels >= 2,
         "gauge continuity must be verified on >= 2 outer-multiplicity channels, got {om_channels}"
     );
-    eprintln!(
-        "matched {channels} channels ({om_channels} with OM>=2), worst |Δ| = {worst:e}"
-    );
+    eprintln!("matched {channels} channels ({om_channels} with OM>=2), worst |Δ| = {worst:e}");
 }
