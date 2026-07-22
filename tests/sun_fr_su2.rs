@@ -17,21 +17,29 @@
 //! - R contracts `C(a,b,c)` and `C(b,a,c)`, so
 //!   `R_racah = ε(a,b,c) ε(b,a,c) · R_CS`.
 //!
-//! # Finding (verified, not assumed)
+//! # The sign relation, as a theorem (not just an observation)
 //!
-//! The individual `ε(j1,j2,j3)` genuinely flip — 56 of the 140 SU(2) channels
-//! with all `dj ≤ 6` have `ε = -1`, so the SU(N)-pipeline CGC are **not** in the
-//! Condon–Shortley gauge. But the four-fold product in F and the two-fold
-//! product in R come out `+1` across the **entire** sweep (849 sextets, 140
-//! triples): the per-vertex gauge coboundary cancels in every F and R block. So
-//! the F/R blocks themselves *are* sign-difference-invariant, even though the
-//! CGC feeding them are not — the outcome hinted at in issue #16.
+//! `ε(j1,j2,j3) = (-1)^(j1+j2-j3)`. The Layer-2 gauge fixes the highest-weight
+//! coupled state by `qrpos!` (positive pivot) over the coupling pairs ordered by
+//! `m1` ascending then matching `m2` — i.e. it normalizes the **`m2`-stretched**
+//! first pair positive; Condon–Shortley instead fixes the **`m1`-stretched**
+//! coefficient `⟨j1 j1; j2, j3−j1 | j3 j3⟩ > 0`. Those two extreme coefficients
+//! differ in sign by exactly `(-1)^(j1+j2-j3)` (the CGC row-reversal symmetry),
+//! so that is `ε`. Each channel is otherwise ladder-fixed identically in both
+//! gauges, hence one global sign per channel. `tests/su2_embedding.rs` observes
+//! this same per-channel sign; here it is pinned to the closed form.
 //!
-//! The comparison still reconciles with the exact `ε`-product rule (each `ε`
-//! computed independently from `racah::clebsch_gordan`, an oracle independent of
-//! the F/R code under test): the rule is robust if a future gauge change ever
-//! made a product `-1`, and it asserts the cancellation by reporting the count
-//! of `∏ε = -1` sextets (observed: zero).
+//! Consequences for F and R, both telescoping to an **even** exponent:
+//! - F: `∏ε = (-1)^((a+b−e)+(e+c−d)+(b+c−f)+(a+f−d)) = (-1)^(2(a+b+c−d)) = +1`.
+//! - R: `∏ε = (-1)^((a+b−c)+(b+a−c)) = (-1)^(2(a+b−c)) = +1`.
+//!
+//! So the F/R **blocks are sign-difference-invariant** (the per-vertex
+//! coboundary cancels) even though 56 of 140 individual SU(2) channels
+//! (`dj ≤ 6`) have `ε = -1`. The comparison reconciles via the exact `ε` rule —
+//! each `ε` computed independently from `racah::clebsch_gordan`, and asserted
+//! equal to `(-1)^(j1+j2−j3)` per channel (strictly stronger than the product
+//! pin) — so a future gauge change that broke either the per-channel law or the
+//! cancellation would surface here.
 
 #![cfg(feature = "cgc-gen")]
 
@@ -77,6 +85,17 @@ fn eps_channel(dj1: u32, dj2: u32, dj3: u32) -> f64 {
             };
         }
     }
+    // Theorem: ε(j1,j2,j3) = (-1)^(j1+j2-j3); in doubled units the exponent is
+    // (dj1+dj2-dj3)/2 (integral on an admissible triangle). Pin it per channel.
+    let expected = if ((dj1 + dj2 - dj3) / 2).is_multiple_of(2) {
+        1.0
+    } else {
+        -1.0
+    };
+    assert_eq!(
+        sign, expected,
+        "ε({dj1},{dj2},{dj3}) = {sign} != (-1)^(j1+j2-j3) = {expected}"
+    );
     sign
 }
 
