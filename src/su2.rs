@@ -7,11 +7,9 @@
 //! semantics. Values are computed as big-rational Racah sums and carried as
 //! [`SignedSqrtRational`] until a single final rounding to `f64`.
 
-use num_bigint::BigInt;
 use num_rational::Ratio;
-use num_traits::{One, Zero};
 
-use crate::exact::{factorial, SignedSqrtRational};
+use crate::exact::SignedSqrtRational;
 use crate::primefactor::{factorial as pf_factorial, sum_series, Pf};
 
 /// Prime-factorized squared triangle coefficient
@@ -35,25 +33,6 @@ fn delta_sq_pf(a: u32, b: u32, c: u32) -> (Pf, Pf) {
 fn triangle_ok(a: u32, b: u32, c: u32) -> bool {
     let (a, b, c) = (a as i64, b as i64, c as i64);
     (a + b + c) % 2 == 0 && c >= (a - b).abs() && c <= a + b
-}
-
-/// The triangle coefficient
-/// `Delta(a,b,c) = (a+b-c)! (a-b+c)! (-a+b+c)! / (a+b+c+1)!`
-/// as a nonnegative rational, with all factorial arguments halved (they are
-/// nonnegative integers whenever the triple is admissible).
-fn triangle_delta(a: u32, b: u32, c: u32) -> Ratio<BigInt> {
-    let (a, b, c) = (a as i64, b as i64, c as i64);
-    let t1 = ((a + b - c) / 2) as u64;
-    let t2 = ((a - b + c) / 2) as u64;
-    let t3 = ((-a + b + c) / 2) as u64;
-    let t4 = ((a + b + c) / 2 + 1) as u64;
-    let num = factorial(t1) * factorial(t2) * factorial(t3);
-    Ratio::new(num, factorial(t4))
-}
-
-/// Reciprocal factorial `1/n!` as a rational (n >= 0).
-fn inv_factorial(n: i64) -> Ratio<BigInt> {
-    Ratio::new(BigInt::one(), factorial(n as u64))
 }
 
 /// Wigner 6j symbol `{dj1 dj2 dj3; dj4 dj5 dj6}` (doubled spins).
@@ -146,12 +125,21 @@ pub fn wigner_3j(dj1: u32, dj2: u32, dj3: u32, dm1: i32, dm2: i32, dm3: i32) -> 
     let (j1, j2, j3) = (dj1 as i64, dj2 as i64, dj3 as i64);
     let (m1, m2, m3) = (dm1 as i64, dm2 as i64, dm3 as i64);
 
-    // Radical: Delta(j1,j2,j3) * prod_i (j_i+m_i)! (j_i-m_i)!, all halved.
-    let mut radical = triangle_delta(dj1, dj2, dj3);
+    // Radical: Delta^2(j1,j2,j3) * prod_i (j_i+m_i)! (j_i-m_i)!, all halved,
+    // assembled in exponent space. splitsquare separates the perfect-square
+    // prefactor `s` from the square-free radicand `r`, so the big factorials
+    // are never multiplied out as big integers. (`WignerSymbols.jl::_wigner3j`.)
+    let (mut num, den) = delta_sq_pf(dj1, dj2, dj3);
     for (dj, dm) in [(j1, m1), (j2, m2), (j3, m3)] {
-        radical *= Ratio::from(factorial(((dj + dm) / 2) as u64));
-        radical *= Ratio::from(factorial(((dj - dm) / 2) as u64));
+        num.mul_assign(&pf_factorial(((dj + dm) / 2) as u64));
+        num.mul_assign(&pf_factorial(((dj - dm) / 2) as u64));
     }
+    let (mut snum, mut rnum) = num.splitsquare();
+    let (mut sden, mut rden) = den.splitsquare();
+    Pf::divgcd(&mut snum, &mut sden);
+    Pf::divgcd(&mut rnum, &mut rden);
+    let s = Ratio::new(snum.to_bigint(), sden.to_bigint());
+    let r = Ratio::new(rnum.to_bigint(), rden.to_bigint());
 
     // Alternating k-sum (halved units). Arguments (all >= 0 within range):
     //   k, (j1+j2-j3)/2 - k, (j1-m1)/2 - k, (j2+m2)/2 - k,
@@ -165,29 +153,34 @@ pub fn wigner_3j(dj1: u32, dj2: u32, dj3: u32, dm1: i32, dm2: i32, dm3: i32) -> 
     let kmin = 0i64.max(-add1).max(-add2);
     let kmax = a.min(b).min(c);
 
-    let mut sum: Ratio<BigInt> = Ratio::zero();
+    // Each term is (-1)^k / [k! (a-k)! (b-k)! (c-k)! (k+add1)! (k+add2)!]:
+    // a prime-factorized numerator (+-1) / denominator, combined by sum_series.
+    // (`compute3jseries`.)
+    let mut terms = Vec::with_capacity((kmax - kmin + 1).max(0) as usize);
     for k in kmin..=kmax {
-        let mut term = inv_factorial(k);
-        term *= inv_factorial(a - k);
-        term *= inv_factorial(b - k);
-        term *= inv_factorial(c - k);
-        term *= inv_factorial(k + add1);
-        term *= inv_factorial(k + add2);
-        if k % 2 == 0 {
-            sum += term;
+        let nump = if k % 2 == 0 {
+            Pf::one()
         } else {
-            sum -= term;
-        }
+            Pf::one().neg()
+        };
+        let mut denp = pf_factorial(k as u64);
+        denp.mul_assign(&pf_factorial((a - k) as u64));
+        denp.mul_assign(&pf_factorial((b - k) as u64));
+        denp.mul_assign(&pf_factorial((c - k) as u64));
+        denp.mul_assign(&pf_factorial((k + add1) as u64));
+        denp.mul_assign(&pf_factorial((k + add2) as u64));
+        terms.push((nump, denp));
     }
+    let mut value = s * sum_series(terms);
 
     // Overall Condon-Shortley phase (-1)^((j1-j2-m3)/2) folds into the sign.
     if phase_is_negative((j1 - j2 - m3) / 2) {
-        sum = -sum;
+        value = -value;
     }
 
-    // `radical` = Delta * products of factorials, all nonnegative, so the clamp
-    // in from_prefactor_radical is never exercised here.
-    SignedSqrtRational::from_prefactor_radical(sum, radical)
+    // `r` is the square-free part of a factorial product, hence nonnegative, so
+    // the clamp in from_prefactor_radical is never exercised here.
+    SignedSqrtRational::from_prefactor_radical(value, r)
 }
 
 /// Clebsch-Gordan coefficient `<dj1 dm1, dj2 dm2 | dj3 dm3>` (doubled spins).
@@ -353,6 +346,7 @@ pub fn canonical_regge_6j(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use num_bigint::BigInt;
 
     fn sq(v: &SignedSqrtRational) -> Ratio<BigInt> {
         v.signed_square()

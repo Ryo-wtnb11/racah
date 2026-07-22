@@ -6,8 +6,6 @@
 //! root times a rational alternating sum. We keep the value in this exact form
 //! all the way through and round to `f64` exactly once, in [`SignedSqrtRational::to_f64`].
 
-use std::cell::RefCell;
-
 use num_bigint::{BigInt, BigUint};
 use num_rational::Ratio;
 use num_traits::{One, Signed, Zero};
@@ -265,26 +263,29 @@ fn two_pow_i(e: i64) -> f64 {
     f64::from_bits(biased << 52)
 }
 
-thread_local! {
-    static FACT: RefCell<Vec<BigInt>> = RefCell::new(vec![BigInt::one()]);
-}
-
-/// `n!` as a big integer, memoized per thread in a growing table.
-pub fn factorial(n: u64) -> BigInt {
-    FACT.with(|cell| {
-        let mut table = cell.borrow_mut();
-        while (table.len() as u64) <= n {
-            let len = table.len();
-            let next = &table[len - 1] * BigInt::from(len as u64);
-            table.push(next);
-        }
-        table[n as usize].clone()
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+
+    thread_local! {
+        static FACT: RefCell<Vec<BigInt>> = RefCell::new(vec![BigInt::one()]);
+    }
+
+    /// `n!` as a big integer, memoized per thread in a growing table. Retained
+    /// only as an independent reference for [`factorial_table_grows`]; the
+    /// production factorial lives in the prime-factorized engine.
+    fn factorial(n: u64) -> BigInt {
+        FACT.with(|cell| {
+            let mut table = cell.borrow_mut();
+            while (table.len() as u64) <= n {
+                let len = table.len();
+                let next = &table[len - 1] * BigInt::from(len as u64);
+                table.push(next);
+            }
+            table[n as usize].clone()
+        })
+    }
 
     fn ssr(s: i64, num: i64, den: i64) -> SignedSqrtRational {
         SignedSqrtRational::from_prefactor_radical(
