@@ -472,16 +472,14 @@ fn cref(a: &mut Mat, eps: f64) {
     let (nr, nc) = (a.rows, a.cols);
     let (mut i, mut j) = (0usize, 0usize);
     while i < nr && j < nc {
-        // findabsmax over row i, columns j..nc (leftmost on tie).
-        let mut mval = a.at(i, j).abs();
-        let mut mj = j;
-        for k in (j + 1)..nc {
-            let av = a.at(i, k).abs();
-            if av > mval {
-                mval = av;
-                mj = k;
-            }
-        }
+        // Pivot column = largest |A[i, ·]| over the free columns j..nc, leftmost
+        // on tie. Note (rows 0..nr vs the reference's i..nr in the swap/scale/
+        // eliminate below): rows < i of a free column are already zero by the
+        // time it is processed (each earlier pivot step zeroes its own row in
+        // every other column), so operating on all rows is a no-op there and
+        // matches the reference exactly.
+        let (mval, off) = findabsmax((j..nc).map(|k| a.at(i, k)));
+        let mj = j + off;
         if mval <= eps {
             if eps > 0.0 {
                 for k in j..nc {
@@ -490,7 +488,6 @@ fn cref(a: &mut Mat, eps: f64) {
             }
             i += 1;
         } else {
-            // Swap columns j and mj (all rows).
             for k in 0..nr {
                 a.data.swap(k + j * nr, k + mj * nr);
             }
@@ -512,6 +509,27 @@ fn cref(a: &mut Mat, eps: f64) {
             j += 1;
         }
     }
+}
+
+/// `(max |v|, offset)` of the first entry of maximal absolute value in `vals`.
+///
+/// Ties resolve to the **leftmost** entry: the running maximum updates only on
+/// a strict `>` (`clebschgordan.jl:findabsmax`). This leftmost rule is part of
+/// the gauge specification (`docs/gauge.md §4a`). It is, however, **value-
+/// neutral in the final `cref` output** — reduced column echelon form is unique,
+/// so a different tie rule cannot change any returned coefficient; the rule is
+/// pinned by a unit test at the selection site because no value fixture can
+/// catch it.
+fn findabsmax(vals: impl Iterator<Item = f64>) -> (f64, usize) {
+    let mut m = f64::NEG_INFINITY;
+    let mut mi = 0;
+    for (k, v) in vals.enumerate() {
+        if v.abs() > m {
+            m = v.abs();
+            mi = k;
+        }
+    }
+    (m, mi)
 }
 
 // ---------------------------------------------------------------------------
@@ -870,6 +888,18 @@ mod tests {
     fn rank_mismatch_is_typed_error() {
         let e = generate(&irr(&[1, 0]), &irr(&[1, 0, 0]), &irr(&[1, 0]), None).unwrap_err();
         assert!(matches!(e, SunError::RankMismatch { .. }));
+    }
+
+    #[test]
+    fn findabsmax_breaks_ties_leftmost() {
+        // The cref pivot rule. RCEF is unique, so a wrong tie rule is
+        // value-neutral in cref's output and no coefficient fixture can catch
+        // it (docs/gauge.md §4a); pin it here at the selection site. Exact
+        // tie -> leftmost. The `>`->`>=` mutant returns the rightmost tie and
+        // fails all three.
+        assert_eq!(findabsmax([2.0, 2.0, 1.0].into_iter()), (2.0, 0));
+        assert_eq!(findabsmax([-3.0, 3.0, 3.0].into_iter()), (3.0, 0));
+        assert_eq!(findabsmax([1.0, 4.0, 4.0, 2.0].into_iter()), (4.0, 1));
     }
 
     #[test]
