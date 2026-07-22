@@ -9,7 +9,7 @@
 
 use num_rational::Ratio;
 
-use crate::cache::{cache_3j, cache_6j};
+use crate::cache::{cache_3j, cache_6j, cache_f};
 use crate::exact::SignedSqrtRational;
 use crate::primefactor::{factorial as pf_factorial, mul_factorial, sum_series, Pf};
 
@@ -305,6 +305,84 @@ pub fn su2_frobenius_schur(dj: u32) -> f64 {
     }
 }
 
+/// Exact SU(2) F-symbol as a [`SignedSqrtRational`] -- the value authority.
+///
+/// `F = (-1)^(j1+j2+j3+j4) * sqrt((dj5+1)(dj6+1)) * {6j: dj1 dj2 dj5 / dj3 dj4
+/// dj6}`, composed exactly: the dimension factor folds into the radicand
+/// (`times_sqrt_int`), the phase into the sign, with no intermediate rounding.
+///
+/// Convention and the exact 6j argument order / phase exponent are derived from
+/// the reference chain (verified numerically against TensorKitSectors 0.3.6,
+/// max abs error 4.4e-16 over the doubled-spin <= 12 grid). TensorKitSectors
+/// tugbK `src/irreps/su2irrep.jl:Fsymbol` is `sqrtdim(s5)*sqrtdim(s6) *
+/// racahW(T, j1,j2,j4,j3, j5,j6)`, and WignerSymbols.jl v2.0.0
+/// `WignerSymbols.jl:racahW(T,j1,j2,J,j3,J12,J23)` is `wigner6j(T,
+/// j1,j2,J12,j3,J,J23) * (-1)^(j1+j2+j3+J)`. Substituting racahW's arguments
+/// `(j1,j2,J=j4,j3,J12=j5,J23=j6)` gives the 6j `{j1 j2 j5 / j3 j4 j6}` (whose
+/// triangle set matches [`wigner_6j`]) and the phase `(-1)^(j1+j2+j3+j4)` --
+/// integer-valued exactly when that 6j is admissible, i.e. `(dj1+dj2+dj3+dj4)/2`
+/// here.
+fn f_symbol_exact(
+    dj1: u32,
+    dj2: u32,
+    dj3: u32,
+    dj4: u32,
+    dj5: u32,
+    dj6: u32,
+) -> SignedSqrtRational {
+    let w = wigner_6j(dj1, dj2, dj5, dj3, dj4, dj6);
+    if w.sign() == 0 {
+        return SignedSqrtRational::zero();
+    }
+    let v = w
+        .times_sqrt_int((dj5 as u64) + 1)
+        .times_sqrt_int((dj6 as u64) + 1);
+    if phase_is_negative(((dj1 as i64) + (dj2 as i64) + (dj3 as i64) + (dj4 as i64)) / 2) {
+        v.neg_value()
+    } else {
+        v
+    }
+}
+
+/// Multiplicity-free SU(2) F-symbol `F^{dj1 dj2 dj3}_{dj4}[dj5, dj6]` as `f64`.
+///
+/// The consumer-facing presentation of [`f_symbol_exact`]. Consumers need an
+/// `f64` scalar per recoupling; rounding the exact value on every call would
+/// re-run the big-integer `sqrt` in [`SignedSqrtRational::to_f64`] on the hot
+/// path. This tier caches the rounded scalar, so a warm hit is a hash lookup
+/// returning a `Copy` `f64` -- the only `to_f64` call happens inside the miss
+/// closure, which [`crate::cache::FifoCache::get_or_compute`] provably skips on
+/// a hit (see the f64-tier test in `cache.rs`).
+///
+/// Layering (the reference splits `@cached Fsymbol` from the coefficient
+/// caches for the same reason): the exact 6j tier (#5) owns the *value*; this
+/// tier owns the *presentation*. The two never disagree because the f64 here is
+/// derived from that same exact value, never independently.
+pub fn su2_f_symbol(dj1: u32, dj2: u32, dj3: u32, dj4: u32, dj5: u32, dj6: u32) -> f64 {
+    // Key on the 6j class actually evaluated, {dj1 dj2 dj5 / dj3 dj4 dj6}, plus
+    // the two determinants that class does NOT carry (dimension factor, phase).
+    // See FKey for the key-completeness argument.
+    match canonical_regge_6j(dj1, dj2, dj5, dj3, dj4, dj6) {
+        Ok(regge) => {
+            let key = FKey {
+                regge,
+                dim: ((dj5 as u64) + 1) * ((dj6 as u64) + 1),
+                phase_neg: phase_is_negative(
+                    ((dj1 as i64) + (dj2 as i64) + (dj3 as i64) + (dj4 as i64)) / 2,
+                ),
+            };
+            cache_f().get_or_compute(key, || {
+                f_symbol_exact(dj1, dj2, dj3, dj4, dj5, dj6).to_f64()
+            })
+        }
+        // Non-admissible 6j (F is exactly 0) or a label too large to key: round
+        // the exact value directly. Not worth a cache slot -- zeros are free and
+        // overflow-scale labels do not recur in the TN hot loop. Bypassing the
+        // tier here also means a truncated/ambiguous key can never be formed.
+        Err(_) => f_symbol_exact(dj1, dj2, dj3, dj4, dj5, dj6).to_f64(),
+    }
+}
+
 fn admissible_3j(dj1: u32, dj2: u32, dj3: u32, dm1: i32, dm2: i32, dm3: i32) -> bool {
     if dm1 + dm2 + dm3 != 0 {
         return false;
@@ -339,6 +417,38 @@ impl Regge6j {
     pub fn components(&self) -> [u16; 6] {
         self.0
     }
+}
+
+/// Key for the derived-f64 F-symbol tier ([`su2_f_symbol`], #7).
+///
+/// # Why these three components, and why they are complete
+///
+/// `F = phase * sqrt((dj5+1)(dj6+1)) * {6j}`, evaluating the 6j `{dj1 dj2 dj5 /
+/// dj3 dj4 dj6}`. Its `f64` value is fixed by exactly three data:
+///
+/// * `regge` -- the canonical Regge class of that 6j. A 6j is invariant under
+///   its full symmetry group, so the class names one exact 6j value (sign
+///   included). This is the *only* part shared with the exact 6j tier.
+/// * `dim` -- the product `(dj5+1)(dj6+1)` under the square root. F is **not**
+///   invariant under the full Regge group of its 6j: two distinct F inputs can
+///   share a 6j class yet carry different `(dj5, dj6)`, hence a different
+///   radicand factor. Keying on `regge` alone would collide them and hand one
+///   F's value to the other. The product -- symmetric in `dj5 <-> dj6`, exactly
+///   as the factor is -- restores that missing determinant.
+/// * `phase_neg` -- the parity of `(dj1+dj2+dj3+dj4)/2`, the overall sign. Again
+///   not carried by the 6j class, and again able to differ between two inputs
+///   that share a class.
+///
+/// Conversely, any two inputs agreeing on all three yield the identical F (same
+/// 6j value, same radicand factor, same sign), so the triple is a *complete*
+/// key: no collision returns a wrong value and no determinant is omitted.
+/// Overflow-scale 6j labels have no Regge class and bypass the tier entirely
+/// (computed directly), so a truncated key can never be formed here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct FKey {
+    regge: Regge6j,
+    dim: u64,
+    phase_neg: bool,
 }
 
 /// Why a 6j label set has no canonical Regge key.
@@ -891,6 +1001,82 @@ mod tests {
             canonical_regge_3j(big, big, big, 0, 0, 0),
             Err(ReggeError::Overflow)
         );
+    }
+
+    #[test]
+    fn f_symbol_exact_composition_identity() {
+        // Independent exact check of the closed form. Reconstruct signed_square(F)
+        // separately from the 6j value, the dimension factor, and the phase --
+        // NOT by re-running f_symbol_exact -- and require exact equality:
+        //   signed_square(F) == phase * (dj5+1)(dj6+1) * signed_square({6j}).
+        // This catches a wrong 6j argument order or a wrong phase exponent (the
+        // silent-wrong-answer class) because a mistaken order lands on a
+        // different 6j class whose signed_square differs on non-symmetric labels.
+        for dj1 in 0..=4u32 {
+            for dj2 in 0..=4u32 {
+                for dj3 in 0..=4u32 {
+                    for dj4 in 0..=4u32 {
+                        for dj5 in 0..=4u32 {
+                            for dj6 in 0..=4u32 {
+                                let f = f_symbol_exact(dj1, dj2, dj3, dj4, dj5, dj6);
+                                let w = wigner_6j(dj1, dj2, dj5, dj3, dj4, dj6);
+                                let dim = BigInt::from(((dj5 + 1) * (dj6 + 1)) as i64);
+                                let mut expected = w.signed_square() * Ratio::from(dim);
+                                let sum = (dj1 as i64) + (dj2 as i64) + (dj3 as i64) + (dj4 as i64);
+                                if (sum / 2).rem_euclid(2) == 1 {
+                                    expected = -expected;
+                                }
+                                let ctx = (dj1, dj2, dj3, dj4, dj5, dj6);
+                                assert_eq!(f.signed_square(), expected, "F^2 identity at {ctx:?}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn f_symbol_cached_matches_exact_over_grid() {
+        // The cached f64 path equals the rounded exact composition, and a repeat
+        // (a cache hit) still matches.
+        for dj1 in 0..=4u32 {
+            for dj2 in 0..=4u32 {
+                for dj3 in 0..=4u32 {
+                    for dj4 in 0..=4u32 {
+                        for dj5 in 0..=4u32 {
+                            for dj6 in 0..=4u32 {
+                                let want = f_symbol_exact(dj1, dj2, dj3, dj4, dj5, dj6).to_f64();
+                                let ctx = (dj1, dj2, dj3, dj4, dj5, dj6);
+                                assert_eq!(
+                                    su2_f_symbol(dj1, dj2, dj3, dj4, dj5, dj6),
+                                    want,
+                                    "cached != exact at {ctx:?}"
+                                );
+                                assert_eq!(
+                                    su2_f_symbol(dj1, dj2, dj3, dj4, dj5, dj6),
+                                    want,
+                                    "cache-hit != exact at {ctx:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn f_symbol_all_trivial_is_one() {
+        // All six labels trivial: {0 0 0 / 0 0 0} 6j = 1, dims = 1, phase +.
+        assert_eq!(su2_f_symbol(0, 0, 0, 0, 0, 0), 1.0);
+    }
+
+    #[test]
+    fn f_symbol_nonadmissible_is_zero() {
+        // The evaluated 6j {1/2 1/2 1/2 / 1/2 1/2 1/2} is parity-forbidden, so F
+        // is exactly zero and takes the Err (bypass) branch.
+        assert_eq!(su2_f_symbol(1, 1, 1, 1, 1, 1), 0.0);
     }
 
     #[test]

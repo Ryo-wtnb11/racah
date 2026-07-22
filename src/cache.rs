@@ -33,7 +33,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{LazyLock, RwLock};
 
 use crate::exact::SignedSqrtRational;
-use crate::su2::{Regge3j, Regge6j};
+use crate::su2::{FKey, Regge3j, Regge6j};
 
 /// Default entry cap per kind (3j and 6j each). Matches the reference order of
 /// magnitude (WignerSymbols.jl uses `10^6`); the byte cap is the real backstop.
@@ -80,6 +80,12 @@ impl CacheCharge for SignedSqrtRational {
         // Two BigInt allocations (numer, denom) plus the SignedSqrtRational shell.
         const BIGINT_OVERHEAD: usize = 32;
         std::mem::size_of::<SignedSqrtRational>() + 2 * BIGINT_OVERHEAD + value_limbs
+    }
+}
+
+impl CacheCharge for f64 {
+    fn value_bytes(&self) -> usize {
+        std::mem::size_of::<f64>()
     }
 }
 
@@ -211,21 +217,37 @@ pub(crate) fn cache_6j() -> &'static FifoCache<Regge6j, SignedSqrtRational> {
     &CACHE_6J
 }
 
-/// Clear both symbol caches and their hit/miss counters.
+/// Derived-f64 F-symbol tier (#7). Stores the rounded `f64` F-symbol so a warm
+/// hit returns a `Copy` scalar without re-running the bigint `sqrt` in
+/// [`SignedSqrtRational::to_f64`]. It is a *presentation* tier over the exact
+/// 6j tier (the value authority), never an independent value source: its `f64`
+/// is always derived from the exact value, so the two cannot disagree.
+static CACHE_F: LazyLock<FifoCache<FKey, f64>> =
+    LazyLock::new(|| FifoCache::new(DEFAULT_MAX_ENTRIES, DEFAULT_MAX_BYTES));
+
+pub(crate) fn cache_f() -> &'static FifoCache<FKey, f64> {
+    &CACHE_F
+}
+
+/// Clear the 3j, 6j, and derived-f64 F-symbol caches and their hit/miss
+/// counters.
 pub fn reset() {
     CACHE_3J.reset();
     CACHE_6J.reset();
+    CACHE_F.reset();
 }
 
-/// Aggregate hit/miss/entry/byte statistics across the 3j and 6j caches.
+/// Aggregate hit/miss/entry/byte statistics across the 3j, 6j, and derived-f64
+/// F-symbol caches.
 pub fn stats() -> CacheStats {
     let (h3, m3, e3, b3) = CACHE_3J.snapshot();
     let (h6, m6, e6, b6) = CACHE_6J.snapshot();
+    let (hf, mf, ef, bf) = CACHE_F.snapshot();
     CacheStats {
-        hits: h3 + h6,
-        misses: m3 + m6,
-        entries: e3 + e6,
-        bytes: b3 + b6,
+        hits: h3 + h6 + hf,
+        misses: m3 + m6 + mf,
+        entries: e3 + e6 + ef,
+        bytes: b3 + b6 + bf,
     }
 }
 
@@ -297,6 +319,36 @@ mod tests {
                 assert_eq!(got, val(k as i64 * 3 + 1), "round {round} key {k}");
             }
         }
+    }
+
+    #[test]
+    fn f64_tier_hit_skips_recompute() {
+        // The derived-f64 F-symbol tier's contract: a warm hit returns the
+        // stored scalar WITHOUT re-running the miss closure -- which is the sole
+        // site of the bigint `sqrt` in SignedSqrtRational::to_f64 on the F path.
+        // So the public su2_f_symbol hot path avoids bigint isqrt on a hit.
+        let c: FifoCache<u32, f64> = FifoCache::new(16, 1 << 20);
+        let mut rounded = 0;
+        let a = c.get_or_compute(9, || {
+            rounded += 1;
+            val(9).to_f64() // stands in for f_symbol_exact(..).to_f64()
+        });
+        let b = c.get_or_compute(9, || {
+            rounded += 1;
+            val(999).to_f64() // must not run on the hit
+        });
+        assert_eq!(a, b);
+        assert_eq!(rounded, 1, "a hit must not re-run the rounding closure");
+        let (hits, misses, entries, _) = c.snapshot();
+        assert_eq!((hits, misses, entries), (1, 1, 1));
+    }
+
+    #[test]
+    fn f64_tier_charge_is_fixed() {
+        // f64 values charge a fixed size (no data-dependent limbs), so the tier
+        // is bounded by entry count in practice.
+        assert_eq!((1.0f64).value_bytes(), std::mem::size_of::<f64>());
+        assert_eq!((-3.5f64).value_bytes(), std::mem::size_of::<f64>());
     }
 
     #[test]
