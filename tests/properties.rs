@@ -56,11 +56,46 @@ fn tetrahedral_images(dj: [u32; 6]) -> Vec<[u32; 6]> {
     out
 }
 
+/// The non-classical Regge symmetry generator: fix `(j1,j4)`, map each of
+/// `(j2,j3,j5,j6)` to `rho - j_i` with `rho = (j2+j3+j5+j6)/2`. Together with
+/// the 24 classical images this generates the full 144-element symmetry group.
+/// Returns `None` if an image spin would be negative (never for admissible
+/// input, but guard against underflow rather than panic).
+fn regge_map(dj: [u32; 6]) -> Option<[u32; 6]> {
+    let s = (dj[1] as i64 + dj[2] as i64 + dj[4] as i64 + dj[5] as i64) / 2;
+    let m = |x: u32| -> Option<u32> {
+        let v = s - x as i64;
+        (v >= 0).then_some(v as u32)
+    };
+    Some([dj[0], m(dj[1])?, m(dj[2])?, dj[3], m(dj[4])?, m(dj[5])?])
+}
+
+/// The full symmetry orbit of a 6j label set: closure under the 24 classical
+/// images and the Regge generator.
+fn full_orbit(dj: [u32; 6]) -> Vec<[u32; 6]> {
+    let mut seen = std::collections::HashSet::new();
+    let mut stack = vec![dj];
+    seen.insert(dj);
+    while let Some(x) = stack.pop() {
+        let mut neighbours = tetrahedral_images(x);
+        if let Some(r) = regge_map(x) {
+            neighbours.push(r);
+        }
+        for n in neighbours {
+            if seen.insert(n) {
+                stack.push(n);
+            }
+        }
+    }
+    seen.into_iter().collect()
+}
+
 #[test]
 fn regge_orbit_key_and_value_invariant() {
     let mut rng = ChaCha8Rng::seed_from_u64(0x8E66_1234);
     let mut tested = 0;
     let mut attempts = 0;
+    let mut max_orbit = 0usize;
     while tested < 200 && attempts < 200_000 {
         attempts += 1;
         let dj = [
@@ -76,7 +111,10 @@ fn regge_orbit_key_and_value_invariant() {
         }
         let key = canonical_regge_6j(dj[0], dj[1], dj[2], dj[3], dj[4], dj[5]).unwrap();
         let val = wigner_6j(dj[0], dj[1], dj[2], dj[3], dj[4], dj[5]);
-        for img in tetrahedral_images(dj) {
+        let orbit = full_orbit(dj);
+        max_orbit = max_orbit.max(orbit.len());
+        for img in &orbit {
+            // Every image is itself an admissible 6j, so it has a key.
             let k2 = canonical_regge_6j(img[0], img[1], img[2], img[3], img[4], img[5]).unwrap();
             let v2 = wigner_6j(img[0], img[1], img[2], img[3], img[4], img[5]);
             assert_eq!(
@@ -92,6 +130,12 @@ fn regge_orbit_key_and_value_invariant() {
         tested += 1;
     }
     assert!(tested >= 50, "only {tested} orbits tested");
+    // The Regge generator reaches non-classical images: a generic orbit exceeds
+    // the 24 classical symmetries, confirming the extension is exercised.
+    assert!(
+        max_orbit > 24,
+        "orbit never exceeded 24 images; Regge generator not exercised"
+    );
 }
 
 /// Exact rational square root of a nonnegative rational that is a perfect
