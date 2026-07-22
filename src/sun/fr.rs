@@ -456,6 +456,58 @@ fn intersect_products(a: &Irrep, b: &Irrep, c: &Irrep, d: &Irrep) -> Result<Vec<
     Ok(left.into_keys().filter(|k| right.contains_key(k)).collect())
 }
 
+/// Per-gate-call memo for F/R blocks.
+///
+/// A pentagon/hexagon gate references the *same* F/R block from many index
+/// combinations; without memoization each reference recomputes a four-CGC
+/// contraction, which for OM≥2 SU(3) families (large intermediate irreps like
+/// `27 ⊗ 8`) is the difference between seconds and many minutes. The blocks are
+/// tiny (≤ `2⁴` f64), so the memo clones them out cheaply. It is *not* the
+/// process-global `cache_sun_f`: gates use the raw zeros-for-`N=0` semantics,
+/// which would pollute the public tier with blocks `f_symbol` never stores.
+#[derive(Default)]
+struct BlockMemo {
+    f: HashMap<[Irrep; 6], FBlock>,
+    r: HashMap<[Irrep; 3], RBlock>,
+}
+
+impl BlockMemo {
+    fn f_block(
+        &mut self,
+        a: &Irrep,
+        b: &Irrep,
+        c: &Irrep,
+        d: &Irrep,
+        e: &Irrep,
+        f: &Irrep,
+    ) -> Result<FBlock, SunError> {
+        let key = [
+            a.clone(),
+            b.clone(),
+            c.clone(),
+            d.clone(),
+            e.clone(),
+            f.clone(),
+        ];
+        if let Some(bl) = self.f.get(&key) {
+            return Ok(bl.clone());
+        }
+        let bl = f_block_raw(a, b, c, d, e, f)?;
+        self.f.insert(key, bl.clone());
+        Ok(bl)
+    }
+
+    fn r_block(&mut self, a: &Irrep, b: &Irrep, c: &Irrep) -> Result<RBlock, SunError> {
+        let key = [a.clone(), b.clone(), c.clone()];
+        if let Some(bl) = self.r.get(&key) {
+            return Ok(bl.clone());
+        }
+        let bl = r_block_raw(a, b, c)?;
+        self.r.insert(key, bl.clone());
+        Ok(bl)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Gate 1: F-move unitarity.
 // ---------------------------------------------------------------------------
@@ -503,18 +555,10 @@ pub fn check_f_unitarity(a: &Irrep, b: &Irrep, c: &Irrep, d: &Irrep) -> Result<(
     let nr = rows.len();
     let nc = cols.len();
     let mut m = vec![0.0f64; nr * nc];
-    // Cache F blocks per (e, f) so we compute each once.
-    let mut blocks: HashMap<(Irrep, Irrep), FBlock> = HashMap::new();
+    let mut memo = BlockMemo::default();
     for (ri, (e, mu, nu)) in rows.iter().enumerate() {
         for (ci, (f, kappa, lambda)) in cols.iter().enumerate() {
-            let key = (e.clone(), f.clone());
-            let block = match blocks.get(&key) {
-                Some(bl) => bl,
-                None => {
-                    let bl = f_block_raw(a, b, c, d, e, f)?;
-                    blocks.entry(key.clone()).or_insert(bl)
-                }
-            };
+            let block = memo.f_block(a, b, c, d, e, f)?;
             m[ri * nc + ci] = block.at(*mu, *nu, *kappa, *lambda);
         }
     }
@@ -563,6 +607,7 @@ pub fn check_f_unitarity(a: &Irrep, b: &Irrep, c: &Irrep, d: &Irrep) -> Result<(
 pub fn check_pentagon(a: &Irrep, b: &Irrep, c: &Irrep, d: &Irrep) -> Result<(), SunError> {
     require_same_rank(&[a, b, c, d])?;
     let mut worst = 0.0f64;
+    let mut memo = BlockMemo::default();
 
     for f in products(a, b)? {
         for h in products(c, d)? {
@@ -582,16 +627,16 @@ pub fn check_pentagon(a: &Irrep, b: &Irrep, c: &Irrep, d: &Irrep) -> Result<(), 
                         }
 
                         // p1: F1[λ,μ,ν,τ] · F2[κ,τ,ρ,σ], sum over τ (= N_fhe).
-                        let f1 = f_block_raw(&f, c, d, &e, &g, &h)?; // [λ,μ,ν,τ]
-                        let f2 = f_block_raw(a, b, &h, &e, &f, &i)?; // [κ,τ,ρ,σ]
+                        let f1 = memo.f_block(&f, c, d, &e, &g, &h)?; // [λ,μ,ν,τ]
+                        let f2 = memo.f_block(a, b, &h, &e, &f, &i)?; // [κ,τ,ρ,σ]
                         let n_tau = f1.dims()[3];
 
                         // p2 factors, summed over j ∈ b⊗c and α,β,τ'.
                         let mut p2_terms: Vec<(FBlock, FBlock, FBlock)> = Vec::new();
                         for j in products(b, c)? {
-                            let g1 = f_block_raw(a, b, c, &g, &f, &j)?; // [κ,λ,α,β]
-                            let g2 = f_block_raw(a, &j, d, &e, &g, &i)?; // [β,μ,τ',σ]
-                            let g3 = f_block_raw(b, c, d, &i, &j, &h)?; // [α,τ',ν,ρ]
+                            let g1 = memo.f_block(a, b, c, &g, &f, &j)?; // [κ,λ,α,β]
+                            let g2 = memo.f_block(a, &j, d, &e, &g, &i)?; // [β,μ,τ',σ]
+                            let g3 = memo.f_block(b, c, d, &i, &j, &h)?; // [α,τ',ν,ρ]
                             p2_terms.push((g1, g2, g3));
                         }
 
@@ -670,13 +715,14 @@ pub fn check_pentagon(a: &Irrep, b: &Irrep, c: &Irrep, d: &Irrep) -> Result<(), 
 pub fn check_hexagon(a: &Irrep, b: &Irrep, c: &Irrep) -> Result<(), SunError> {
     require_same_rank(&[a, b, c])?;
     let mut worst = 0.0f64;
+    let mut memo = BlockMemo::default();
 
     for e in products(c, a)? {
-        let rcae = r_block_raw(c, a, &e)?; // [α,λ]
-        let race = r_block_raw(a, c, &e)?; // [α,λ]
+        let rcae = memo.r_block(c, a, &e)?; // [α,λ]
+        let race = memo.r_block(a, c, &e)?; // [α,λ]
         for f in products(c, b)? {
-            let rcbf = r_block_raw(c, b, &f)?; // [γ,μ]
-            let rbcf = r_block_raw(b, c, &f)?; // [γ,μ]
+            let rcbf = memo.r_block(c, b, &f)?; // [γ,μ]
+            let rbcf = memo.r_block(b, c, &f)?; // [γ,μ]
             for d in intersect_products(&e, b, a, &f)? {
                 // free dims: α=N_cae, β=N_ebd, μ=N_bcf, ν=N_afd.
                 let n_alpha = mult(c, a, &e)?;
@@ -686,17 +732,17 @@ pub fn check_hexagon(a: &Irrep, b: &Irrep, c: &Irrep) -> Result<(), SunError> {
                 if [n_alpha, n_beta, n_mu, n_nu].contains(&0) {
                     continue;
                 }
-                let facb = f_block_raw(a, c, b, &d, &e, &f)?; // [λ,β,γ,ν]
+                let facb = memo.f_block(a, c, b, &d, &e, &f)?; // [λ,β,γ,ν]
                 let n_lam = facb.dims()[0]; // N_ace = N_cae
                 let n_gam = facb.dims()[2]; // N_cbf
 
                 // FRF factors over g ∈ a⊗b.
                 let mut frf_terms: Vec<(FBlock, RBlock, RBlock, FBlock)> = Vec::new();
                 for g in products(a, b)? {
-                    let rcgd = r_block_raw(c, &g, &d)?;
-                    let rgcd = r_block_raw(&g, c, &d)?;
-                    let fcab = f_block_raw(c, a, b, &d, &e, &g)?; // [α,β,δ,σ]
-                    let fabc = f_block_raw(a, b, c, &d, &g, &f)?; // [δ,ψ,μ,ν]
+                    let rcgd = memo.r_block(c, &g, &d)?;
+                    let rgcd = memo.r_block(&g, c, &d)?;
+                    let fcab = memo.f_block(c, a, b, &d, &e, &g)?; // [α,β,δ,σ]
+                    let fabc = memo.f_block(a, b, c, &d, &g, &f)?; // [δ,ψ,μ,ν]
                     frf_terms.push((fcab, rcgd, rgcd, fabc));
                 }
 
