@@ -1,9 +1,12 @@
 # racah
 
-Racah–Wigner calculus for compact Lie groups, in Rust: irrep data,
-Clebsch–Gordan coefficients, and recoupling coefficients (6j / F / R) for
-SU(2), SU(N), SO(N), and Sp(2N) — computed at runtime, with no precomputed
-irrep ceiling.
+Racah–Wigner calculus for compact Lie groups, in Rust: irreducible
+representations, Clebsch–Gordan coefficients, and recoupling coefficients
+(3j / 6j / F / R) for SU(2), SU(N), SO(N), and Sp(2N).
+
+Coefficients for any admissible labels are computed on demand in exact or
+verification-gated arithmetic — there is no precomputed table and no label
+ceiling.
 
 ## Why this crate exists
 
