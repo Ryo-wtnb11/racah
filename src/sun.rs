@@ -8,19 +8,20 @@
 //!
 //! Ported from SUNRepresentations.jl v0.4.0
 //! (`~/.julia/packages/SUNRepresentations/BM32Z/src`). The *basis order* of
-//! [`Irrep::patterns`] is load-bearing — Layer 2's gauge depends on it — so it
+//! [`Irrep::patterns`](crate::sun::Irrep::patterns) is load-bearing — Layer 2's
+//! gauge depends on it — so it
 //! reproduces `gtpatterns.jl:GTPatternIterator` index-for-index and is pinned
 //! by checked-in fixtures.
 //!
 //! # Label normalization invariant
 //!
-//! An [`Irrep`] stores the SU(N) highest weight as a *normalized* weight
+//! An [`Irrep`](crate::sun::Irrep) stores the SU(N) highest weight as a *normalized* weight
 //! `λ = (λ₁ ≥ λ₂ ≥ … ≥ λ_N)` with `λ_N = 0` and all `λ_i ≥ 0`, of length `N`
 //! (`= rank`). This matches `sunirrep.jl`'s `weight(s)` (`_dynkin_to_weight`
 //! produces a nonincreasing tuple with last component 0). Weight input is
 //! shift-invariant: any representative is accepted and normalized by
 //! subtracting `λ_N`. The Dynkin labels `aᵢ = λᵢ − λᵢ₊₁` (all `≥ 0`) are
-//! derivable via [`Irrep::dynkin`].
+//! derivable via [`Irrep::dynkin`](crate::sun::Irrep::dynkin).
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -40,13 +41,24 @@ pub enum SunError {
     EmptyLabel,
     /// A weight that is not nonincreasing (`λᵢ < λᵢ₊₁` for some `i`), i.e. its
     /// implied Dynkin label would be negative.
-    NotNonincreasing { weight: Vec<i64> },
+    NotNonincreasing {
+        /// The offending (unnormalized) weight.
+        weight: Vec<i64>,
+    },
     /// A Dynkin label with a negative component.
-    NegativeDynkin { dynkin: Vec<i64> },
+    NegativeDynkin {
+        /// The offending Dynkin label.
+        dynkin: Vec<i64>,
+    },
     /// A [`directproduct`] of two irreps of different rank (distinct SU(N)
     /// groups have no common product; this is an ill-posed input, not a
     /// zero-channel fusion).
-    RankMismatch { a: usize, b: usize },
+    RankMismatch {
+        /// Rank `N` of the first irrep.
+        a: usize,
+        /// Rank `N` of the second irrep.
+        b: usize,
+    },
 }
 
 impl fmt::Display for SunError {
@@ -184,7 +196,7 @@ impl Irrep {
     ///
     /// Ported from `gtpatterns.jl:GTPatternIterator` /
     /// `basis(s) = GTPatternIterator{N}(weight(s))`. The order is load-bearing
-    /// and pinned by fixtures. See [`gt_enumerate`] for the recursion.
+    /// and pinned by fixtures. See the private `gt_enumerate` for the recursion.
     pub fn patterns(&self) -> Vec<GtPattern> {
         let n = self.rank();
         gt_enumerate(&self.weight)
@@ -309,8 +321,11 @@ impl Irrep {
 /// `row`/`col` 0-based indices into [`Irrep::patterns`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LadderEntry {
+    /// Row index (0-based basis index of the raised pattern).
     pub row: usize,
+    /// Column index (0-based basis index of the source pattern).
     pub col: usize,
+    /// The exact matrix element `sign * sqrt(radicand)`.
     pub value: SignedSqrtRational,
 }
 

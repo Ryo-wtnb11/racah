@@ -346,12 +346,12 @@ fn f_symbol_exact(
 
 /// Multiplicity-free SU(2) F-symbol `F^{dj1 dj2 dj3}_{dj4}[dj5, dj6]` as `f64`.
 ///
-/// The consumer-facing presentation of [`f_symbol_exact`]. Consumers need an
+/// The consumer-facing presentation of the exact F-symbol. Consumers need an
 /// `f64` scalar per recoupling; rounding the exact value on every call would
 /// re-run the big-integer `sqrt` in [`SignedSqrtRational::to_f64`] on the hot
 /// path. This tier caches the rounded scalar, so a warm hit is a hash lookup
 /// returning a `Copy` `f64` -- the only `to_f64` call happens inside the miss
-/// closure, which [`crate::cache::FifoCache::get_or_compute`] provably skips on
+/// closure, which the private `FifoCache::get_or_compute` provably skips on
 /// a hit (see the f64-tier test in `cache.rs`).
 ///
 /// Layering (the reference splits `@cached Fsymbol` from the coefficient
