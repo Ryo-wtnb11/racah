@@ -43,6 +43,10 @@ pub enum SunError {
     NotNonincreasing { weight: Vec<i64> },
     /// A Dynkin label with a negative component.
     NegativeDynkin { dynkin: Vec<i64> },
+    /// A [`directproduct`] of two irreps of different rank (distinct SU(N)
+    /// groups have no common product; this is an ill-posed input, not a
+    /// zero-channel fusion).
+    RankMismatch { a: usize, b: usize },
 }
 
 impl fmt::Display for SunError {
@@ -54,6 +58,12 @@ impl fmt::Display for SunError {
             }
             SunError::NegativeDynkin { dynkin } => {
                 write!(f, "SU(N) Dynkin label has a negative component: {dynkin:?}")
+            }
+            SunError::RankMismatch { a, b } => {
+                write!(
+                    f,
+                    "directproduct of SU({a}) and SU({b}) irreps (rank mismatch)"
+                )
             }
         }
     }
@@ -396,13 +406,17 @@ fn subrow_rec(j: usize, m: usize, toprow: &[i64], cur: &mut Vec<i64>, out: &mut 
 /// `a ⊗ b`, keyed by the resulting irrep.
 ///
 /// Ported from `gtpatterns.jl:directproduct`. Requires `rank(a) == rank(b)`
-/// (both label the same SU(N)); returns an empty map otherwise (distinct groups
-/// have no common product). The reference iterates the smaller-dimensional
-/// basis; we replicate the `dim` swap (the result is independent of it, but the
-/// port stays faithful).
-pub fn directproduct(a: &Irrep, b: &Irrep) -> BTreeMap<Irrep, u32> {
+/// (both label the same SU(N)); a rank mismatch is an ill-posed input across
+/// distinct groups and returns [`SunError::RankMismatch`] rather than a
+/// zero-channel map — this signature is Layer 2's foundation. The reference
+/// iterates the smaller-dimensional basis; we replicate the `dim` swap (the
+/// result is independent of it, but the port stays faithful).
+pub fn directproduct(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, SunError> {
     if a.rank() != b.rank() {
-        return BTreeMap::new();
+        return Err(SunError::RankMismatch {
+            a: a.rank(),
+            b: b.rank(),
+        });
     }
     if a.dim() > b.dim() {
         return directproduct(b, a);
@@ -433,7 +447,7 @@ pub fn directproduct(a: &Irrep, b: &Irrep) -> BTreeMap<Irrep, u32> {
             *result.entry(s).or_insert(0) += 1;
         }
     }
-    result
+    Ok(result)
 }
 
 /// `sign(coef) * sqrt(|coef|)` as an exact [`SignedSqrtRational`], matching
@@ -566,16 +580,28 @@ mod tests {
     #[test]
     fn su3_product_known() {
         // 3 ⊗ 3̄ = 8 ⊕ 1
-        let dp = directproduct(&irr(&[1, 0]), &irr(&[0, 1]));
+        let dp = directproduct(&irr(&[1, 0]), &irr(&[0, 1])).unwrap();
         let mut got: Vec<(Vec<i64>, u32)> = dp.iter().map(|(k, &v)| (k.dynkin(), v)).collect();
         got.sort();
         assert_eq!(got, vec![(vec![0, 0], 1), (vec![1, 1], 1)]);
 
         // 3 ⊗ 3 = 6 ⊕ 3̄
-        let dp = directproduct(&irr(&[1, 0]), &irr(&[1, 0]));
+        let dp = directproduct(&irr(&[1, 0]), &irr(&[1, 0])).unwrap();
         let mut got: Vec<(Vec<i64>, u32)> = dp.iter().map(|(k, &v)| (k.dynkin(), v)).collect();
         got.sort();
         assert_eq!(got, vec![(vec![0, 1], 1), (vec![2, 0], 1)]);
+    }
+
+    #[test]
+    fn directproduct_rank_mismatch_is_typed_error() {
+        // Distinct SU(N) groups: ill-posed input must be a typed error, never a
+        // (well-formed-looking) empty decomposition.
+        let su3 = irr(&[1, 0]);
+        let su4 = irr(&[1, 0, 0]);
+        assert_eq!(
+            directproduct(&su3, &su4),
+            Err(SunError::RankMismatch { a: 3, b: 4 })
+        );
     }
 
     #[test]
@@ -591,6 +617,7 @@ mod tests {
             let b = irr(&db);
             let lhs = a.dim() * b.dim();
             let rhs: BigInt = directproduct(&a, &b)
+                .unwrap()
                 .iter()
                 .map(|(c, &m)| c.dim() * BigInt::from(m))
                 .sum();
@@ -604,8 +631,8 @@ mod tests {
         let b = irr(&[1, 1]);
         assert_eq!(directproduct(&a, &b), directproduct(&b, &a));
         // N^c_ab == N^{c̄}_{ā b̄}
-        let dp = directproduct(&a, &b);
-        let dpd = directproduct(&a.dual(), &b.dual());
+        let dp = directproduct(&a, &b).unwrap();
+        let dpd = directproduct(&a.dual(), &b.dual()).unwrap();
         let twisted: BTreeMap<Irrep, u32> = dp.iter().map(|(c, &m)| (c.dual(), m)).collect();
         assert_eq!(dpd, twisted);
     }
@@ -686,7 +713,7 @@ mod tests {
         // Fusion range |j1-j2|..j1+j2, each multiplicity 1 (doubled labels).
         for dj1 in 0..=4i64 {
             for dj2 in 0..=4i64 {
-                let dp = directproduct(&irr(&[dj1]), &irr(&[dj2]));
+                let dp = directproduct(&irr(&[dj1]), &irr(&[dj2])).unwrap();
                 let mut got: Vec<i64> = dp
                     .iter()
                     .map(|(c, &m)| {

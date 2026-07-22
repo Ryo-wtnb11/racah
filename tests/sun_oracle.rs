@@ -143,6 +143,7 @@ fn directproduct_multiplicities_match_reference() {
         let ia = Irrep::from_dynkin(a).unwrap();
         let ib = Irrep::from_dynkin(b).unwrap();
         let got: BTreeMap<Vec<i64>, u32> = directproduct(&ia, &ib)
+            .unwrap()
             .into_iter()
             .map(|(k, v)| (k.dynkin(), v))
             .collect();
