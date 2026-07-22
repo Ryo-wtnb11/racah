@@ -27,4 +27,7 @@ mod primefactor;
 mod su2;
 
 pub use exact::SignedSqrtRational;
-pub use su2::{canonical_regge_6j, clebsch_gordan, wigner_3j, wigner_6j, Regge6j, ReggeError};
+pub use su2::{
+    canonical_regge_3j, canonical_regge_6j, clebsch_gordan, wigner_3j, wigner_6j, Regge3j, Regge6j,
+    ReggeError, ReggePhase,
+};
