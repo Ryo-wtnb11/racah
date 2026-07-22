@@ -34,6 +34,14 @@ mod su2;
 #[cfg(feature = "cgc-gen")]
 pub mod sun;
 
+/// Exact SO(N)/Sp(2N) representation combinatorics for the B/C/D Cartan series
+/// (Layer S3.0 of the `cgc-gen` track): integer Dynkin labels, exact Weyl
+/// dimensions, duals, Frobenius–Schur indicators, Freudenthal weight
+/// multiplicities, and the exact Brauer–Klimyk/Racah–Speiser tensor-product
+/// decomposition `N^c_ab`. Compilation-gated behind `cgc-gen`.
+#[cfg(feature = "cgc-gen")]
+pub mod bcd;
+
 pub use exact::SignedSqrtRational;
 pub use su2::{
     canonical_regge_3j, canonical_regge_6j, clebsch_gordan, su2_f_symbol, su2_frobenius_schur,
