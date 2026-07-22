@@ -107,7 +107,10 @@ impl SignedSqrtRational {
     ///
     /// The value is `sign * sqrt(N/D)` with `N, D` nonnegative big integers.
     /// We return the `f64` nearest to that real number (ties to even), i.e.
-    /// error <= 0.5 ulp.
+    /// error <= 0.5 ulp for any result in the normal `f64` range. A result that
+    /// lands in the subnormal range would pick up a second rounding in the
+    /// `scale_pow2` exponent chunking below; genuine Wigner coefficients are
+    /// O(1) and never subnormal, so that path is unreachable in practice.
     ///
     /// Method (integer square root with scaling, then an exact midpoint test):
     /// pick an even scale `2g` so that `Q = floor(sqrt(floor(N*2^(2g)/D)))`

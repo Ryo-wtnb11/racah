@@ -90,6 +90,9 @@ pub fn wigner_6j(dj1: u32, dj2: u32, dj3: u32, dj4: u32, dj5: u32, dj6: u32) -> 
         }
     }
 
+    // `radical` is a product of triangle coefficients, each a nonnegative
+    // rational, so it is nonnegative: the clamp in from_prefactor_radical is
+    // never exercised here.
     SignedSqrtRational::from_prefactor_radical(sum, radical)
 }
 
@@ -145,6 +148,8 @@ pub fn wigner_3j(dj1: u32, dj2: u32, dj3: u32, dm1: i32, dm2: i32, dm3: i32) -> 
         sum = -sum;
     }
 
+    // `radical` = Delta * products of factorials, all nonnegative, so the clamp
+    // in from_prefactor_radical is never exercised here.
     SignedSqrtRational::from_prefactor_radical(sum, radical)
 }
 
