@@ -308,6 +308,53 @@ pub(crate) fn cache_cgc() -> &'static FifoCache<cgc_cache::CgcKey, std::sync::Ar
     &cgc_cache::CACHE_CGC
 }
 
+/// Bounded, byte-accounted derived-f64 SU(N) F-symbol cache (`cgc-gen`,
+/// Layer 3, issue #16).
+///
+/// An F block is the contraction of four CGC; even with warm CGC that is real
+/// work, so the derived `[μ,ν,κ,λ]` block is cached. Keyed by the **plain
+/// ordered six-label tuple** `(a,b,c,d,e,f)` — see the Why-comment in
+/// `sun::fr::f_symbol` for why no Regge-style canonicalization exists for
+/// GT-basis F blocks (the 6j symmetry group that lets the exact SU(2) F tier
+/// key on a canonical class has no analogue here).
+///
+/// R needs no cache: it is a single sparse join of two CGC (no four-way
+/// contraction), cheap enough that a cache slot would not pay for itself.
+///
+/// In-memory only, same argument as the CGC tier: the values are
+/// gauge/algorithm-dependent, so a persisted store would need a version key;
+/// keeping it process-local means it is always consistent with the generator.
+#[cfg(feature = "cgc-gen")]
+mod sun_f_cache {
+    use super::{CacheCharge, FifoCache};
+    use crate::sun::{FBlock, Irrep};
+    use std::sync::{Arc, LazyLock};
+
+    /// Canonical cache key: the six irrep labels `(a, b, c, d, e, f)`.
+    pub(crate) type SunFKey = (Irrep, Irrep, Irrep, Irrep, Irrep, Irrep);
+
+    impl CacheCharge for Arc<FBlock> {
+        fn value_bytes(&self) -> usize {
+            std::mem::size_of_val(self.data()) + std::mem::size_of::<FBlock>()
+        }
+    }
+
+    /// Entry cap; the byte cap is the real backstop.
+    const SUN_F_MAX_ENTRIES: usize = 1 << 16;
+    /// Byte cap (64 MiB): F blocks are tiny (a few multiplicity indices), so
+    /// this holds a very large working set.
+    const SUN_F_MAX_BYTES: usize = 64 << 20;
+
+    pub(crate) static CACHE_SUN_F: LazyLock<FifoCache<SunFKey, Arc<FBlock>>> =
+        LazyLock::new(|| FifoCache::new(SUN_F_MAX_ENTRIES, SUN_F_MAX_BYTES));
+}
+
+#[cfg(feature = "cgc-gen")]
+pub(crate) fn cache_sun_f(
+) -> &'static FifoCache<sun_f_cache::SunFKey, std::sync::Arc<crate::sun::FBlock>> {
+    &sun_f_cache::CACHE_SUN_F
+}
+
 /// Clear the 3j, 6j, and derived-f64 F-symbol caches (and, under `cgc-gen`, the
 /// SU(N) CGC cache) and their hit/miss counters.
 pub fn reset() {
@@ -315,7 +362,10 @@ pub fn reset() {
     CACHE_6J.reset();
     CACHE_F.reset();
     #[cfg(feature = "cgc-gen")]
-    cgc_cache::CACHE_CGC.reset();
+    {
+        cgc_cache::CACHE_CGC.reset();
+        sun_f_cache::CACHE_SUN_F.reset();
+    }
 }
 
 /// Aggregate hit/miss/entry/byte statistics across the 3j, 6j, and derived-f64
@@ -325,7 +375,11 @@ pub fn stats() -> CacheStats {
     let (h6, m6, e6, b6) = CACHE_6J.snapshot();
     let (hf, mf, ef, bf) = CACHE_F.snapshot();
     #[cfg(feature = "cgc-gen")]
-    let (hc, mc, ec, bc) = cgc_cache::CACHE_CGC.snapshot();
+    let (hc, mc, ec, bc) = {
+        let (h, m, e, b) = cgc_cache::CACHE_CGC.snapshot();
+        let (h2, m2, e2, b2) = sun_f_cache::CACHE_SUN_F.snapshot();
+        (h + h2, m + m2, e + e2, b + b2)
+    };
     #[cfg(not(feature = "cgc-gen"))]
     let (hc, mc, ec, bc) = (0u64, 0u64, 0usize, 0usize);
     CacheStats {
@@ -465,6 +519,56 @@ mod tests {
         assert!(bytes <= budget, "byte bound exceeded: {bytes} > {budget}");
         // Oldest (ka) evicted.
         assert!(c.get(&ka).is_none());
+    }
+
+    #[cfg(feature = "cgc-gen")]
+    #[test]
+    fn sun_f_tier_charges_block_bytes_and_evicts_by_bytes() {
+        use super::sun_f_cache::SunFKey;
+        use crate::sun::{f_symbol, FBlock, Irrep};
+        use std::sync::Arc;
+        let irr = |d: &[i64]| Irrep::from_dynkin(d).unwrap();
+        // A real SU(3) F block (8⊗8→8 family: the 2×2×2×2 OM=2 block).
+        let e8 = irr(&[1, 1]);
+        let a = Arc::new(f_symbol(&e8, &e8, &e8, &e8, &e8, &e8).unwrap());
+        // A multiplicity-free (smaller, 1⁴) block: a=1 forces e=3, f=d=6.
+        let triv = Irrep::trivial(3).unwrap();
+        let three = irr(&[1, 0]);
+        let six = irr(&[2, 0]);
+        let b = Arc::new(f_symbol(&triv, &three, &three, &six, &three, &six).unwrap());
+
+        // Charge is the data bytes plus the block shell.
+        assert_eq!(
+            a.value_bytes(),
+            std::mem::size_of_val(a.data()) + std::mem::size_of::<FBlock>()
+        );
+        assert!(a.value_bytes() > b.value_bytes(), "2⁴ block > 1⁴ block");
+
+        // Budget for one entry: inserting the second evicts the oldest.
+        let budget = a.value_bytes() + 2 * std::mem::size_of::<SunFKey>() + 8;
+        let c: FifoCache<SunFKey, Arc<FBlock>> = FifoCache::new(1_000_000, budget);
+        let ka = (
+            e8.clone(),
+            e8.clone(),
+            e8.clone(),
+            e8.clone(),
+            e8.clone(),
+            e8.clone(),
+        );
+        let kb = (
+            triv.clone(),
+            three.clone(),
+            three.clone(),
+            six.clone(),
+            three.clone(),
+            six.clone(),
+        );
+        c.insert(ka.clone(), a);
+        c.insert(kb, b);
+        let (_, _, entries, bytes) = c.snapshot();
+        assert!(entries <= 1, "byte bound not enforced: {entries} entries");
+        assert!(bytes <= budget, "byte bound exceeded: {bytes} > {budget}");
+        assert!(c.get(&ka).is_none(), "oldest not evicted");
     }
 
     #[test]

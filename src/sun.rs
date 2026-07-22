@@ -33,9 +33,13 @@ use num_traits::{One, Signed, Zero};
 use crate::SignedSqrtRational;
 
 mod cgc;
+mod fr;
 mod linalg;
 
 pub use cgc::{cgc, Cgc, CgcEntry};
+pub use fr::{
+    check_f_unitarity, check_hexagon, check_pentagon, f_symbol, r_symbol, FBlock, RBlock,
+};
 
 /// Error for a malformed SU(N) irrep label. The public constructors never
 /// panic; they return this instead.
@@ -95,6 +99,40 @@ pub enum SunError {
     /// the backend's message; surfaced rather than panicked because the
     /// floating-point stages are verification-gated, not proven-unreachable.
     Linalg(String),
+    /// An F- or R-symbol was requested for labels where one of the required
+    /// fusion vertices is empty (`N^c_{ab} = 0`). The reference `_Fsymbol` /
+    /// `_Rsymbol` return an all-zero block *by construction* when a channel is
+    /// empty; this crate exposes a query API, so an empty vertex is an
+    /// ill-posed question and becomes a typed error (issue #15 guard class —
+    /// the reference's `Nsymbol(...) == 0 && return zeros` short-circuit).
+    /// Carries the offending vertex `a ⊗ b → c` as Dynkin labels.
+    ZeroFusionChannel {
+        /// Dynkin label of the vertex's left factor.
+        a: Vec<i64>,
+        /// Dynkin label of the vertex's right factor.
+        b: Vec<i64>,
+        /// Dynkin label of the vertex's coupled irrep.
+        c: Vec<i64>,
+    },
+    /// The F-move matrix (rows `(e, μ, ν)`, cols `(f, κ, λ)` for fixed outer
+    /// labels `a, b, c, d`) failed the unitarity gate. The value is the worst
+    /// `|(F Fᵀ - I)_{ij}|`.
+    FNotUnitary {
+        /// Worst unitarity residual.
+        residual: f64,
+    },
+    /// The pentagon identity spot check exceeded tolerance for the sampled
+    /// `(a, b, c, d)` family. The value is the worst two-sided residual.
+    PentagonViolation {
+        /// Worst pentagon residual.
+        residual: f64,
+    },
+    /// A hexagon identity spot check exceeded tolerance for the sampled
+    /// `(a, b, c)` family. The value is the worst two-sided residual.
+    HexagonViolation {
+        /// Worst hexagon residual.
+        residual: f64,
+    },
 }
 
 impl fmt::Display for SunError {
@@ -124,6 +162,19 @@ impl fmt::Display for SunError {
                 write!(f, "CGC ladder-descent inconsistent (residual {residual:e})")
             }
             SunError::Linalg(msg) => write!(f, "dense factorization failed: {msg}"),
+            SunError::ZeroFusionChannel { a, b, c } => write!(
+                f,
+                "empty fusion vertex {a:?} ⊗ {b:?} → {c:?} (N = 0) in an F/R request"
+            ),
+            SunError::FNotUnitary { residual } => {
+                write!(f, "F-move matrix not unitary (residual {residual:e})")
+            }
+            SunError::PentagonViolation { residual } => {
+                write!(f, "pentagon identity violated (residual {residual:e})")
+            }
+            SunError::HexagonViolation { residual } => {
+                write!(f, "hexagon identity violated (residual {residual:e})")
+            }
         }
     }
 }
