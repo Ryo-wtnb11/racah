@@ -30,3 +30,10 @@ wigner-symbols = "=0.5.1"
 rug = "1.30"
 rand = "0.8"
 rand_chacha = "0.3"
+# Benchmark harness (not a CI gate): racah vs wigner-symbols on the overlap
+# domain, plus the thousands-tier timing. Run with `cargo bench`.
+criterion = "0.5"
+
+[[bench]]
+name = "wigner"
+harness = false

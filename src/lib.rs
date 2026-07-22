@@ -23,6 +23,7 @@
 //! stages are verification-gated and versioned.
 
 mod exact;
+mod primefactor;
 mod su2;
 
 pub use exact::SignedSqrtRational;
