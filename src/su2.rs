@@ -198,8 +198,8 @@ fn phase_is_negative(p: i64) -> bool {
 ///
 /// Six nonnegative doubled-integer components (Rasch-Yu canonical form). Every
 /// element of a 6j symmetry orbit maps to the same key. Stored losslessly as
-/// `u16`; a component exceeding `u16::MAX` yields [`ReggeOverflow`] rather than
-/// a silent truncation.
+/// `u16`; a component exceeding `u16::MAX` yields [`ReggeError::Overflow`]
+/// rather than a silent truncation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Regge6j([u16; 6]);
 
@@ -210,18 +210,29 @@ impl Regge6j {
     }
 }
 
-/// A canonical Regge component did not fit in `u16` (doubled spin beyond the
-/// supported range).
+/// Why a 6j label set has no canonical Regge key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ReggeOverflow;
+pub enum ReggeError {
+    /// The label set is not an admissible 6j (a triangle parity or triangle
+    /// inequality is violated), so the symbol is exactly zero and has no
+    /// canonical representative. Keying it anyway would collide with a distinct
+    /// admissible symbol and hand its nonzero value to a zero symbol.
+    NonAdmissible,
+    /// A canonical component exceeds `u16::MAX` (doubled spin beyond the
+    /// supported range). Reported rather than silently truncated.
+    Overflow,
+}
 
-impl std::fmt::Display for ReggeOverflow {
+impl std::fmt::Display for ReggeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Regge key component exceeds u16::MAX")
+        match self {
+            ReggeError::NonAdmissible => write!(f, "non-admissible 6j label set has no Regge key"),
+            ReggeError::Overflow => write!(f, "Regge key component exceeds u16::MAX"),
+        }
     }
 }
 
-impl std::error::Error for ReggeOverflow {}
+impl std::error::Error for ReggeError {}
 
 /// Canonical Regge key for `{dj1 dj2 dj3; dj4 dj5 dj6}`.
 ///
@@ -229,6 +240,10 @@ impl std::error::Error for ReggeOverflow {}
 /// three "column" sums `alpha` and four triangle sums `beta`, then the six
 /// nonnegative differences `alpha - beta` in a fixed order. Widened to `u16`
 /// with a checked conversion.
+///
+/// Only admissible 6j symbols have a key: the four triangles are checked first,
+/// so a non-admissible (zero-valued) set returns [`ReggeError::NonAdmissible`]
+/// instead of a floored-halving collision with a distinct admissible symbol.
 pub fn canonical_regge_6j(
     dj1: u32,
     dj2: u32,
@@ -236,7 +251,18 @@ pub fn canonical_regge_6j(
     dj4: u32,
     dj5: u32,
     dj6: u32,
-) -> Result<Regge6j, ReggeOverflow> {
+) -> Result<Regge6j, ReggeError> {
+    // Admissibility gate before any halving: the same four triangles as the 6j.
+    // This rejects both odd (parity) sums and triangle-inequality violations,
+    // so the alpha/beta differences below are all nonnegative integers.
+    if !(triangle_ok(dj1, dj2, dj3)
+        && triangle_ok(dj1, dj5, dj6)
+        && triangle_ok(dj4, dj2, dj6)
+        && triangle_ok(dj4, dj5, dj3))
+    {
+        return Err(ReggeError::NonAdmissible);
+    }
+
     let (dj1, dj2, dj3, dj4, dj5, dj6) = (
         dj1 as i64, dj2 as i64, dj3 as i64, dj4 as i64, dj5 as i64, dj6 as i64,
     );
@@ -271,8 +297,11 @@ pub fn canonical_regge_6j(
 
     let mut out = [0u16; 6];
     for (slot, &v) in out.iter_mut().zip(raw.iter()) {
-        if v < 0 || v > u16::MAX as i64 {
-            return Err(ReggeOverflow);
+        // v >= 0 is guaranteed by the admissibility gate above (Rasch-Yu); the
+        // only remaining failure is exceeding the u16 storage width.
+        debug_assert!(v >= 0, "admissible 6j produced a negative Regge component");
+        if v > u16::MAX as i64 {
+            return Err(ReggeError::Overflow);
         }
         *slot = v as u16;
     }
@@ -366,7 +395,37 @@ mod tests {
         let big = 200_000u32;
         assert_eq!(
             canonical_regge_6j(big, big, big, big, big, big),
-            Err(ReggeOverflow)
+            Err(ReggeError::Overflow)
+        );
+    }
+
+    #[test]
+    fn regge_nonadmissible_is_error_not_a_key() {
+        // Parity-violating {1/2 1/2 1/2; ...}: the exact 6j is zero, while the
+        // admissible {1 1 1; 1 1 1} is 1/6. Keying the former (floored halving)
+        // would collide with the latter and hand a nonzero value to a zero
+        // symbol via the publication cache -- exactly the silent-wrong-answer
+        // class the crate excludes. So a non-admissible set has no key.
+        assert_eq!(
+            canonical_regge_6j(1, 1, 1, 1, 1, 1),
+            Err(ReggeError::NonAdmissible)
+        );
+        let admissible = canonical_regge_6j(2, 2, 2, 2, 2, 2);
+        assert!(admissible.is_ok());
+        assert_ne!(
+            canonical_regge_6j(1, 1, 1, 1, 1, 1).ok(),
+            admissible.ok(),
+            "non-admissible input must not share a key with an admissible one"
+        );
+    }
+
+    #[test]
+    fn regge_triangle_inequality_is_nonadmissible_not_overflow() {
+        // (2,2,20) violates the triangle inequality: report non-admissibility,
+        // not the u16-overflow variant.
+        assert_eq!(
+            canonical_regge_6j(2, 2, 20, 2, 2, 2),
+            Err(ReggeError::NonAdmissible)
         );
     }
 }
