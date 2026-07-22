@@ -45,6 +45,28 @@ constraints, and unreachable-by-construction assumptions). Every port PR must:
 3. Ensure every fast-path / special-case branch runs the same verification
    gates as the general path, or prove those gates vacuous for that branch.
 
+## tenferro-rs dependency (cgc-gen)
+
+The `cgc-gen` feature depends on `tenferro-{linalg,cpu,runtime}` via a **git
+dependency pinned to an exact revision** (`Cargo.toml`), so a standalone CI
+checkout with no sibling `tenferro-rs` on disk resolves. Bumping the pinned
+`rev` is an ordinary reviewed commit (it can change coefficient values — see the
+gauge semver contract).
+
+To develop against an in-progress local `tenferro-rs` checkout, use a
+**developer-local, never-committed** override: a gitignored `.cargo/config.toml`
+with
+
+```toml
+[patch."https://github.com/tensor4all/tenferro-rs"]
+tenferro-linalg  = { path = "../tenferro-rs/crates/tenferro-linalg" }
+tenferro-cpu     = { path = "../tenferro-rs/crates/tenferro-cpu" }
+tenferro-runtime = { path = "../tenferro-rs/crates/tenferro-runtime" }
+```
+
+`.cargo/` is gitignored. CI and every reviewed build use the pinned git rev, not
+the patch.
+
 ## Verification
 
 - Oracles are independent: reference-implementation outputs (WignerSymbols,

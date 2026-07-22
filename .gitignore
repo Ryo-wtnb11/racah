@@ -1,3 +1,5 @@
 /target
 Cargo.lock
 .DS_Store
+# Developer-local tenferro-rs override (see AGENTS.md); never committed.
+/.cargo/
