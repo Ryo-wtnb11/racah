@@ -27,6 +27,12 @@ mod exact;
 mod primefactor;
 mod su2;
 
+/// Exact SU(N) representation combinatorics (Layer 1 of the `cgc-gen` track):
+/// GT patterns, Weyl dimension, duality, Littlewood–Richardson products, and
+/// exact ladder matrices. Compilation-gated behind `cgc-gen`.
+#[cfg(feature = "cgc-gen")]
+pub mod sun;
+
 pub use exact::SignedSqrtRational;
 pub use su2::{
     canonical_regge_3j, canonical_regge_6j, clebsch_gordan, su2_f_symbol, su2_frobenius_schur,
