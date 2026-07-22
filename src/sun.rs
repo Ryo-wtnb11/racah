@@ -253,26 +253,32 @@ impl Irrep {
                     if skip || coef.numer().is_zero() {
                         continue;
                     }
-                    // m' = m with m[k,l] raised by 1. When coef ≠ 0 the GT
-                    // betweenness is preserved, so m' is a valid basis pattern;
-                    // the lookup cannot miss. A miss would mean the coef/validity
-                    // invariant broke (the reference errors loudly there), so we
-                    // assert it in debug builds and drop the entry in release to
-                    // stay panic-free.
+                    // m' = m with m[k,l] raised by 1. Look up its basis index.
+                    //
+                    // Why-not (the one exception to this crate's no-panic
+                    // contract): a missing m' is proven unreachable, so we panic
+                    // in every build rather than silently drop the entry.
+                    // Invariant proof: raising m[k,l] zeroes a numerator factor
+                    // (`m[k,l+1] - m[k,l]` or the lower-neighbour term) exactly
+                    // when a GT betweenness constraint would break, so coef ≠ 0
+                    // implies m' is a valid basis member. The panic is thus dead
+                    // code by proof; a silent release drop would instead turn a
+                    // future proof-breaking regression into a missing ladder
+                    // entry — a silent-wrong-answer defect. Both reference
+                    // implementations abort here (Julia `table[m']` throws
+                    // KeyError in all builds; QSpace aborts on invariant
+                    // violations).
                     let mut mp = m.clone();
                     mp.set(k, l, mkl + 1);
-                    match table.get(&mp) {
-                        Some(&j) => result[l - 1].push(LadderEntry {
-                            row: j,
-                            col: i,
-                            value: signedroot(&coef),
-                        }),
-                        None => debug_assert!(
-                            false,
-                            "creation: nonzero coef {coef} but raised pattern {mp:?} \
-                             is not a basis element (GT betweenness invariant broken)"
-                        ),
-                    }
+                    let &j = table.get(&mp).expect(
+                        "GT invariant violated: coef != 0 implies the raised \
+                         pattern is a valid basis member",
+                    );
+                    result[l - 1].push(LadderEntry {
+                        row: j,
+                        col: i,
+                        value: signedroot(&coef),
+                    });
                 }
             }
         }
