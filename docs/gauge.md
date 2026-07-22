@@ -74,9 +74,19 @@ highest-weight state:
 
 The raising matrices are the exact GT ladder matrices
 (`gtpatterns.jl:creation`, `sun::Irrep::creation`), entries `signedroot(coef)`.
-Rows are the distinct raised targets `(l, m1′, m2′)` (sorted, deduplicated);
-columns are the coupling pairs `(m1, m2)` in first-seen order. Port:
-`cgc.rs:highest_weight_cgc`.
+
+**Column (coupling-pair) order — gauge-relevant.** The columns of the system
+are the coupling pairs `(m1, m2)` enumerated in this exact order
+(`clebschgordan.jl:highest_weight_CGC`, port `cgc.rs:highest_weight_cgc`): the
+**outer** loop is `m1` ascending over `basis(s1)` (the GT basis order of §1);
+the **inner** loop is `m2` ascending over the members of the *matching weight
+class* `map2[w2]`, `w2 = w3_top − weight(m1) + wshift`, where `map2[w]` lists
+the `s2` basis indices of weight `w` **in `basis(s2)` order**
+(`clebschgordan.jl:weightmap` preserves basis order). This lexicographic
+`(m1, then matching m2)` order is the "first-seen" column order the nullspace
+and the gauge consume, so it is part of the gauge. Rows are the distinct raised
+targets `(l, m1′, m2′)`, sorted and deduplicated (their order does not affect
+the nullspace).
 
 ---
 
@@ -130,7 +140,12 @@ Walk pivot rows `i = 1, 2, …` and pivot columns `j = 1, 2, …`:
    `findabsmax(view(A, i, j:nc))`.
 2. **Tie behavior.** `findabsmax` updates its running maximum only on a **strict**
    `>` (`abs(v) > m`), so on a tie the **leftmost** (smallest column index)
-   candidate wins. This tie rule is part of the gauge.
+   candidate wins. This tie rule is part of the gauge specification. It is,
+   however, **value-neutral in `cref`'s output**: reduced column echelon form is
+   unique, so a different tie rule cannot change any returned coefficient. No
+   coefficient fixture can therefore catch a change to it; the rule is pinned
+   instead by a unit test at the selection site
+   (`cgc.rs:findabsmax` / `findabsmax_breaks_ties_leftmost`).
 3. **Dead row.** If that maximum is `≤ ɛ`, the row is set to zero over `j:nc`
    (since `ɛ > 0`) and skipped (`i += 1`, `j` unchanged).
 4. **Eliminate.** Otherwise swap the pivot column into position `j`, scale
@@ -201,7 +216,8 @@ Port: `cgc.rs:trivial_cgc`.
 ## 8. Outer-multiplicity axis
 
 - The `N` multiplicity columns share **one** nullspace and are gauge-fixed
-  **together as a block** by a single `cref! ∘ qrpos!` (§4). Their order on the
+  **together as a block** by a single `qrpos! ∘ cref!` (§4: `cref!` first, then
+  `qrpos!`). Their order on the
   trailing axis `μ` is therefore the column order that block produces — it is
   *not* an independent convention and cannot be chosen per column.
 - This is the same ordering SUNRepresentations produces (its 4th CGC index).
