@@ -52,3 +52,9 @@ criterion = "0.5"
 [[bench]]
 name = "wigner"
 harness = false
+
+# SU(N) CGC generation cost across (N, dim) pairs and the cache hit path.
+[[bench]]
+name = "sun_cgc"
+harness = false
+required-features = ["cgc-gen"]
