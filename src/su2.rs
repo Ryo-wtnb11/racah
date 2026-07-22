@@ -349,11 +349,15 @@ mod tests {
 
     #[test]
     fn regge_key_orbit_invariance_small() {
-        // {1 2 1; 2 1 2} in doubled units and a column permutation share a key.
-        let base = canonical_regge_6j(2, 4, 2, 4, 2, 4).unwrap();
-        // Swap columns 1<->2: (j1<->j2, j4<->j5).
-        let perm = canonical_regge_6j(4, 2, 2, 2, 4, 4).unwrap();
-        assert_eq!(base, perm);
+        // An asymmetric admissible 6j whose three "square" sums are NOT all
+        // equal, so the alpha ordering genuinely matters. Doubled labels
+        // {1 2 2; 3 2 1}. Swapping columns 1<->2 (j2,j5)<->(j3,j6) permutes the
+        // alpha entries; the canonical key must be invariant.
+        let base = canonical_regge_6j(2, 4, 4, 6, 4, 2).unwrap();
+        let swap12 = canonical_regge_6j(2, 4, 4, 6, 2, 4).unwrap();
+        assert_eq!(base, swap12);
+        // Sanity: this case is not degenerate (the two label sets differ).
+        assert_ne!([2u32, 4, 4, 6, 4, 2], [2u32, 4, 4, 6, 2, 4]);
     }
 
     #[test]
