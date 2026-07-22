@@ -73,15 +73,20 @@ pub fn wigner_6j(dj1: u32, dj2: u32, dj3: u32, dj4: u32, dj5: u32, dj6: u32) -> 
     let s = Ratio::new(snum.to_bigint(), sden.to_bigint());
     let r = Ratio::new(rnum.to_bigint(), rden.to_bigint());
 
-    // Racah alternating sum over k (in halved units).
+    // Racah alternating sum over k (in halved units). Widen to i64 before
+    // summing (as delta_sq_pf does): u32 addition of four doubled spins could
+    // wrap for absurd labels.
+    let (j1, j2, j3, j4, j5, j6) = (
+        dj1 as i64, dj2 as i64, dj3 as i64, dj4 as i64, dj5 as i64, dj6 as i64,
+    );
     // t1..t4 are the triangle sums; t5..t7 the "square" sums.
-    let t1 = ((dj1 + dj2 + dj3) / 2) as i64;
-    let t2 = ((dj1 + dj5 + dj6) / 2) as i64;
-    let t3 = ((dj4 + dj2 + dj6) / 2) as i64;
-    let t4 = ((dj4 + dj5 + dj3) / 2) as i64;
-    let t5 = ((dj1 + dj2 + dj4 + dj5) / 2) as i64;
-    let t6 = ((dj2 + dj3 + dj5 + dj6) / 2) as i64;
-    let t7 = ((dj3 + dj1 + dj6 + dj4) / 2) as i64;
+    let t1 = (j1 + j2 + j3) / 2;
+    let t2 = (j1 + j5 + j6) / 2;
+    let t3 = (j4 + j2 + j6) / 2;
+    let t4 = (j4 + j5 + j3) / 2;
+    let t5 = (j1 + j2 + j4 + j5) / 2;
+    let t6 = (j2 + j3 + j5 + j6) / 2;
+    let t7 = (j3 + j1 + j6 + j4) / 2;
 
     let kmin = t1.max(t2).max(t3).max(t4);
     let kmax = t5.min(t6).min(t7);
