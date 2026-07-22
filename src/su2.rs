@@ -10,7 +10,7 @@
 use num_rational::Ratio;
 
 use crate::exact::SignedSqrtRational;
-use crate::primefactor::{factorial as pf_factorial, sum_series, Pf};
+use crate::primefactor::{factorial as pf_factorial, mul_factorial, sum_series, Pf};
 
 /// Prime-factorized squared triangle coefficient
 /// `Delta^2(a,b,c) = num/den` with `num = t1! t2! t3!` and `den = t4!`,
@@ -23,8 +23,8 @@ fn delta_sq_pf(a: u32, b: u32, c: u32) -> (Pf, Pf) {
     let t3 = ((-a + b + c) / 2) as u64;
     let t4 = ((a + b + c) / 2 + 1) as u64;
     let mut num = pf_factorial(t1);
-    num.mul_assign(&pf_factorial(t2));
-    num.mul_assign(&pf_factorial(t3));
+    mul_factorial(&mut num, t2);
+    mul_factorial(&mut num, t3);
     (num, pf_factorial(t4))
 }
 
@@ -96,12 +96,12 @@ pub fn wigner_6j(dj1: u32, dj2: u32, dj3: u32, dj4: u32, dj5: u32, dj6: u32) -> 
             nump = nump.neg();
         }
         let mut denp = pf_factorial((k - t1) as u64);
-        denp.mul_assign(&pf_factorial((k - t2) as u64));
-        denp.mul_assign(&pf_factorial((k - t3) as u64));
-        denp.mul_assign(&pf_factorial((k - t4) as u64));
-        denp.mul_assign(&pf_factorial((t5 - k) as u64));
-        denp.mul_assign(&pf_factorial((t6 - k) as u64));
-        denp.mul_assign(&pf_factorial((t7 - k) as u64));
+        mul_factorial(&mut denp, (k - t2) as u64);
+        mul_factorial(&mut denp, (k - t3) as u64);
+        mul_factorial(&mut denp, (k - t4) as u64);
+        mul_factorial(&mut denp, (t5 - k) as u64);
+        mul_factorial(&mut denp, (t6 - k) as u64);
+        mul_factorial(&mut denp, (t7 - k) as u64);
         Pf::divgcd(&mut nump, &mut denp);
         terms.push((nump, denp));
     }
@@ -131,8 +131,8 @@ pub fn wigner_3j(dj1: u32, dj2: u32, dj3: u32, dm1: i32, dm2: i32, dm3: i32) -> 
     // are never multiplied out as big integers. (`WignerSymbols.jl::_wigner3j`.)
     let (mut num, den) = delta_sq_pf(dj1, dj2, dj3);
     for (dj, dm) in [(j1, m1), (j2, m2), (j3, m3)] {
-        num.mul_assign(&pf_factorial(((dj + dm) / 2) as u64));
-        num.mul_assign(&pf_factorial(((dj - dm) / 2) as u64));
+        mul_factorial(&mut num, ((dj + dm) / 2) as u64);
+        mul_factorial(&mut num, ((dj - dm) / 2) as u64);
     }
     let (mut snum, mut rnum) = num.splitsquare();
     let (mut sden, mut rden) = den.splitsquare();
@@ -164,11 +164,11 @@ pub fn wigner_3j(dj1: u32, dj2: u32, dj3: u32, dm1: i32, dm2: i32, dm3: i32) -> 
             Pf::one().neg()
         };
         let mut denp = pf_factorial(k as u64);
-        denp.mul_assign(&pf_factorial((a - k) as u64));
-        denp.mul_assign(&pf_factorial((b - k) as u64));
-        denp.mul_assign(&pf_factorial((c - k) as u64));
-        denp.mul_assign(&pf_factorial((k + add1) as u64));
-        denp.mul_assign(&pf_factorial((k + add2) as u64));
+        mul_factorial(&mut denp, (a - k) as u64);
+        mul_factorial(&mut denp, (b - k) as u64);
+        mul_factorial(&mut denp, (c - k) as u64);
+        mul_factorial(&mut denp, (k + add1) as u64);
+        mul_factorial(&mut denp, (k + add2) as u64);
         terms.push((nump, denp));
     }
     let mut value = s * sum_series(terms);

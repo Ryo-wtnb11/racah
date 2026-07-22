@@ -81,6 +81,24 @@ impl Pf {
         }
     }
 
+    /// `self *= prod_i prime(i)^powers[i]`, folding a raw positive exponent
+    /// slice (a factorial table row) straight into `self` without allocating a
+    /// [`Pf`] for it. This is the clone-free multiplicand path: callers
+    /// accumulate a product of factorials in one buffer instead of cloning each
+    /// `O(pi(N))` row only to add and drop it. Sign is unchanged (the slice is a
+    /// factorial, hence positive).
+    fn mul_by_powers(&mut self, powers: &[u32]) {
+        if self.sign == 0 {
+            return;
+        }
+        if powers.len() > self.powers.len() {
+            self.powers.resize(powers.len(), 0);
+        }
+        for (a, b) in self.powers.iter_mut().zip(powers.iter()) {
+            *a += *b;
+        }
+    }
+
     /// `self /= other`, exact division — exponent vectors subtract
     /// (`primefactorization.jl::divexact!`). `other` must divide `self`, which
     /// is guaranteed at every call site (a factorial ratio, or a divisor pulled
@@ -240,17 +258,10 @@ fn primefactor_powers(mut n: u64) -> Vec<u32> {
     powers
 }
 
-/// `n!` as a [`Pf`], memoized in the shared growing table
-/// (`primefactorization.jl::primefactorial`). Built incrementally:
+/// Extend the shared factorial table so row `n` exists
+/// (`primefactorization.jl::primefactorial`, growth half). Built incrementally:
 /// `factorial(m) = factorial(m-1) * primefactor(m)` in exponent space.
-pub(crate) fn factorial(n: u64) -> Pf {
-    let n = n as usize;
-    {
-        let table = FACT.read().unwrap();
-        if n < table.len() {
-            return Pf::from_powers(table[n].clone());
-        }
-    }
+fn grow_factorial(n: usize) {
     let mut table = FACT.write().unwrap();
     if table.is_empty() {
         table.push(Vec::new()); // 0! = 1
@@ -267,7 +278,33 @@ pub(crate) fn factorial(n: u64) -> Pf {
         }
         table.push(next);
     }
-    Pf::from_powers(table[n].clone())
+}
+
+/// Multiply `acc` by `n!` in place. The common path takes only a read lock and
+/// folds the memoized exponent row into `acc` with no per-call allocation or
+/// row clone -- the whole point of the prime-factorized engine is that a
+/// product of factorials costs one buffer, not one clone per factor.
+pub(crate) fn mul_factorial(acc: &mut Pf, n: u64) {
+    let n = n as usize;
+    {
+        let table = FACT.read().unwrap();
+        if n < table.len() {
+            acc.mul_by_powers(&table[n]);
+            return;
+        }
+    }
+    grow_factorial(n);
+    let table = FACT.read().unwrap();
+    acc.mul_by_powers(&table[n]);
+}
+
+/// `n!` as a fresh [`Pf`]. A thin wrapper over [`mul_factorial`] for the base
+/// factor of a product (and the tests); multiplicands should use
+/// [`mul_factorial`] to stay clone-free.
+pub(crate) fn factorial(n: u64) -> Pf {
+    let mut p = Pf::one();
+    mul_factorial(&mut p, n);
+    p
 }
 
 // ---------------------------------------------------------------------------
@@ -367,6 +404,26 @@ mod tests {
     fn factorial_large_still_exact() {
         assert_eq!(factorial(100).to_bigint(), direct_factorial(100));
         assert_eq!(factorial(257).to_bigint(), direct_factorial(257));
+    }
+
+    #[test]
+    fn mul_factorial_accumulates_clone_free() {
+        // Accumulate 3! * 5! * 7! into one buffer via mul_factorial, and check
+        // it equals the same product built by materializing each factorial.
+        let mut acc = Pf::one();
+        mul_factorial(&mut acc, 3);
+        mul_factorial(&mut acc, 5);
+        mul_factorial(&mut acc, 7);
+        assert_eq!(
+            acc.to_bigint(),
+            direct_factorial(3) * direct_factorial(5) * direct_factorial(7)
+        );
+        // factorial(n) is the same as mul_factorial into one().
+        assert_eq!(factorial(12).to_bigint(), {
+            let mut p = Pf::one();
+            mul_factorial(&mut p, 12);
+            p.to_bigint()
+        });
     }
 
     #[test]
