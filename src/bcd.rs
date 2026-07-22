@@ -829,3 +829,6 @@ pub fn directproduct(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, BcdEr
     }
     Ok(result)
 }
+
+#[cfg(test)]
+mod tests;
