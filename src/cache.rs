@@ -33,7 +33,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{LazyLock, RwLock};
 
 use crate::exact::SignedSqrtRational;
-use crate::su2::{Regge3j, Regge6j};
+use crate::su2::{FKey, Regge3j, Regge6j};
 
 /// Default entry cap per kind (3j and 6j each). Matches the reference order of
 /// magnitude (WignerSymbols.jl uses `10^6`); the byte cap is the real backstop.
@@ -60,26 +60,47 @@ pub struct CacheStats {
     pub bytes: usize,
 }
 
-/// Conservative retained-byte charge for one stored entry keyed by `K`.
+/// Conservative retained-byte charge for a stored *value*, implemented per
+/// value type so the FIFO byte bound stays a true ceiling whatever the tier
+/// stores.
 ///
-/// Counts the value's big-integer limbs (numerator + denominator bit lengths
-/// rounded up to bytes, plus a fixed per-`BigInt` `Vec`/struct allowance) and
-/// the key stored twice (once in the map, once in the FIFO order queue). It
-/// over-counts rather than under-counts, so the byte bound is a true ceiling on
-/// live memory, never an underestimate that could let the map grow past it.
-fn entry_charge<K>(v: &SignedSqrtRational) -> usize {
-    let r = v.radicand();
-    let value_limbs = (r.numer().bits() + r.denom().bits()).div_ceil(8) as usize;
-    // Two BigInt allocations (numer, denom) plus the SignedSqrtRational shell.
-    const BIGINT_OVERHEAD: usize = 32;
-    std::mem::size_of::<SignedSqrtRational>()
-        + 2 * BIGINT_OVERHEAD
-        + value_limbs
-        + 2 * std::mem::size_of::<K>()
+/// The exact tier stores a [`SignedSqrtRational`] whose size is data-dependent
+/// (big-integer limbs), so it must measure itself; the derived-f64 tier stores
+/// a fixed-size scalar. Keeping the charge on the value keeps [`entry_charge`]
+/// generic over both without a size query the FIFO machinery could get wrong.
+pub(crate) trait CacheCharge {
+    /// Bytes charged for one stored value (over-counts, never under-counts).
+    fn value_bytes(&self) -> usize;
 }
 
-struct Inner<K> {
-    map: HashMap<K, SignedSqrtRational>,
+impl CacheCharge for SignedSqrtRational {
+    fn value_bytes(&self) -> usize {
+        let r = self.radicand();
+        let value_limbs = (r.numer().bits() + r.denom().bits()).div_ceil(8) as usize;
+        // Two BigInt allocations (numer, denom) plus the SignedSqrtRational shell.
+        const BIGINT_OVERHEAD: usize = 32;
+        std::mem::size_of::<SignedSqrtRational>() + 2 * BIGINT_OVERHEAD + value_limbs
+    }
+}
+
+impl CacheCharge for f64 {
+    fn value_bytes(&self) -> usize {
+        std::mem::size_of::<f64>()
+    }
+}
+
+/// Conservative retained-byte charge for one stored entry keyed by `K`.
+///
+/// Counts the value (via [`CacheCharge`]) plus the key stored twice (once in
+/// the map, once in the FIFO order queue). It over-counts rather than
+/// under-counts, so the byte bound is a true ceiling on live memory, never an
+/// underestimate that could let the map grow past it.
+fn entry_charge<K, V: CacheCharge>(v: &V) -> usize {
+    v.value_bytes() + 2 * std::mem::size_of::<K>()
+}
+
+struct Inner<K, V> {
+    map: HashMap<K, V>,
     /// Insertion order for FIFO eviction (front = oldest).
     order: VecDeque<K>,
     bytes: usize,
@@ -95,15 +116,15 @@ struct Inner<K> {
 /// identically, and when it does the exact value is recomputed on the next
 /// miss — the choice never affects a returned value, only lock contention. So
 /// FIFO is the cheaper policy for the same correctness.
-pub(crate) struct FifoCache<K> {
-    inner: RwLock<Inner<K>>,
+pub(crate) struct FifoCache<K, V> {
+    inner: RwLock<Inner<K, V>>,
     hits: AtomicU64,
     misses: AtomicU64,
     max_entries: usize,
     max_bytes: usize,
 }
 
-impl<K: Clone + Eq + Hash> FifoCache<K> {
+impl<K: Clone + Eq + Hash, V: Clone + CacheCharge> FifoCache<K, V> {
     fn new(max_entries: usize, max_bytes: usize) -> Self {
         FifoCache {
             inner: RwLock::new(Inner {
@@ -125,11 +146,7 @@ impl<K: Clone + Eq + Hash> FifoCache<K> {
     /// sum is the expensive part and must not serialize other readers), then
     /// takes the write lock to insert, re-checking in case a concurrent miss
     /// already stored it.
-    pub(crate) fn get_or_compute(
-        &self,
-        key: K,
-        compute: impl FnOnce() -> SignedSqrtRational,
-    ) -> SignedSqrtRational {
+    pub(crate) fn get_or_compute(&self, key: K, compute: impl FnOnce() -> V) -> V {
         if let Some(v) = self.inner.read().unwrap().map.get(&key) {
             self.hits.fetch_add(1, Ordering::Relaxed);
             return v.clone();
@@ -143,7 +160,7 @@ impl<K: Clone + Eq + Hash> FifoCache<K> {
         if let Some(v) = inner.map.get(&key) {
             return v.clone();
         }
-        let charge = entry_charge::<K>(&value);
+        let charge = entry_charge::<K, V>(&value);
         inner.bytes += charge;
         inner.order.push_back(key.clone());
         inner.map.insert(key, value.clone());
@@ -154,7 +171,7 @@ impl<K: Clone + Eq + Hash> FifoCache<K> {
     /// Evict from the front (oldest) until both bounds hold. A single entry
     /// larger than `max_bytes` is evicted back out (returned to the caller but
     /// not retained) rather than pinning the map over budget.
-    fn evict(&self, inner: &mut Inner<K>) {
+    fn evict(&self, inner: &mut Inner<K, V>) {
         while (inner.map.len() > self.max_entries || inner.bytes > self.max_bytes)
             && !inner.order.is_empty()
         {
@@ -162,7 +179,7 @@ impl<K: Clone + Eq + Hash> FifoCache<K> {
                 break;
             };
             if let Some(v) = inner.map.remove(&old) {
-                inner.bytes = inner.bytes.saturating_sub(entry_charge::<K>(&v));
+                inner.bytes = inner.bytes.saturating_sub(entry_charge::<K, V>(&v));
             }
         }
     }
@@ -187,34 +204,50 @@ impl<K: Clone + Eq + Hash> FifoCache<K> {
     }
 }
 
-static CACHE_3J: LazyLock<FifoCache<Regge3j>> =
+static CACHE_3J: LazyLock<FifoCache<Regge3j, SignedSqrtRational>> =
     LazyLock::new(|| FifoCache::new(DEFAULT_MAX_ENTRIES, DEFAULT_MAX_BYTES));
-static CACHE_6J: LazyLock<FifoCache<Regge6j>> =
+static CACHE_6J: LazyLock<FifoCache<Regge6j, SignedSqrtRational>> =
     LazyLock::new(|| FifoCache::new(DEFAULT_MAX_ENTRIES, DEFAULT_MAX_BYTES));
 
-pub(crate) fn cache_3j() -> &'static FifoCache<Regge3j> {
+pub(crate) fn cache_3j() -> &'static FifoCache<Regge3j, SignedSqrtRational> {
     &CACHE_3J
 }
 
-pub(crate) fn cache_6j() -> &'static FifoCache<Regge6j> {
+pub(crate) fn cache_6j() -> &'static FifoCache<Regge6j, SignedSqrtRational> {
     &CACHE_6J
 }
 
-/// Clear both symbol caches and their hit/miss counters.
+/// Derived-f64 F-symbol tier (#7). Stores the rounded `f64` F-symbol so a warm
+/// hit returns a `Copy` scalar without re-running the bigint `sqrt` in
+/// [`SignedSqrtRational::to_f64`]. It is a *presentation* tier over the exact
+/// 6j tier (the value authority), never an independent value source: its `f64`
+/// is always derived from the exact value, so the two cannot disagree.
+static CACHE_F: LazyLock<FifoCache<FKey, f64>> =
+    LazyLock::new(|| FifoCache::new(DEFAULT_MAX_ENTRIES, DEFAULT_MAX_BYTES));
+
+pub(crate) fn cache_f() -> &'static FifoCache<FKey, f64> {
+    &CACHE_F
+}
+
+/// Clear the 3j, 6j, and derived-f64 F-symbol caches and their hit/miss
+/// counters.
 pub fn reset() {
     CACHE_3J.reset();
     CACHE_6J.reset();
+    CACHE_F.reset();
 }
 
-/// Aggregate hit/miss/entry/byte statistics across the 3j and 6j caches.
+/// Aggregate hit/miss/entry/byte statistics across the 3j, 6j, and derived-f64
+/// F-symbol caches.
 pub fn stats() -> CacheStats {
     let (h3, m3, e3, b3) = CACHE_3J.snapshot();
     let (h6, m6, e6, b6) = CACHE_6J.snapshot();
+    let (hf, mf, ef, bf) = CACHE_F.snapshot();
     CacheStats {
-        hits: h3 + h6,
-        misses: m3 + m6,
-        entries: e3 + e6,
-        bytes: b3 + b6,
+        hits: h3 + h6 + hf,
+        misses: m3 + m6 + mf,
+        entries: e3 + e6 + ef,
+        bytes: b3 + b6 + bf,
     }
 }
 
@@ -234,7 +267,7 @@ mod tests {
 
     #[test]
     fn hit_returns_stored_and_counts() {
-        let c: FifoCache<u32> = FifoCache::new(16, 1 << 20);
+        let c: FifoCache<u32, SignedSqrtRational> = FifoCache::new(16, 1 << 20);
         let mut computed = 0;
         let a = c.get_or_compute(7, || {
             computed += 1;
@@ -252,7 +285,7 @@ mod tests {
 
     #[test]
     fn entry_bound_evicts_oldest() {
-        let c: FifoCache<u32> = FifoCache::new(3, 1 << 30);
+        let c: FifoCache<u32, SignedSqrtRational> = FifoCache::new(3, 1 << 30);
         for k in 0..5u32 {
             c.get_or_compute(k, || val(k as i64 + 1));
         }
@@ -266,8 +299,8 @@ mod tests {
     #[test]
     fn byte_bound_evicts() {
         // Tiny byte budget: only a couple of entries fit at once.
-        let per = entry_charge::<u32>(&val(1));
-        let c: FifoCache<u32> = FifoCache::new(1_000_000, per * 2 + per / 2);
+        let per = entry_charge::<u32, SignedSqrtRational>(&val(1));
+        let c: FifoCache<u32, SignedSqrtRational> = FifoCache::new(1_000_000, per * 2 + per / 2);
         for k in 0..20u32 {
             c.get_or_compute(k, || val(k as i64 + 1));
         }
@@ -279,7 +312,7 @@ mod tests {
     fn eviction_thrash_never_changes_values() {
         // Budget of one entry, hammered with 200 distinct keys in a cycle:
         // every returned value must still equal its from-scratch computation.
-        let c: FifoCache<u32> = FifoCache::new(1, 1 << 30);
+        let c: FifoCache<u32, SignedSqrtRational> = FifoCache::new(1, 1 << 30);
         for round in 0..3 {
             for k in 0..200u32 {
                 let got = c.get_or_compute(k, || val(k as i64 * 3 + 1));
@@ -289,8 +322,38 @@ mod tests {
     }
 
     #[test]
+    fn f64_tier_hit_skips_recompute() {
+        // The derived-f64 F-symbol tier's contract: a warm hit returns the
+        // stored scalar WITHOUT re-running the miss closure -- which is the sole
+        // site of the bigint `sqrt` in SignedSqrtRational::to_f64 on the F path.
+        // So the public su2_f_symbol hot path avoids bigint isqrt on a hit.
+        let c: FifoCache<u32, f64> = FifoCache::new(16, 1 << 20);
+        let mut rounded = 0;
+        let a = c.get_or_compute(9, || {
+            rounded += 1;
+            val(9).to_f64() // stands in for f_symbol_exact(..).to_f64()
+        });
+        let b = c.get_or_compute(9, || {
+            rounded += 1;
+            val(999).to_f64() // must not run on the hit
+        });
+        assert_eq!(a, b);
+        assert_eq!(rounded, 1, "a hit must not re-run the rounding closure");
+        let (hits, misses, entries, _) = c.snapshot();
+        assert_eq!((hits, misses, entries), (1, 1, 1));
+    }
+
+    #[test]
+    fn f64_tier_charge_is_fixed() {
+        // f64 values charge a fixed size (no data-dependent limbs), so the tier
+        // is bounded by entry count in practice.
+        assert_eq!((1.0f64).value_bytes(), std::mem::size_of::<f64>());
+        assert_eq!((-3.5f64).value_bytes(), std::mem::size_of::<f64>());
+    }
+
+    #[test]
     fn reset_clears_entries_and_counters() {
-        let c: FifoCache<u32> = FifoCache::new(16, 1 << 20);
+        let c: FifoCache<u32, SignedSqrtRational> = FifoCache::new(16, 1 << 20);
         c.get_or_compute(1, || val(1));
         c.get_or_compute(1, || val(1));
         c.reset();
@@ -300,7 +363,7 @@ mod tests {
 
     #[test]
     fn concurrent_mixed_hit_miss_equals_sequential() {
-        let c: Arc<FifoCache<u32>> = Arc::new(FifoCache::new(1 << 20, 1 << 30));
+        let c: Arc<FifoCache<u32, SignedSqrtRational>> = Arc::new(FifoCache::new(1 << 20, 1 << 30));
         let keys: Vec<u32> = (0..64).collect();
         // Reference: sequential fill.
         let seq: Vec<SignedSqrtRational> = keys.iter().map(|&k| val(k as i64 + 1)).collect();
