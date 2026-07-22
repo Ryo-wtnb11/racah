@@ -613,28 +613,73 @@ mod tests {
             (vec![1, 0, 1], vec![1, 1, 0]),       // SU(4)
             (vec![1, 1, 0, 1], vec![0, 1, 1, 0]), // SU(5)
         ] {
-            let a = irr(&da);
-            let b = irr(&db);
-            let lhs = a.dim() * b.dim();
-            let rhs: BigInt = directproduct(&a, &b)
-                .unwrap()
-                .iter()
-                .map(|(c, &m)| c.dim() * BigInt::from(m))
-                .sum();
-            assert_eq!(lhs, rhs, "sum rule failed for {da:?} ⊗ {db:?}");
+            assert_dim_sum_rule(&irr(&da), &irr(&db));
         }
     }
 
     #[test]
     fn directproduct_commutes_and_dual_twist() {
-        let a = irr(&[2, 1]);
-        let b = irr(&[1, 1]);
-        assert_eq!(directproduct(&a, &b), directproduct(&b, &a));
-        // N^c_ab == N^{c̄}_{ā b̄}
-        let dp = directproduct(&a, &b).unwrap();
+        assert_commute_and_dual_twist(&irr(&[2, 1]), &irr(&[1, 1]));
+    }
+
+    fn assert_dim_sum_rule(a: &Irrep, b: &Irrep) {
+        // dim(a)·dim(b) == Σ_c N^c_ab dim(c)
+        let lhs = a.dim() * b.dim();
+        let rhs: BigInt = directproduct(a, b)
+            .unwrap()
+            .iter()
+            .map(|(c, &m)| c.dim() * BigInt::from(m))
+            .sum();
+        assert_eq!(
+            lhs,
+            rhs,
+            "sum rule failed for {:?} ⊗ {:?}",
+            a.dynkin(),
+            b.dynkin()
+        );
+    }
+
+    fn assert_commute_and_dual_twist(a: &Irrep, b: &Irrep) {
+        // Commutativity (bosonic fusion) and N^c_ab == N^{c̄}_{ā b̄}.
+        assert_eq!(directproduct(a, b), directproduct(b, a));
+        let dp = directproduct(a, b).unwrap();
         let dpd = directproduct(&a.dual(), &b.dual()).unwrap();
         let twisted: BTreeMap<Irrep, u32> = dp.iter().map(|(c, &m)| (c.dual(), m)).collect();
         assert_eq!(dpd, twisted);
+    }
+
+    #[test]
+    fn randomized_property_sweep() {
+        // Seeded pair sweep so the in-crate properties are themselves
+        // randomized (acceptance item 5): 50 random pairs per N in 2..=5.
+        use rand::{Rng, SeedableRng};
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0x5150_4E37_0DEC_0DE5);
+        // Bound the Dynkin range per rank so dims (hence directproduct basis
+        // size) stay modest for higher N — the sweep is a property check, not a
+        // large-irrep stress test.
+        let max_dynkin = |n: usize| -> i64 {
+            match n {
+                2 => 4,
+                3 => 3,
+                4 => 2,
+                _ => 1,
+            }
+        };
+        let rand_irrep = |rng: &mut rand_chacha::ChaCha8Rng, n: usize| -> Irrep {
+            let hi = max_dynkin(n);
+            let dynkin: Vec<i64> = (0..n - 1).map(|_| rng.gen_range(0..=hi)).collect();
+            Irrep::from_dynkin(&dynkin).unwrap()
+        };
+        for n in 2..=5usize {
+            for _ in 0..50 {
+                let a = rand_irrep(&mut rng, n);
+                let b = rand_irrep(&mut rng, n);
+                assert_dim_sum_rule(&a, &b);
+                assert_commute_and_dual_twist(&a, &b);
+                assert_eq!(a.dual().dual(), a); // dual involution
+                let _ = a.creation(); // fires the P3 invariant guard in debug
+            }
+        }
     }
 
     // ---- ladder matrices ----
