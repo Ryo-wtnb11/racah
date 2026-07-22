@@ -32,9 +32,17 @@ use num_traits::{One, Signed, Zero};
 
 use crate::SignedSqrtRational;
 
+mod cgc;
+mod linalg;
+
+pub use cgc::{cgc, Cgc, CgcEntry};
+
 /// Error for a malformed SU(N) irrep label. The public constructors never
 /// panic; they return this instead.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// Not `Eq`: the generation gates ([`SunError::NotOrthonormal`] and friends)
+/// carry an `f64` residual for diagnostics.
+#[derive(Clone, Debug, PartialEq)]
 pub enum SunError {
     /// A rank-0 label (empty weight / empty Dynkin for `N = 1` is a single
     /// zero, so a genuinely empty slice is rejected here).
@@ -59,6 +67,34 @@ pub enum SunError {
         /// Rank `N` of the second irrep.
         b: usize,
     },
+    /// The highest-weight nullspace dimension did not equal the Layer 1 fusion
+    /// multiplicity `N^{s3}_{s1 s2}`. Ported gate from `clebschgordan.jl`'s
+    /// `@assert N123 == directproduct(s1, s2)[s3]`; a mismatch means the
+    /// numerical rank cut disagrees with the exact combinatorics.
+    NullspaceDimMismatch {
+        /// Expected multiplicity from [`directproduct`].
+        expected: usize,
+        /// Nullspace dimension found by the SVD rank cut.
+        found: usize,
+    },
+    /// Assembled CGC columns are not orthonormal to tolerance (generation
+    /// gate). The value is the worst `|<α|β> - δ_{αβ}|` over multiplicity
+    /// columns.
+    NotOrthonormal {
+        /// Worst orthonormality residual.
+        residual: f64,
+    },
+    /// The ladder-descent consistency spot check exceeded tolerance
+    /// (generation gate): a lowered highest-weight relation was not reproduced
+    /// by the descended coefficients.
+    LadderInconsistent {
+        /// Worst ladder residual.
+        residual: f64,
+    },
+    /// A dense factorization routed through `tenferro-linalg` failed. Carries
+    /// the backend's message; surfaced rather than panicked because the
+    /// floating-point stages are verification-gated, not proven-unreachable.
+    Linalg(String),
 }
 
 impl fmt::Display for SunError {
@@ -77,6 +113,17 @@ impl fmt::Display for SunError {
                     "directproduct of SU({a}) and SU({b}) irreps (rank mismatch)"
                 )
             }
+            SunError::NullspaceDimMismatch { expected, found } => write!(
+                f,
+                "CGC nullspace dimension {found} != fusion multiplicity {expected}"
+            ),
+            SunError::NotOrthonormal { residual } => {
+                write!(f, "CGC columns not orthonormal (residual {residual:e})")
+            }
+            SunError::LadderInconsistent { residual } => {
+                write!(f, "CGC ladder-descent inconsistent (residual {residual:e})")
+            }
+            SunError::Linalg(msg) => write!(f, "dense factorization failed: {msg}"),
         }
     }
 }

@@ -11,14 +11,32 @@ categories = ["mathematics", "science"]
 [features]
 default = []
 # Runtime coefficient generation for SU(N)/SO(N)/Sp(2N).
-# Pulls dense factorization and contraction kernels; the base crate stays
-# dependency-light and covers the exact closed-form SU(2) path only.
-cgc-gen = []
+# Pulls dense factorization and contraction kernels (tenferro-linalg + the CPU
+# faer provider that implements full-matrices SVD and least-squares); the base
+# crate stays dependency-light and covers the exact closed-form SU(2) path only.
+cgc-gen = [
+    "dep:tenferro-linalg",
+    "dep:tenferro-cpu",
+    "dep:tenferro-runtime",
+    "tenferro-linalg/cpu-faer",
+    "tenferro-cpu/cpu-faer",
+]
 
 [dependencies]
 num-bigint = "0.4"
 num-rational = "0.4"
 num-traits = "0.2"
+# Dense factorization backend for the SU(N) CGC pipeline (nullspace = full SVD,
+# ladder descent = least-squares, gauge = positive-diagonal QR). Only the
+# `cgc-gen` feature pulls these; base builds stay dependency-light.
+#
+# Pinned to an exact git revision so a standalone CI checkout (no sibling
+# tenferro-rs on disk) resolves. Bumping `rev` is an ordinary reviewed commit.
+# Local work against an in-progress tenferro checkout uses a gitignored
+# `.cargo/config.toml` [patch] override -- see AGENTS.md.
+tenferro-linalg = { git = "https://github.com/tensor4all/tenferro-rs", rev = "68855c2b65b5adc42dccca9bac04fd136a8f14c8", default-features = false, optional = true }
+tenferro-cpu = { git = "https://github.com/tensor4all/tenferro-rs", rev = "68855c2b65b5adc42dccca9bac04fd136a8f14c8", default-features = false, optional = true }
+tenferro-runtime = { git = "https://github.com/tensor4all/tenferro-rs", rev = "68855c2b65b5adc42dccca9bac04fd136a8f14c8", default-features = false, optional = true }
 
 [dev-dependencies]
 # Oracle on the doubled-spin <= 254 overlap domain; pulls rug/GMP in tests
@@ -37,3 +55,9 @@ criterion = "0.5"
 [[bench]]
 name = "wigner"
 harness = false
+
+# SU(N) CGC generation cost across (N, dim) pairs and the cache hit path.
+[[bench]]
+name = "sun_cgc"
+harness = false
+required-features = ["cgc-gen"]
