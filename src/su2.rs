@@ -269,6 +269,42 @@ pub fn clebsch_gordan(
     }
 }
 
+/// SU(2) R-symbol `R^{dj1,dj2}_{dj3}` as a multiplicity-free scalar.
+///
+/// `(-1)^(j1+j2-j3)` on an admissible fusion triangle, exact `0.0` otherwise.
+/// In doubled units the exponent is `(dj1+dj2-dj3)/2`, an integer whenever the
+/// triangle is admissible (the parity check guarantees it). The zero on a
+/// non-admissible triple mirrors `Nsymbol == 0`, so a caller never multiplies a
+/// spurious sign into a forbidden fusion channel.
+///
+/// (TensorKitSectors tugbK `src/irreps/su2irrep.jl:Rsymbol`: `Nsymbol(...) ||
+/// return 0; iseven(sa.j+sb.j-sc.j) ? 1 : -1`.)
+pub fn su2_r_symbol(dj1: u32, dj2: u32, dj3: u32) -> f64 {
+    if !triangle_ok(dj1, dj2, dj3) {
+        return 0.0;
+    }
+    if phase_is_negative(((dj1 as i64) + (dj2 as i64) - (dj3 as i64)) / 2) {
+        -1.0
+    } else {
+        1.0
+    }
+}
+
+/// Frobenius-Schur phase of an SU(2) irrep: `(-1)^(2j)` as `+-1.0`.
+///
+/// Every SU(2) irrep is self-dual; the FS indicator is the sign that
+/// distinguishes the orthogonal (integer `j`, `+1`) from the symplectic
+/// (half-integer `j`, `-1`) self-duality. In doubled units `2j = dj`, so the
+/// phase is simply the parity of `dj`. (TensorKitSectors self-dual convention;
+/// see the generic `frobeniusschur` and `SU2Irrep` `dual(s) = s`.)
+pub fn su2_frobenius_schur(dj: u32) -> f64 {
+    if dj.is_multiple_of(2) {
+        1.0
+    } else {
+        -1.0
+    }
+}
+
 fn admissible_3j(dj1: u32, dj2: u32, dj3: u32, dm1: i32, dm2: i32, dm3: i32) -> bool {
     if dm1 + dm2 + dm3 != 0 {
         return false;
@@ -855,6 +891,34 @@ mod tests {
             canonical_regge_3j(big, big, big, 0, 0, 0),
             Err(ReggeError::Overflow)
         );
+    }
+
+    #[test]
+    fn r_symbol_matches_convention() {
+        // R^{ab}_c = (-1)^(j1+j2-j3) on an admissible triangle, else 0.
+        // (Oracle: TensorKitSectors Rsymbol, exact over the full dj<=12 grid.)
+        // {1/2 1/2 1}: (1+1-2)/2 = 0 even -> +1.
+        assert_eq!(su2_r_symbol(1, 1, 2), 1.0);
+        // {1/2 1/2 0}: (1+1-0)/2 = 1 odd -> -1.
+        assert_eq!(su2_r_symbol(1, 1, 0), -1.0);
+        // {1 1 1}: doubled (2,2,2), (2+2-2)/2 = 1 odd -> -1.
+        assert_eq!(su2_r_symbol(2, 2, 2), -1.0);
+        // {1 1 2}: doubled (2,2,4), (2+2-4)/2 = 0 even -> +1.
+        assert_eq!(su2_r_symbol(2, 2, 4), 1.0);
+        // Non-admissible (parity) -> exact zero, no phase.
+        assert_eq!(su2_r_symbol(1, 1, 1), 0.0);
+        // Non-admissible (triangle inequality) -> exact zero.
+        assert_eq!(su2_r_symbol(2, 2, 8), 0.0);
+    }
+
+    #[test]
+    fn frobenius_schur_is_sign_of_doubled_spin() {
+        // (-1)^(2j) as +-1: integer spins +1, half-integer spins -1.
+        assert_eq!(su2_frobenius_schur(0), 1.0); // j=0
+        assert_eq!(su2_frobenius_schur(1), -1.0); // j=1/2
+        assert_eq!(su2_frobenius_schur(2), 1.0); // j=1
+        assert_eq!(su2_frobenius_schur(3), -1.0); // j=3/2
+        assert_eq!(su2_frobenius_schur(4), 1.0); // j=2
     }
 
     #[test]
