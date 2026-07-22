@@ -49,7 +49,10 @@ const DEFAULT_MAX_BYTES: usize = 64 << 20;
 pub struct CacheStats {
     /// Lookups served from a stored value.
     pub hits: u64,
-    /// Lookups that had to compute (and then store) the value.
+    /// Lookups that had to compute the value. Under a concurrent-miss race the
+    /// losing thread counts a miss without inserting (the winner already
+    /// stored the entry), so `misses` can slightly exceed the number of stored
+    /// entries.
     pub misses: u64,
     /// Entries currently retained across both kinds.
     pub entries: usize,

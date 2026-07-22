@@ -119,8 +119,8 @@ fn bench_6j_thousands(c: &mut Criterion) {
 /// `racah_cold` clears the cache before each batch so every call recomputes the
 /// big-rational sum. The gap between them is the cache's payoff — and it makes
 /// the cold 3j-overlap deficit vs `wigner-symbols` irrelevant here, since a hit
-/// touches no arithmetic. (`wigner-symbols` caches internally too, shown for
-/// context: after its first batch it is likewise warm.)
+/// touches no arithmetic. (`wigner-symbols` 0.5.1 has no cache and recomputes
+/// every call; shown as the uncached baseline for context.)
 fn bench_repeated_labels(c: &mut Criterion) {
     let mut g = c.benchmark_group("repeated_labels");
 
