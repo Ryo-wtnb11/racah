@@ -22,6 +22,7 @@
 //! gauge fixing is a deterministic function of the subspace; floating-point
 //! stages are verification-gated and versioned.
 
+pub mod cache;
 mod exact;
 mod primefactor;
 mod su2;

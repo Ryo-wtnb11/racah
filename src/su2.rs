@@ -9,6 +9,7 @@
 
 use num_rational::Ratio;
 
+use crate::cache::{cache_3j, cache_6j};
 use crate::exact::SignedSqrtRational;
 use crate::primefactor::{factorial as pf_factorial, mul_factorial, sum_series, Pf};
 
@@ -40,7 +41,31 @@ fn triangle_ok(a: u32, b: u32, c: u32) -> bool {
 /// Returns exact zero unless all four triangles
 /// `(1,2,3), (1,5,6), (4,2,6), (4,5,3)` are admissible. Uses the Racah
 /// single-sum closed form in big-rational arithmetic.
+///
+/// Transparently served from the process-local [`crate::cache`]: an admissible
+/// label set is keyed by its canonical Regge class ([`canonical_regge_6j`]) and
+/// the exact value is stored once per class (the 6j symmetries preserve value,
+/// so no compensation is needed). A label too large to key ([`ReggeError::
+/// Overflow`]) or non-admissible falls through to the uncached engine, which is
+/// the single source of truth for the value.
 pub fn wigner_6j(dj1: u32, dj2: u32, dj3: u32, dj4: u32, dj5: u32, dj6: u32) -> SignedSqrtRational {
+    match canonical_regge_6j(dj1, dj2, dj3, dj4, dj5, dj6) {
+        Ok(key) => {
+            cache_6j().get_or_compute(key, || wigner_6j_uncached(dj1, dj2, dj3, dj4, dj5, dj6))
+        }
+        Err(_) => wigner_6j_uncached(dj1, dj2, dj3, dj4, dj5, dj6),
+    }
+}
+
+/// The uncached Racah single-sum engine behind [`wigner_6j`].
+fn wigner_6j_uncached(
+    dj1: u32,
+    dj2: u32,
+    dj3: u32,
+    dj4: u32,
+    dj5: u32,
+    dj6: u32,
+) -> SignedSqrtRational {
     if !(triangle_ok(dj1, dj2, dj3)
         && triangle_ok(dj1, dj5, dj6)
         && triangle_ok(dj4, dj2, dj6)
@@ -122,7 +147,37 @@ pub fn wigner_6j(dj1: u32, dj2: u32, dj3: u32, dj4: u32, dj5: u32, dj6: u32) -> 
 /// Returns exact zero unless the labels are admissible: triangle `(1,2,3)`,
 /// `|dm_i| <= dj_i`, `dj_i + dm_i` even for each `i`, and `dm1+dm2+dm3 == 0`.
 /// Condon-Shortley phase, matching the standard closed form.
+///
+/// Transparently served from the process-local [`crate::cache`]. Unlike 6j, the
+/// classical 3j symmetries relate orbit members by a sign, so the cache stores
+/// one representative per canonical class and the [`ReggePhase`] from
+/// [`canonical_regge_3j`] compensates on both store and retrieval — the stored
+/// value is the representative's, and `phase.apply` moves between it and this
+/// input's value. A label too large to key or non-admissible falls through to
+/// the uncached engine.
 pub fn wigner_3j(dj1: u32, dj2: u32, dj3: u32, dm1: i32, dm2: i32, dm3: i32) -> SignedSqrtRational {
+    match canonical_regge_3j(dj1, dj2, dj3, dm1, dm2, dm3) {
+        Ok((key, phase)) => {
+            // Stored value is the representative's: value(rep) = phase.apply(value(input)).
+            // Retrieval undoes it: value(input) = phase.apply(value(rep)).
+            let rep = cache_3j().get_or_compute(key, || {
+                phase.apply(wigner_3j_uncached(dj1, dj2, dj3, dm1, dm2, dm3))
+            });
+            phase.apply(rep)
+        }
+        Err(_) => wigner_3j_uncached(dj1, dj2, dj3, dm1, dm2, dm3),
+    }
+}
+
+/// The uncached closed-form engine behind [`wigner_3j`].
+fn wigner_3j_uncached(
+    dj1: u32,
+    dj2: u32,
+    dj3: u32,
+    dm1: i32,
+    dm2: i32,
+    dm3: i32,
+) -> SignedSqrtRational {
     if !admissible_3j(dj1, dj2, dj3, dm1, dm2, dm3) {
         return SignedSqrtRational::zero();
     }
@@ -717,6 +772,80 @@ mod tests {
             canonical_regge_3j(1, 1, 1, 1, -1, 0),
             Err(ReggeError::NonAdmissible)
         );
+    }
+
+    #[test]
+    fn cached_3j_matches_uncached_over_grid() {
+        // Every admissible and non-admissible small 3j: the transparently cached
+        // public value must equal the uncached engine, and a repeat call (a
+        // cache hit) must still match. This exercises the ReggePhase
+        // compensation end-to-end across the whole orbit structure.
+        for dj1 in 0..=4u32 {
+            for dj2 in 0..=4u32 {
+                for dj3 in 0..=4u32 {
+                    for dm1 in -4..=4i32 {
+                        for dm2 in -4..=4i32 {
+                            for dm3 in -4..=4i32 {
+                                let raw = wigner_3j_uncached(dj1, dj2, dj3, dm1, dm2, dm3);
+                                let ctx = (dj1, dj2, dj3, dm1, dm2, dm3);
+                                assert_eq!(
+                                    wigner_3j(dj1, dj2, dj3, dm1, dm2, dm3),
+                                    raw,
+                                    "cached != uncached at {ctx:?}"
+                                );
+                                assert_eq!(
+                                    wigner_3j(dj1, dj2, dj3, dm1, dm2, dm3),
+                                    raw,
+                                    "cache-hit != uncached at {ctx:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cached_6j_matches_uncached_over_grid() {
+        for dj1 in 0..=4u32 {
+            for dj2 in 0..=4u32 {
+                for dj3 in 0..=4u32 {
+                    for dj4 in 0..=4u32 {
+                        for dj5 in 0..=4u32 {
+                            for dj6 in 0..=4u32 {
+                                let raw = wigner_6j_uncached(dj1, dj2, dj3, dj4, dj5, dj6);
+                                let ctx = (dj1, dj2, dj3, dj4, dj5, dj6);
+                                assert_eq!(
+                                    wigner_6j(dj1, dj2, dj3, dj4, dj5, dj6),
+                                    raw,
+                                    "cached != uncached at {ctx:?}"
+                                );
+                                assert_eq!(
+                                    wigner_6j(dj1, dj2, dj3, dj4, dj5, dj6),
+                                    raw,
+                                    "cache-hit != uncached at {ctx:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn public_stats_and_reset_smoke() {
+        // The global wrappers aggregate the per-kind caches (rigorously covered
+        // in cache::tests); here just confirm they observe activity and reset
+        // without panicking. Counts are only checked monotonically because the
+        // global cache is shared with other tests running in parallel.
+        let _ = wigner_6j(2, 2, 2, 2, 2, 2);
+        let _ = wigner_3j(2, 2, 2, 2, 0, -2);
+        let s = crate::cache::stats();
+        assert!(s.hits + s.misses >= 1, "activity should register in stats");
+        crate::cache::reset();
+        let _ = crate::cache::stats();
     }
 
     #[test]
