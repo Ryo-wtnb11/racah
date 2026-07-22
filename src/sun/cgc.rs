@@ -255,6 +255,13 @@ fn generate(
     // Trivial couplings (clebschgordan.jl:trivial_CGC): 1 ⊗ s → s and s ⊗ 1 → s
     // are identity embeddings, no linear algebra.
     if is_trivial(s1) {
+        // Reference `_CGC`: isone(s1) => @assert s2 == s3. Without this the
+        // trivial embedding would fabricate a mult-1 identity for a channel
+        // whose real multiplicity is 0 (e.g. 1 ⊗ 3 → 3̄), silently skipping the
+        // multiplicity gate. `expected` is the true fusion multiplicity (0 here).
+        if s3 != s2 {
+            return Err(SunError::NullspaceDimMismatch { expected, found: 1 });
+        }
         return Ok(trivial_cgc(
             s1.clone(),
             s2.clone(),
@@ -264,6 +271,9 @@ fn generate(
         ));
     }
     if is_trivial(s2) {
+        if s3 != s1 {
+            return Err(SunError::NullspaceDimMismatch { expected, found: 1 });
+        }
         return Ok(trivial_cgc(
             s1.clone(),
             s2.clone(),
@@ -860,5 +870,57 @@ mod tests {
     fn rank_mismatch_is_typed_error() {
         let e = generate(&irr(&[1, 0]), &irr(&[1, 0, 0]), &irr(&[1, 0]), None).unwrap_err();
         assert!(matches!(e, SunError::RankMismatch { .. }));
+    }
+
+    #[test]
+    fn trivial_left_correct_target_is_identity() {
+        // 1 ⊗ 3 → 3 : the sole admissible channel, an identity embedding.
+        let triv = Irrep::trivial(3).unwrap();
+        let c = cgc(&triv, &irr(&[1, 0]), &irr(&[1, 0])).unwrap();
+        assert_eq!(c.multiplicity(), 1);
+        assert_eq!(c.nnz(), 3); // identity on dim 3
+    }
+
+    #[test]
+    fn trivial_left_wrong_target_is_typed_error() {
+        // 1 ⊗ 3 → 3̄ : 3̄ ∉ 1 ⊗ 3 = {3} (mult 0). Must NOT fabricate an identity
+        // (reference `@assert s2 == s3`).
+        let triv = Irrep::trivial(3).unwrap();
+        let e = cgc(&triv, &irr(&[1, 0]), &irr(&[0, 1])).unwrap_err();
+        assert_eq!(
+            e,
+            SunError::NullspaceDimMismatch {
+                expected: 0,
+                found: 1
+            }
+        );
+    }
+
+    #[test]
+    fn trivial_left_wrong_dim_target_is_typed_error() {
+        // 1 ⊗ 3 → 8 : dims would be nonsense ([1,3,8,1]); reject.
+        let triv = Irrep::trivial(3).unwrap();
+        let e = cgc(&triv, &irr(&[1, 0]), &irr(&[1, 1])).unwrap_err();
+        assert_eq!(
+            e,
+            SunError::NullspaceDimMismatch {
+                expected: 0,
+                found: 1
+            }
+        );
+    }
+
+    #[test]
+    fn trivial_right_wrong_target_is_typed_error() {
+        // 3 ⊗ 1 → 3̄ : symmetric guard (`@assert s1 == s3`).
+        let triv = Irrep::trivial(3).unwrap();
+        let e = cgc(&irr(&[1, 0]), &triv, &irr(&[0, 1])).unwrap_err();
+        assert_eq!(
+            e,
+            SunError::NullspaceDimMismatch {
+                expected: 0,
+                found: 1
+            }
+        );
     }
 }
