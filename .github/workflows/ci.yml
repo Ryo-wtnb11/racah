@@ -35,3 +35,13 @@ jobs:
       # from source on first run; rust-cache keeps the build cached across runs.
       - run: cargo test --all-features
       - run: cargo test --no-default-features
+
+  doc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings

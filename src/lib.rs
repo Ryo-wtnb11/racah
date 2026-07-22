@@ -21,6 +21,7 @@
 //! Exactness contract: combinatorial structure and discrete data are exact;
 //! gauge fixing is a deterministic function of the subspace; floating-point
 //! stages are verification-gated and versioned.
+#![warn(missing_docs)]
 
 pub mod cache;
 mod exact;
