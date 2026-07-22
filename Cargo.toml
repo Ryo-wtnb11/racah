@@ -26,5 +26,8 @@ num-traits = "0.2"
 # only. Its CanonicalRegge6j u8 key is the defect class our key must not
 # reproduce.
 wigner-symbols = "=0.5.1"
+# Same rug the oracle uses, to read its exact `signed_sq` rational for
+# comparison. Tests only.
+rug = "1.30"
 rand = "0.8"
 rand_chacha = "0.3"
