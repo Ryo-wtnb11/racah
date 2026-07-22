@@ -45,10 +45,14 @@ end
 
 # Fixed list of doubled-spin 6j label sets, all beyond the reference-crate
 # domain: ~30 with twice-spins in 255..600, plus a handful in the thousands.
+# The thousands band is kept to 1000..1400: still comfortably past the u8
+# reference ceiling, while keeping the (ignored, on-demand) huge-tier test's
+# runtime to minutes rather than tens of minutes, since the Racah sum's
+# factorial sizes grow steeply with the spin.
 const CASES = let
     rng = MersenneTwister(0x9E3779B97F4A7C15)
     v = search_cases(rng, 255:600, 30)
-    append!(v, search_cases(rng, 1000:3000, 6))
+    append!(v, search_cases(rng, 1000:1400, 6))
     v
 end
 
