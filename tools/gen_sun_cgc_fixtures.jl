@@ -15,6 +15,7 @@
 using SUNRepresentations
 using Pkg
 using Dates
+using SHA
 const SR = SUNRepresentations
 const NZ = SR.SparseArrayKit.nonzero_pairs
 
@@ -48,7 +49,8 @@ println("# racah SU(N) CGC fixtures -- provenance")
 println("# source: SUNRepresentations.jl v", version_of("SUNRepresentations"),
         " (Gelfand-Tsetlin construction, qrpos!∘cref! gauge)")
 println("# RationalRoots v", version_of("RationalRoots"), " ; julia ", VERSION)
-println("# generated: ", string(Dates.now(Dates.UTC)), " UTC")
+println("# generated (UTC): ", string(Dates.now(Dates.UTC)))
+println("# script sha256: ", bytes2hex(sha256(read(@__FILE__))))
 println("# indices 1-based (Julia basis order); value is Float64; eltype Float64")
 println("# columns: N s1 s2 s3 m1 m2 m3 mu value")
 
