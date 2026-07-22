@@ -31,6 +31,20 @@ non-trivial change.
    pentagon/hexagon checks run at generation time; violations are typed
    errors, never silently degraded coefficients.
 
+## Guard inventory (every port PR)
+
+Reference guards that live *outside* the expression being ported are the
+recurring defect class tracked in issue #15 (dropped `@assert`s, type
+constraints, and unreachable-by-construction assumptions). Every port PR must:
+
+1. Enumerate, in the PR body, each guard on the reference path being ported —
+   `@assert`/`@check`, type or domain constraints, and invariants the reference
+   relies on as unreachable-by-construction.
+2. Map each to exactly one of: a typed error, a documented loud-panic invariant,
+   or an explicit N/A with justification. An unmapped guard blocks merge.
+3. Ensure every fast-path / special-case branch runs the same verification
+   gates as the general path, or prove those gates vacuous for that branch.
+
 ## Verification
 
 - Oracles are independent: reference-implementation outputs (WignerSymbols,
