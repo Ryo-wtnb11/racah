@@ -91,4 +91,64 @@ fn cache_reset_stats_and_concurrency() {
         chans.len(),
         stats.entries
     );
+
+    // ---- COLD race: no warm-up, threads hit an empty cache together ----
+    // Every thread requests the same cold channels at once, so each channel is
+    // generated concurrently by several racers (the insert() race-loser path).
+    // The cache's contract is that it serializes to ONE winner value per key:
+    // every racer -- winner or loser -- returns that same stored value.
+    cache::reset();
+    let mut handles = Vec::new();
+    for t in 0..8usize {
+        let chans = chans.clone();
+        handles.push(std::thread::spawn(move || {
+            let mut by_k: std::collections::HashMap<usize, Cgc> = std::collections::HashMap::new();
+            for i in 0..chans.len() {
+                let k = (i + t) % chans.len();
+                let (a, b, c) = &chans[k];
+                by_k.insert(k, cgc(a, b, c).unwrap());
+            }
+            by_k
+        }));
+    }
+    let observed: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+    // (a) Cache consistency: all racers observe the byte-identical winner value
+    // for each key. This is exact -- the cache hands back one stored Arc.
+    for t in 1..observed.len() {
+        for k in 0..chans.len() {
+            assert_eq!(
+                observed[t][&k], observed[0][&k],
+                "cold-race: thread {t} saw a different value than thread 0 for channel {k} \
+                 (cache did not serialize to a single winner)"
+            );
+        }
+    }
+
+    // (b) The winner value is a valid CGC: it matches a from-scratch
+    // recomputation within tolerance. NOT exact -- the faer backend's parallel
+    // reductions are not bit-reproducible across runs, so two independent
+    // generations of the same channel can differ by a few ULPs. (Determinism of
+    // the STORED value under one cache is (a); reproducibility of the gauge
+    // *values* is the fixture oracle, at 2.4e-15.)
+    cache::reset();
+    for (k, (a, b, c)) in chans.iter().enumerate() {
+        let fresh = cgc(a, b, c).unwrap();
+        let raced = &observed[0][&k];
+        assert_eq!(raced.nnz(), fresh.nnz(), "channel {k}: support differs");
+        for (re, fe) in raced.entries().iter().zip(fresh.entries()) {
+            assert_eq!(
+                (re.m1, re.m2, re.m3, re.mu),
+                (fe.m1, fe.m2, fe.m3, fe.mu),
+                "channel {k}: entry index differs"
+            );
+            assert!(
+                (re.value - fe.value).abs() < 1e-9,
+                "channel {k}: value {} vs {} (|Δ|={:e})",
+                re.value,
+                fe.value,
+                (re.value - fe.value).abs()
+            );
+        }
+    }
 }
