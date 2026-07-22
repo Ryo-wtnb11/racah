@@ -57,8 +57,10 @@
 //!   §13.4 (Freudenthal's recursion), §22.3 / §24 (character arithmetic,
 //!   the Racah–Speiser / Brauer–Klimyk sign rule via the dot action of the
 //!   Weyl group).
-//! - QSpace v4 (Weichselbaum), `Source/clebsch_aux.cc`: `wdim_B/C/D`
-//!   (`:458–559`) and `findMaxWeight` label maps (`:957–1045`) — the
+//! - QSpace v4 (Weichselbaum), `Source/clebsch_aux.cc` at revision `dd2cc7e`
+//!   (the revision all `clebsch_aux.cc:LINE` citations in this module refer
+//!   to): `wdim_C/B/D` (`:458/486/524`) and `findMaxWeight` label maps and
+//!   low-rank redirects (`:957–1045`, guards at `:990/1001/1018`) — the
 //!   numerical oracle whose dimension values this module reproduces.
 
 use std::collections::{BTreeMap, HashSet};
@@ -298,8 +300,8 @@ impl Irrep {
     /// - `D_r` with `r` **odd**: `-w₀` is the order-2 diagram automorphism that
     ///   swaps the last two nodes, i.e. `λ_r ↦ -λ_r` in the ε-basis
     ///   (equivalently, swap the last two Dynkin labels). This is the chirality
-    ///   flip: `so(6) = D_3` has `dual((0,1,0)) = (0,0,1)` and the vector
-    ///   `(1,0,0)` self-dual.
+    ///   flip: `so(6) = D_3` has `dual((0,2,0)) = (0,0,2)` (a tensor chiral
+    ///   pair) and the vector `(1,0,0)` self-dual.
     pub fn dual(&self) -> Irrep {
         let mut w = self.weight.to_vec();
         if self.series == Series::D && self.rank() % 2 == 1 {
