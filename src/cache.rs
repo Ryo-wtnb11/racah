@@ -184,6 +184,37 @@ impl<K: Clone + Eq + Hash, V: Clone + CacheCharge> FifoCache<K, V> {
         }
     }
 
+    /// Read-fast-path lookup: return a clone of the stored value on a hit
+    /// (counted), `None` on a miss (not counted -- the caller decides whether to
+    /// compute and [`Self::insert`]). Used by the fallible `cgc-gen` generation
+    /// path, where a computation can error and errors must not be cached.
+    #[cfg(feature = "cgc-gen")]
+    pub(crate) fn get(&self, key: &K) -> Option<V> {
+        let v = self.inner.read().unwrap().map.get(key).cloned();
+        if v.is_some() {
+            self.hits.fetch_add(1, Ordering::Relaxed);
+        }
+        v
+    }
+
+    /// Insert `value` for `key` (counting a miss) and return the value that
+    /// ends up stored -- the existing one if a concurrent insert won the race,
+    /// so all racers observe the same value.
+    #[cfg(feature = "cgc-gen")]
+    pub(crate) fn insert(&self, key: K, value: V) -> V {
+        self.misses.fetch_add(1, Ordering::Relaxed);
+        let mut inner = self.inner.write().unwrap();
+        if let Some(v) = inner.map.get(&key) {
+            return v.clone();
+        }
+        let charge = entry_charge::<K, V>(&value);
+        inner.bytes += charge;
+        inner.order.push_back(key.clone());
+        inner.map.insert(key, value.clone());
+        self.evict(&mut inner);
+        value
+    }
+
     fn reset(&self) {
         let mut inner = self.inner.write().unwrap();
         inner.map.clear();
@@ -229,12 +260,62 @@ pub(crate) fn cache_f() -> &'static FifoCache<FKey, f64> {
     &CACHE_F
 }
 
-/// Clear the 3j, 6j, and derived-f64 F-symbol caches and their hit/miss
-/// counters.
+/// Bounded, byte-accounted SU(N) CGC cache (`cgc-gen`).
+///
+/// CGC tensors are large and expensive (a full SVD/QR/least-squares pipeline),
+/// so unlike the exact 3j/6j tiers this cache is charged by *actual sparse
+/// storage bytes* ([`crate::sun::Cgc`] entry vector + labels) and holds
+/// `Arc<Cgc>` for cheap hit-path cloning. Keyed by the canonical
+/// `(s1, s2, s3)` labels.
+///
+/// # Why in-memory only (no disk tier)
+///
+/// The reference persists CGCs to a scratch directory. This crate deliberately
+/// does not: a persisted store would need an algorithm/gauge-version key to
+/// stay sound, because the coefficient *values* are gauge- and
+/// algorithm-dependent (unlike the exact 3j/6j tiers, whose bytes are the
+/// canonical exact value). Keeping the cache process-local means it is rebuilt
+/// from the generator every run and can never disagree with the generator that
+/// filled it -- the same argument the exact tiers make for never persisting.
+#[cfg(feature = "cgc-gen")]
+mod cgc_cache {
+    use super::{CacheCharge, FifoCache};
+    use crate::sun::{Cgc, Irrep};
+    use std::sync::{Arc, LazyLock};
+
+    /// Canonical cache key: the three irrep labels.
+    pub(crate) type CgcKey = (Irrep, Irrep, Irrep);
+
+    impl CacheCharge for Arc<Cgc> {
+        fn value_bytes(&self) -> usize {
+            self.storage_bytes()
+        }
+    }
+
+    /// Entry cap for the CGC tier. The byte cap is the real backstop.
+    const CGC_MAX_ENTRIES: usize = 1 << 16;
+    /// Byte cap for the CGC tier (256 MiB): CGC tensors are far larger than a
+    /// scalar exact symbol, so this tier gets its own generous budget.
+    const CGC_MAX_BYTES: usize = 256 << 20;
+
+    pub(crate) static CACHE_CGC: LazyLock<FifoCache<CgcKey, Arc<Cgc>>> =
+        LazyLock::new(|| FifoCache::new(CGC_MAX_ENTRIES, CGC_MAX_BYTES));
+}
+
+#[cfg(feature = "cgc-gen")]
+pub(crate) fn cache_cgc() -> &'static FifoCache<cgc_cache::CgcKey, std::sync::Arc<crate::sun::Cgc>>
+{
+    &cgc_cache::CACHE_CGC
+}
+
+/// Clear the 3j, 6j, and derived-f64 F-symbol caches (and, under `cgc-gen`, the
+/// SU(N) CGC cache) and their hit/miss counters.
 pub fn reset() {
     CACHE_3J.reset();
     CACHE_6J.reset();
     CACHE_F.reset();
+    #[cfg(feature = "cgc-gen")]
+    cgc_cache::CACHE_CGC.reset();
 }
 
 /// Aggregate hit/miss/entry/byte statistics across the 3j, 6j, and derived-f64
@@ -243,11 +324,15 @@ pub fn stats() -> CacheStats {
     let (h3, m3, e3, b3) = CACHE_3J.snapshot();
     let (h6, m6, e6, b6) = CACHE_6J.snapshot();
     let (hf, mf, ef, bf) = CACHE_F.snapshot();
+    #[cfg(feature = "cgc-gen")]
+    let (hc, mc, ec, bc) = cgc_cache::CACHE_CGC.snapshot();
+    #[cfg(not(feature = "cgc-gen"))]
+    let (hc, mc, ec, bc) = (0u64, 0u64, 0usize, 0usize);
     CacheStats {
-        hits: h3 + h6 + hf,
-        misses: m3 + m6 + mf,
-        entries: e3 + e6 + ef,
-        bytes: b3 + b6 + bf,
+        hits: h3 + h6 + hf + hc,
+        misses: m3 + m6 + mf + mc,
+        entries: e3 + e6 + ef + ec,
+        bytes: b3 + b6 + bf + bc,
     }
 }
 
