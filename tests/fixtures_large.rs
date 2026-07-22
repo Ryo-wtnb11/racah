@@ -2,11 +2,10 @@
 //! WignerSymbols.jl, for doubled spins beyond the `wigner-symbols 0.5.1` domain
 //! (255..600 and a few in the thousands). See `tools/gen_fixtures.jl`.
 //!
-//! Split into two tiers by spin magnitude. The 255..600 tier runs by default.
-//! The thousands tier is `#[ignore]`d: the Racah sum's factorial sizes grow
-//! steeply with the spin, so those rows take minutes and would push the default
-//! suite over its time budget without adding coverage of the no-ceiling
-//! property. Run them on demand with `cargo test -- --ignored`.
+//! Split into two tiers by spin magnitude. Both run by default: the
+//! prime-factorized engine (issue #3) evaluates the thousands tier in a
+//! fraction of a second, where the earlier direct big-rational sum took
+//! minutes, so the no-ceiling property is now a default-suite gate.
 
 use num_bigint::BigInt;
 use num_rational::Ratio;
@@ -82,10 +81,9 @@ fn six_j_large_fixtures_exact() {
 }
 
 #[test]
-#[ignore = "slow (minutes): doubled spins in the thousands; run with --ignored"]
 fn six_j_huge_fixtures_exact() {
-    // Doubled spins in the thousands: proves the no-ceiling property but is too
-    // slow for the default suite.
+    // Doubled spins in the thousands: proves the no-ceiling property. With the
+    // prime-factorized engine this runs in well under a second.
     let mut checked = 0u64;
     for row in rows().iter().filter(|r| r.dj.iter().any(|&x| x > 600)) {
         check(row);
