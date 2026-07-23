@@ -16,8 +16,10 @@
 //! # Exactness: every entry is an integer at `dd2cc7e`
 //!
 //! In QSpace all ladder entries (`P.setRec(..,1.)`) and all Cartan diagonals
-//! (`Z[..]`) of these three Setups are **integers** — value `±1`, `±2` on the
-//! Cartan diagonals, `+1` on every ladder entry. There is *no* `sqrt(2)` short
+//! (`Z[..]`) of these three Setups are **integers** — small integers of
+//! magnitude `< r` on the Cartan diagonals (`SON`/`SEN` use only `±1`; `SpN`'s
+//! `Z[i] = -i` reaches `-(r-1)`, e.g. `-3` at `C_4`), `+1` on every ladder
+//! entry. There is *no* `sqrt(2)` short
 //! root, no fractional ladder normalization: QSpace's convention places the
 //! whole scale into the (integer, mutually orthogonal) Cartan generators and
 //! keeps unit ladder entries. Consequently every quantity in this layer —
@@ -142,6 +144,9 @@ impl Seed {
 /// - QSpace `checkCommRel` z-orthogonality / `[Z,Z]` / `CR` / `[Z,Sp]`
 ///   consistency `ERR`s: each mapped to a [`BcdError::CommutatorViolation`]
 ///   relation in [`check_commutators`].
+/// - QSpace `checkCommRel` `if (np!=nz || nz!=qt.sub) ERR` (the
+///   `Sp`/`Sz`/`sub` arity check): **N/A** — [`Seed`] always builds exactly `r`
+///   `Sp` and `r` `Sz` generators, so `#Sp = #Sz = rank` holds by construction.
 pub fn defining_seed(series: Series, r: usize) -> Result<Seed, BcdError> {
     if r < series.min_rank() {
         return Err(BcdError::ExcludedRank {
