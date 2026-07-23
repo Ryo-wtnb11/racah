@@ -358,6 +358,31 @@ and the (integer) Dynkin-conversion quotients, never to general CGC entries
 (which are irrational). Tightening any tolerance that cannot move a returned
 value is *not* a breaking release; loosening one that can, is.
 
+**Reference tolerance-regime deviations.** Three racah tolerance choices differ
+in *regime* (not just value) from QSpace; none moves a discovered label or
+multiplicity, but each is recorded for the S3.5 fixture harness:
+
+1. **Descent overlap guards are stricter/absolute.** QSpace's `U`-overlap abort
+   fires at `x·x > eps` with `x = aMax(Uᵀvi)`, i.e. a **max-overlap `> 1e-4`**;
+   its `V`-overlap abort is **norm-relative** (`√(‖Vᵀvi‖²/‖vi‖²) > eps`,
+   `clebsch_aux.cc:176-194 @ dd2cc7e`). racah uses a single **absolute**
+   threshold `EPS_SWEEP = 1e-8` on the max-overlap for both guards — strictly
+   tighter. For a faithful sweep both residuals are `~0`, so the choice only
+   affects *how loudly a defective generator set fails*, never a valid result.
+2. **"Skip if already inside `Vi`" is realized differently.** QSpace early-skips
+   a lowering operator whose image already lies in the current level `Vi`
+   (`|1 − √(‖Viᵀvi‖²/‖vi‖²)| < eps`, `clebsch_aux.cc:165-169`). racah has no
+   early test; it projects out `Vi` unconditionally and lets `skip_tiny_cols`
+   drop the now-zero columns — **equivalent outcome, different mechanism** (a
+   fully-redundant block becomes zero and is dropped either way).
+3. **FixRational is integer-only vs denominator-bounded rational.** QSpace's
+   `FixRational` is continued-fraction **rational** snapping (mode `'r'`,
+   denominator `≤ 1024`, tol `~1e-12`; `clebsch_aux.cc:410-425`), applied to the
+   CGC entries too. racah snaps **integers only** (§6), leaving irrational CGC
+   entries untouched. Consequence: an exact half-integer (or other small-rational)
+   CGC entry that QSpace would snap may differ from racah's value by `≤ 1e-12` —
+   below every gate tolerance, absorbed by the S3.5 element-wise comparison.
+
 ---
 
 ## 12. Numerical seams (backend)
