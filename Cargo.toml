@@ -8,6 +8,11 @@ repository = "https://github.com/Ryo-wtnb11/racah"
 keywords = ["representation-theory", "clebsch-gordan", "wigner", "lie-group", "6j"]
 categories = ["mathematics", "science"]
 
+# docs.rs builds the generated SU(N)/SO(N)/Sp(2N) surfaces too, not just the
+# base SU(2) path, so the published docs cover the whole API.
+[package.metadata.docs.rs]
+all-features = true
+
 [features]
 default = []
 # Runtime coefficient generation for SU(N)/SO(N)/Sp(2N).
