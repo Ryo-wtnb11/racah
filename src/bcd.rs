@@ -1,13 +1,26 @@
-//! Exact SO(N)/Sp(2N) representation combinatorics for the B, C, D Cartan
-//! series (Layer S3.0 of the `cgc-gen` track; design authority: issue #18
-//! rulings, spec: issue #19).
+//! SO(N)/Sp(2N) irreps and their Clebsch–Gordan / recoupling coefficients for
+//! the B, C, D Cartan series, built by the generator bootstrap.
 //!
-//! Pure integer/rational arithmetic — no floats anywhere in this module. It
-//! provides irrep label types, exact Weyl dimensions, duals, Frobenius–Schur
-//! indicators, exact weight multiplicities (Freudenthal recursion) and the
-//! exact tensor-product decomposition `N^c_ab` (Brauer–Klimyk / Racah–Speiser
-//! over Weyl characters). This is the production `N`-symbol that the numeric
-//! sweep (S3.2) is checked against (`M^sweep == N^exact`, Ruling 1).
+//! An [`Irrep`](crate::bcd::Irrep) is an SO(N) or Sp(2N) highest weight; from it this module gives
+//! exact Weyl dimensions, duals, Frobenius–Schur indicators, weight
+//! multiplicities (Freudenthal recursion), and the exact tensor-product
+//! decomposition `N^c_ab` (Brauer–Klimyk / Racah–Speiser over Weyl characters).
+//! The Clebsch–Gordan coefficients and the recoupling
+//! [`f_symbol`](crate::bcd::f_symbol) / [`r_symbol`](crate::bcd::r_symbol) are
+//! generated through a per-(series, rank)
+//! [`CanonicalCatalog`](crate::bcd::CanonicalCatalog). The label combinatorics are pure integer/rational
+//! arithmetic; the generated CGC are verification-gated floating point.
+//!
+//! Unlike SU(N), these families are built by a **generator bootstrap** (seed
+//! the defining rep, take tensor products, decompose numerically, harvest,
+//! recurse), not by Gelfand–Tsetlin: the symplectic chain `Sp(2r) ⊃ Sp(2r-2)`
+//! is not multiplicity-free, so no GT-type basis with practical closed-form
+//! ladder elements exists (and the multiplicity-free SO chains have no
+//! production-viable closed forms either). See [`docs/theory.md`] §5 for the
+//! rationale and [`docs/references.md`] for the port provenance.
+//!
+//! [`docs/theory.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/theory.md
+//! [`docs/references.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/references.md
 //!
 //! # Published object (issue #18, Ruling 3)
 //!
@@ -51,17 +64,17 @@
 //!
 //! # References
 //!
-//! - W. Fulton, J. Harris, *Representation Theory* (GTM 129), §§18, 24
-//!   (root systems B/C/D, the Weyl dimension formula, weight multiplicities).
-//! - J. Humphreys, *Introduction to Lie Algebras and Representation Theory*,
-//!   §13.4 (Freudenthal's recursion), §22.3 / §24 (character arithmetic,
-//!   the Racah–Speiser / Brauer–Klimyk sign rule via the dot action of the
-//!   Weyl group).
-//! - QSpace v4 (Weichselbaum), `Source/clebsch_aux.cc` at revision `dd2cc7e`
-//!   (the revision all `clebsch_aux.cc:LINE` citations in this module refer
-//!   to): `wdim_C/B/D` (`:458/486/524`) and `findMaxWeight` label maps and
-//!   low-rank redirects (`:957–1045`, guards at `:990/1001/1018`) — the
-//!   numerical oracle whose dimension values this module reproduces.
+//! The exact combinatorics follow Fulton–Harris (root systems, Weyl dimension,
+//! weight multiplicities) and Humphreys (Freudenthal recursion, the
+//! Racah–Speiser / Brauer–Klimyk character sign rule); the generator bootstrap,
+//! seeds, and dimension oracle are ported from QSpace v4 (revision `dd2cc7e`,
+//! the revision every `clebsch_aux.cc:LINE` / `clebsch.cc:LINE` citation in
+//! this module refers to). Full citations,
+//! versions, and the `file:symbol`-level provenance are in [`docs/references.md`];
+//! the gauge is specified in [`docs/gauge_soN.md`].
+//!
+//! [`docs/references.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/references.md
+//! [`docs/gauge_soN.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/gauge_soN.md
 //!
 //! # Example
 //!

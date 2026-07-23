@@ -2,8 +2,7 @@
 //! track): highest-weight nullspace, deterministic gauge canonicalization, and
 //! reverse-lex weight-ladder descent.
 //!
-//! Ported from SUNRepresentations.jl v0.4.0 `clebschgordan.jl`
-//! (`~/.julia/packages/SUNRepresentations/BM32Z/src/clebschgordan.jl`). The
+//! Ported from SUNRepresentations.jl v0.4.0 `src/clebschgordan.jl`. The
 //! gauge produced here is a semver contract of this crate: any change that can
 //! alter a returned coefficient value is a breaking release. See
 //! `docs/gauge.md` for the full specification and per-choice citations.

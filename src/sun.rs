@@ -1,19 +1,29 @@
-//! Exact SU(N) representation combinatorics (Layer 1 of the `cgc-gen` track).
+//! SU(N) irreps and their Clebsch–Gordan / recoupling coefficients, built by
+//! the Gelfand–Tsetlin (GT) construction.
 //!
-//! Pure integer/rational arithmetic: irrep labels, the Weyl dimension, duality,
-//! Gelfand–Tsetlin (GT) pattern enumeration in the reference basis order,
-//! Littlewood–Richardson product decomposition (fusion multiplicities), and the
-//! exact GT ladder (creation/annihilation) matrices with
-//! [`SignedSqrtRational`] entries.
+//! An [`Irrep`](crate::sun::Irrep) is an SU(N) highest weight; from it this
+//! module gives the Weyl [`dimension`](crate::sun::Irrep::dim), the
+//! [`dual`](crate::sun::Irrep::dual), the GT basis
+//! ([`patterns`](crate::sun::Irrep::patterns)), Littlewood–Richardson products (fusion
+//! multiplicities), and — the point of the module — the Clebsch–Gordan
+//! coefficients [`cgc`](crate::sun::cgc) and the recoupling
+//! [`f_symbol`](crate::sun::f_symbol) / [`r_symbol`](crate::sun::r_symbol),
+//! with outer-multiplicity indices. Values are exact rationals (labels, dimensions,
+//! GT ladder matrices) up to the CGC nullspace solve, which is
+//! verification-gated floating point.
 //!
-//! Ported from SUNRepresentations.jl v0.4.0
-//! (`~/.julia/packages/SUNRepresentations/BM32Z/src`). The *basis order* of
-//! [`Irrep::patterns`](crate::sun::Irrep::patterns) is load-bearing — Layer 2's
-//! gauge depends on it — so it
-//! reproduces `gtpatterns.jl:GTPatternIterator` index-for-index and is pinned
-//! by checked-in fixtures.
+//! The GT construction applies to SU(N) because the chain
+//! `SU(N) ⊃ SU(N-1) ⊃ … ⊃ SU(1)` is multiplicity-free: GT patterns label basis
+//! states uniquely, so the ladder operators have exact closed-form matrix
+//! elements. See [`docs/theory.md`] §5 for the rationale and
+//! [`docs/references.md`] for the port provenance.
 //!
-//! # Label normalization invariant
+//! [`docs/theory.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/theory.md
+//! [`docs/references.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/references.md
+//!
+//! # Conventions
+//!
+//! ## Label normalization invariant
 //!
 //! An [`Irrep`](crate::sun::Irrep) stores the SU(N) highest weight as a *normalized* weight
 //! `λ = (λ₁ ≥ λ₂ ≥ … ≥ λ_N)` with `λ_N = 0` and all `λ_i ≥ 0`, of length `N`
@@ -311,8 +321,10 @@ impl Irrep {
     /// All GT patterns of this irrep, in the reference basis order.
     ///
     /// Ported from `gtpatterns.jl:GTPatternIterator` /
-    /// `basis(s) = GTPatternIterator{N}(weight(s))`. The order is load-bearing
-    /// and pinned by fixtures. See the private `gt_enumerate` for the recursion.
+    /// `basis(s) = GTPatternIterator{N}(weight(s))`, reproduced index-for-index.
+    /// The order is load-bearing — the CGC gauge is a deterministic function of
+    /// it — so it is pinned by checked-in fixtures. See the private
+    /// `gt_enumerate` for the recursion.
     pub fn patterns(&self) -> Vec<GtPattern> {
         let n = self.rank();
         gt_enumerate(&self.weight)

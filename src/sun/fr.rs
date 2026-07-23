@@ -1,8 +1,7 @@
 //! SU(N) F- and R-symbols derived from Layer 2 Clebsch-Gordan coefficients
 //! (Layer 3 of the `cgc-gen` track).
 //!
-//! Ported from SUNRepresentations.jl v0.4.0
-//! (`~/.julia/packages/SUNRepresentations/BM32Z/src/sector.jl`):
+//! Ported from SUNRepresentations.jl v0.4.0 `src/sector.jl`:
 //! - [`f_symbol`] ports `_Fsymbol` (`sector.jl:58-89`): the F-symbol as the
 //!   contraction of four CGC over all magnetic indices, leaving the four outer
 //!   multiplicity indices `[μ, ν, κ, λ]`.
