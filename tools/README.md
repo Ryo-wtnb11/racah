@@ -48,3 +48,22 @@ without commercial licenses. Therefore:
   anything.
 - If this directory grows past easy scanning, split by semantics
   (per group family or per oracle kind), not by language.
+
+## Reference-coverage roles (who verifies what)
+
+Each verification strand has one role; strands do not substitute for each
+other:
+
+| Strand | Verifies | Does NOT verify |
+|---|---|---|
+| TensorKitSectors fixtures | racah reproduces the TKS **convention** (SU(2) F/R) | general value correctness elsewhere |
+| SUNRepresentations fixtures | racah reproduces the SUNRep **gauge** (SU(N) CGC/F/R; authorizes downstream table deletion) | B/C/D anything |
+| WignerSymbols.jl fixtures | **exact** SU(2) values beyond the reference crate's domain | conventions of other packages |
+| Sage / OSCAR fixtures | exact **combinatorics** (N-symbols, dims) against an independent implementation | coefficient values, gauges |
+| GroupMath fixtures | gauge-agnostic **values** (B/C/D CGC/F/R through the alignment harness) | any convention/gauge claim |
+| Isomorphism cross-checks (SO(4)≅SU(2)², SO(6)≅SU(4), Sp(4)≅SO(5)) | B/C/D pipeline consistency against the independently-oracled SU(N) pipeline | labels outside the isomorphic images |
+| Self-consistency gates (orthogonality, unitarity, pentagon/hexagon, exact-multiplicity, coherence guard) | internal coherence of every generated family, always on | agreement with any external convention |
+| QSpace (optional, license-gated) | the ported pipeline against the **reference implementation's own numbers** (after gauge alignment) | nothing exclusively — hardening only, since GroupMath covers value claims |
+
+Rule: when adding a test, first name the claim, then pick the strand that
+owns it. A test whose claim spans two strands is two tests.
