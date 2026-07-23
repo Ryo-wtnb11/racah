@@ -355,6 +355,44 @@ pub(crate) fn cache_sun_f(
     &sun_f_cache::CACHE_SUN_F
 }
 
+/// Bounded, byte-accounted derived-f64 B/C/D F-symbol cache (`cgc-gen`, Stage 3
+/// S3.4, issue #27).
+///
+/// The B/C/D analogue of [`cache_sun_f`]: an F block is the contraction of four
+/// catalog-driven CGC, real work even with warm generators, so the derived
+/// `[μ,ν,κ,λ]` block is cached. Same design as the SU(N) tier — the **plain
+/// ordered six-label key** `(a,b,c,d,e,f)` (no Regge canonicalization exists for
+/// GT/sweep-basis F blocks; see the Why-comment in `sun::fr::f_symbol`), the
+/// shared `Arc<FBlock>` [`CacheCharge`] impl, in-memory only (values are
+/// gauge/algorithm-dependent, so a persisted store would need a version key).
+///
+/// R needs no cache: it is a single sparse join of two CGC (issue #27, "R
+/// uncached unless measured").
+#[cfg(feature = "cgc-gen")]
+mod bcd_f_cache {
+    use super::FifoCache;
+    use crate::bcd::Irrep;
+    use crate::frcore::FBlock;
+    use std::sync::{Arc, LazyLock};
+
+    /// Canonical cache key: the six B/C/D irrep labels `(a, b, c, d, e, f)`.
+    pub(crate) type BcdFKey = (Irrep, Irrep, Irrep, Irrep, Irrep, Irrep);
+
+    /// Entry cap; the byte cap is the real backstop.
+    const BCD_F_MAX_ENTRIES: usize = 1 << 16;
+    /// Byte cap (64 MiB): F blocks are tiny (a few multiplicity indices).
+    const BCD_F_MAX_BYTES: usize = 64 << 20;
+
+    pub(crate) static CACHE_BCD_F: LazyLock<FifoCache<BcdFKey, Arc<FBlock>>> =
+        LazyLock::new(|| FifoCache::new(BCD_F_MAX_ENTRIES, BCD_F_MAX_BYTES));
+}
+
+#[cfg(feature = "cgc-gen")]
+pub(crate) fn cache_bcd_f(
+) -> &'static FifoCache<bcd_f_cache::BcdFKey, std::sync::Arc<crate::frcore::FBlock>> {
+    &bcd_f_cache::CACHE_BCD_F
+}
+
 /// Clear the 3j, 6j, and derived-f64 F-symbol caches (and, under `cgc-gen`, the
 /// SU(N) CGC cache) and their hit/miss counters.
 pub fn reset() {
@@ -365,6 +403,7 @@ pub fn reset() {
     {
         cgc_cache::CACHE_CGC.reset();
         sun_f_cache::CACHE_SUN_F.reset();
+        bcd_f_cache::CACHE_BCD_F.reset();
     }
 }
 
@@ -378,7 +417,8 @@ pub fn stats() -> CacheStats {
     let (hc, mc, ec, bc) = {
         let (h, m, e, b) = cgc_cache::CACHE_CGC.snapshot();
         let (h2, m2, e2, b2) = sun_f_cache::CACHE_SUN_F.snapshot();
-        (h + h2, m + m2, e + e2, b + b2)
+        let (h3, m3, e3, b3) = bcd_f_cache::CACHE_BCD_F.snapshot();
+        (h + h2 + h3, m + m2 + m3, e + e2 + e3, b + b2 + b3)
     };
     #[cfg(not(feature = "cgc-gen"))]
     let (hc, mc, ec, bc) = (0u64, 0u64, 0usize, 0usize);
