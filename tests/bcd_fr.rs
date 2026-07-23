@@ -29,58 +29,60 @@ fn irr(s: Series, d: &[i64]) -> Irrep {
 //
 // An F/R gate on a family EITHER closes (Ok — the F-move is unitary / the
 // pentagon-hexagon identity holds within tolerance) OR fail-loud with a typed
-// `BasisIncoherent` — it must NEVER return a silently-wrong value (a non-unitary
-// F-move, a violated identity). WHICH of the two happens can be platform-
-// dependent: an ill-conditioned coupled channel's frame is a deterministic
-// resolution of a NEAR-TIE, so a given channel may embed coherently on one
-// target (CI Linux x86) and in a rotated frame on another (dev macOS ARM). So we
-// assert the DISJUNCTION, never a specific channel's incoherence. (The guard's
-// firing itself is pinned deterministically by the synthetic rotation test in
-// `bcd::sweep`.) See the P1b review round on PR #28.
+// `BasisIncoherent` — it must NEVER return a silently-wrong value. Before issue
+// #29 an ill-conditioned coupled channel embedded in an O(1)-rotated frame on
+// some platforms, so these were `closes_or_bricks` disjunctions. Intertwiner
+// alignment (#29) now rotates every such frame onto the canonical stored frame,
+// so the gates CLOSE — including the previously-bricking D3 84 = (0,2,2) and the
+// OM=2 D3-adjoint family. We therefore assert plain closure. A residual that
+// STILL exceeds tolerance after alignment (a numerically hopeless embedding)
+// remains a loud `BasisIncoherent`; `assert_closes` fails on it, which is the
+// intended signal that alignment regressed on this platform. (The alignment /
+// guard boundary is pinned by the synthetic-rotation tests in `bcd::sweep`.)
 // ---------------------------------------------------------------------------
 
-/// The contract: `Ok` (gate closed) or `BasisIncoherent` (fail-loud) — anything
-/// else (a violation slipping past the coherence guard) is a real defect.
+/// Post-#29 contract: the gate CLOSES. A `BasisIncoherent` here means alignment
+/// failed to recover a coherent frame — a regression, not the accepted outcome
+/// it was before #29.
 #[track_caller]
-fn assert_closes_or_bricks(r: Result<(), FrError>) {
+fn assert_closes(r: Result<(), FrError>) {
     match r {
         Ok(()) => {}
-        Err(FrError::Catalog(CatalogError::BasisIncoherent { .. })) => {}
         other => panic!(
-            "contract violated: a gate must close (Ok) or fail-loud with \
-             BasisIncoherent, never return a silent wrong value — got {other:?}"
+            "gate must close after intertwiner alignment (#29); \
+             a BasisIncoherent here is an alignment regression — got {other:?}"
         ),
     }
 }
 
 #[test]
-fn c2_vector_f_move_closes_or_bricks() {
-    // C2 = Sp(4), vector (0,1) dim 5. (Coherent, closes, on the dev macOS ARM box.)
+fn c2_vector_f_move_closes() {
+    // C2 = Sp(4), vector (0,1) dim 5.
     let mut cat = CanonicalCatalog::new(Series::C, 2).unwrap();
     let v = irr(Series::C, &[0, 1]);
     let adj = irr(Series::C, &[2, 0]);
-    assert_closes_or_bricks(check_f_unitarity(&mut cat, &v, &v, &v, &adj));
+    assert_closes(check_f_unitarity(&mut cat, &v, &v, &v, &adj));
 }
 
 #[test]
-fn b2_vector_f_move_closes_or_bricks() {
+fn b2_vector_f_move_closes() {
     // B2 = SO(5), vector (1,0). Its F-move pulls the (1,2) dim-35 channel, whose
-    // frame is ill-conditioned: it bricks with BasisIncoherent on dev macOS ARM
-    // (residual √6 ≈ 2.449) but embeds coherently and closes on CI Linux x86 —
-    // hence the disjunction (a channel-specific assertion here is platform-fragile).
+    // frame is ill-conditioned (residual √6 ≈ 2.449 on dev macOS ARM); before #29
+    // it bricked there. Alignment now rotates it onto the canonical frame and the
+    // F-move closes on every platform.
     let mut cat = CanonicalCatalog::new(Series::B, 2).unwrap();
     let v = irr(Series::B, &[1, 0]);
     let adj = irr(Series::B, &[0, 2]);
-    assert_closes_or_bricks(check_f_unitarity(&mut cat, &v, &v, &v, &adj));
+    assert_closes(check_f_unitarity(&mut cat, &v, &v, &v, &adj));
 }
 
 #[test]
-fn d3_vector_f_move_closes_or_bricks() {
+fn d3_vector_f_move_closes() {
     // D3 = SO(6), vector (1,0,0) dim 6; vector^2 -> 1 + adjoint + (2,0,0).
     let mut cat = CanonicalCatalog::new(Series::D, 3).unwrap();
     let v = irr(Series::D, &[1, 0, 0]);
     let d = irr(Series::D, &[2, 0, 0]);
-    assert_closes_or_bricks(check_f_unitarity(&mut cat, &v, &v, &v, &d));
+    assert_closes(check_f_unitarity(&mut cat, &v, &v, &v, &d));
 }
 
 // ---------------------------------------------------------------------------
@@ -217,18 +219,15 @@ fn sp4_so5_vector_f_coboundary_fit_signed() {
 }
 
 // ---------------------------------------------------------------------------
-// Pentagon / hexagon, the same closes-or-bricks contract (heavy — run with
-// --release --ignored).
+// Pentagon / hexagon, now plain CLOSURE (heavy — run with --release --ignored).
 //
-// A gate CLOSES only when every channel its enumeration pulls is well-
-// conditioned; a gate that pulls any ill-conditioned channel fail-LOUD with a
-// typed BasisIncoherent (never a silently-wrong value). WHICH happens is
-// platform-dependent for near-tie channels, so these assert the disjunction, not
-// a specific channel. Dev-macOS-ARM measurements (not assertions): C2 vector
-// hexagon closes; C2 vector pentagon bricks at the (2,2)-type channel; B2 vector
-// hexagon bricks at (1,2) (√6); the D3 adjoint OM≥2 (0,1,1)² battery bricks at
-// the 84 = (0,2,2) channel (residual 3.65). Closing the ill-conditioned families
-// awaits the intertwiner-alignment leaf.
+// Before issue #29 these were closes-or-bricks disjunctions: a gate that pulled
+// an ill-conditioned channel bricked with a typed BasisIncoherent on some
+// platforms. Dev-macOS-ARM measurements had C2 vector pentagon brick at the
+// (2,2)-type channel, B2 vector hexagon brick at (1,2) (√6), and the D3 adjoint
+// OM≥2 (0,1,1)² battery brick at the 84 = (0,2,2) channel (residual 3.65).
+// Intertwiner alignment (#29) rotates each of those onto the canonical stored
+// frame, so all four gates now CLOSE — verified in release on dev macOS ARM.
 //
 // (Earlier "~5 s green" figures in this file's history were a measurement bug —
 // the timing ran through a pipe whose exit code was grep's, not the test's, so
@@ -237,42 +236,41 @@ fn sp4_so5_vector_f_coboundary_fit_signed() {
 
 #[test]
 #[ignore = "heavy: materializes many CGC; run with --release --ignored"]
-fn c2_vector_hexagon_closes_or_bricks() {
+fn c2_vector_hexagon_closes() {
     let mut cat = CanonicalCatalog::new(Series::C, 2).unwrap();
     let v = irr(Series::C, &[0, 1]);
-    assert_closes_or_bricks(check_hexagon(&mut cat, &v, &v, &v));
+    assert_closes(check_hexagon(&mut cat, &v, &v, &v));
 }
 
 #[test]
 #[ignore = "heavy: materializes many CGC; run with --release --ignored"]
-fn c2_vector_pentagon_closes_or_bricks() {
+fn c2_vector_pentagon_closes() {
     let mut cat = CanonicalCatalog::new(Series::C, 2).unwrap();
     let v = irr(Series::C, &[0, 1]);
-    assert_closes_or_bricks(check_pentagon(&mut cat, &v, &v, &v, &v));
+    assert_closes(check_pentagon(&mut cat, &v, &v, &v, &v));
 }
 
 #[test]
 #[ignore = "heavy: materializes many CGC; run with --release --ignored"]
-fn b2_vector_hexagon_closes_or_bricks() {
+fn b2_vector_hexagon_closes() {
     let mut cat = CanonicalCatalog::new(Series::B, 2).unwrap();
     let v = irr(Series::B, &[1, 0]);
-    assert_closes_or_bricks(check_hexagon(&mut cat, &v, &v, &v));
+    assert_closes(check_hexagon(&mut cat, &v, &v, &v));
 }
 
 /// OM ≥ 2 on the D3 adjoint g = (0,1,1): `g⊗g → g` has multiplicity 2 (exact
-/// S3.0). On dev macOS ARM the g⊗g decomposition's 84 = (0,2,2) channel is
-/// near-rank-deficient in QR (PR #24) and embeds in an O(1)-rotated frame, so the
-/// braiding battery bricks with `BasisIncoherent` there (residual 3.65) — the
-/// restored QSpace coherence guard (issue #15 instance 5). On another platform
-/// the near-tie may resolve coherently and the battery close; the assertion is
-/// the disjunction. A guaranteed-closing OM ≥ 2 battery is the intertwiner-
-/// alignment leaf's acceptance gate, not this PR's.
+/// S3.0). The g⊗g decomposition's 84 = (0,2,2) channel is near-rank-deficient in
+/// QR (PR #24) and embeds in an O(1)-rotated frame (residual 3.65 on dev macOS
+/// ARM), which bricked the braiding battery before #29. Intertwiner alignment
+/// aligns the 84 (and both OM=2 adjoint copies, each on the coupled side) onto
+/// the canonical frame, so the OM≥2 hexagon now CLOSES — this test is the #29
+/// acceptance gate for the OM≥2 path.
 ///
 /// `#[ignore]` (release-only): materializes the adjoint CGC chain; seconds in
 /// release, minutes under the unoptimized debug SVD.
 #[test]
 #[ignore = "heavy OM>=2 family (minutes in debug SVD): run with --release --ignored"]
-fn d3_adjoint_om2_closes_or_bricks() {
+fn d3_adjoint_om2_hexagon_closes() {
     let g = irr(Series::D, &[0, 1, 1]);
     assert_eq!(
         directproduct(&g, &g).unwrap().get(&g).copied().unwrap(),
@@ -280,5 +278,5 @@ fn d3_adjoint_om2_closes_or_bricks() {
         "exact layer must predict OM=2 for the D3 adjoint square"
     );
     let mut cat = CanonicalCatalog::new(Series::D, 3).unwrap();
-    assert_closes_or_bricks(check_hexagon(&mut cat, &g, &g, &g));
+    assert_closes(check_hexagon(&mut cat, &g, &g, &g));
 }
