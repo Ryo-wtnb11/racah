@@ -5,7 +5,7 @@ function gen_qspace_generators(outfile)
             {'SO6','[1 0 0]'}, {'SO6','[0 1 1]'} };
   fid=fopen(outfile,'w');
   fprintf(fid,'--- QSpace generator export (basis = QSpace RSet, via patched getRC, plain double)\n');
-  fprintf(fid,'--- source: QSpace v4-pub @ dd2cc7e; convention: Sz{k} diagonal Cartan (weight coords), Sp{k} ladder ops; [Sp_k,Sp_k^T] closes on integer combos of Sz\n');
+  fprintf(fid,'--- source: QSpace v4-pub @ dd2cc7e; convention: Sz{k} diagonal Cartan (weight coords), Sp{k} ladder ops; [Sp_k,Sp_k^T] closes on rational combos of Sz\n');
   fprintf(fid,'--- format: IRREP sym | J | dim | nops ; Z rows ; OP SP|SZ k: "row col value" 0-based dense-nonzeros\n');
   for c=1:numel(cases)
     R=getRC(cases{c}{1}, cases{c}{2});
