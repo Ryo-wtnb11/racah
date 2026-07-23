@@ -290,6 +290,38 @@ impl Generators {
         &self.sz[i]
     }
 
+    /// Worst element-wise difference between this generator set and `other`'s —
+    /// the restored QSpace cross-copy coherence measure (`normDiff`,
+    /// `clebsch.cc:6710-6718 @ dd2cc7e`; issue #15 instance 5).
+    ///
+    /// Two embeddings of the *same* irrep must present the *same* canonical
+    /// carrier basis — the raising operators and Cartan diagonals must agree
+    /// element-for-element, not merely carry the same weight multiset. A basis
+    /// *rotation* between embeddings (an ill-conditioned QR leaving a coupled
+    /// multiplet in a rotated frame) leaves the weights equal but the operators
+    /// O(1) apart, and would silently corrupt every F/R contraction that shares
+    /// that irrep across its coupled and factor roles. This is that check: it is
+    /// deliberately basis-order-sensitive (both embeddings are produced in the
+    /// sweep's descending-weight order, so a coherent pair agrees to ~1e-15).
+    /// Returns `f64::INFINITY` on a dimension mismatch (never expected: same
+    /// irrep ⇒ same `dim`).
+    pub(crate) fn coherence_residual(&self, other: &Generators) -> f64 {
+        if self.dim != other.dim || self.rank != other.rank {
+            return f64::INFINITY;
+        }
+        let mut worst = 0.0f64;
+        for i in 0..self.rank {
+            let (a, b) = (&self.sp[i], &other.sp[i]);
+            for r in 0..self.dim {
+                for c in 0..self.dim {
+                    worst = worst.max((a.at(r, c) - b.at(r, c)).abs());
+                }
+                worst = worst.max((self.sz[i][r] - other.sz[i][r]).abs());
+            }
+        }
+        worst
+    }
+
     /// Worst residual of the S3.1 commutator relations satisfied by this
     /// generator set (`f64` analogue — the projected `Sp` are generally
     /// irrational). Exposed for the S3.3 chain-depth error bench (issue #18

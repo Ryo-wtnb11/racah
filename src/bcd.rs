@@ -896,7 +896,8 @@ pub use catalog::{CanonicalCatalog, CatalogCgc, CatalogError};
 mod fr;
 #[cfg(feature = "cgc-gen")]
 pub use fr::{
-    check_f_unitarity, check_hexagon, check_pentagon, f_symbol, r_symbol, FBlock, FrError, RBlock,
+    cgc_sweeps, check_f_unitarity, check_hexagon, check_pentagon, f_symbol, r_symbol, FBlock,
+    FrError, RBlock,
 };
 
 #[cfg(test)]

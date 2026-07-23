@@ -98,6 +98,12 @@ impl From<CatalogError> for FrError {
     }
 }
 
+/// Count of product-decomposition sweeps actually run (tier misses). A
+/// performance-contract counter: the F/R gates route every CGC request through
+/// the value tier, so this rises once per distinct `(s1, s2)` product, not once
+/// per `cgc_entries` call. Exercised by the `warm_state_does_not_resweep` test.
+pub(crate) static CGC_SWEEPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// The B/C/D binding of the generic F/R core: a `&mut CanonicalCatalog` provider.
 ///
 /// The `&mut` is real here (materializing a canonical-parent chain mutates the
@@ -114,13 +120,35 @@ impl Family for BcdFamily<'_> {
         bcd_mult(a, b, c)
     }
 
+    /// Sparse CGC entries for `a ⊗ b → c`, served from the process-global B/C/D
+    /// CGC value tier ([`crate::cache::cache_bcd_cgc`]).
+    ///
+    /// On a miss the whole `a ⊗ b` product is decomposed **once**
+    /// ([`CanonicalCatalog::cgc_product`]) and every coupled channel is cached, so
+    /// the gates' many `(a, b, ·)` requests share one sweep instead of
+    /// re-sweeping per coupled irrep (issue #27 P1 review).
     fn cgc_entries(
         &mut self,
         a: &Irrep,
         b: &Irrep,
         c: &Irrep,
     ) -> Result<Vec<MEntry>, CatalogError> {
-        let cgc = self.cat.cgc(a, b, c)?;
+        let tier = crate::cache::cache_bcd_cgc();
+        if let Some(hit) = tier.get(&(a.clone(), b.clone(), c.clone())) {
+            return Ok(sparse_entries(a, &hit));
+        }
+        // Miss: one sweep for the whole product; cache every channel.
+        CGC_SWEEPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let channels = self.cat.cgc_product(a, b)?;
+        let mut wanted: Option<Arc<CatalogCgc>> = None;
+        for ch in channels {
+            let key = (a.clone(), b.clone(), ch.s3().clone());
+            let stored = tier.insert(key, Arc::new(ch));
+            if stored.s3() == c {
+                wanted = Some(stored);
+            }
+        }
+        let cgc = wanted.expect("c is a coupled channel of a⊗b (mult>0 checked by caller)");
         Ok(sparse_entries(a, &cgc))
     }
 
@@ -345,3 +373,8 @@ pub fn check_hexagon(
 
 #[cfg(test)]
 mod tests;
+
+#[doc(hidden)]
+pub fn cgc_sweeps() -> u64 {
+    CGC_SWEEPS.load(std::sync::atomic::Ordering::Relaxed)
+}

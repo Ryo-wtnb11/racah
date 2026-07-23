@@ -5,9 +5,50 @@
 
 use super::*;
 use crate::bcd::{CanonicalCatalog, Series};
+use crate::frcore::Family;
+use std::sync::atomic::Ordering;
 
 fn irr(s: Series, d: &[i64]) -> Irrep {
     Irrep::from_dynkin(s, d).unwrap()
+}
+
+// ---- performance contract: the CGC value tier dedups product sweeps ----
+
+#[test]
+fn warm_state_does_not_resweep() {
+    // The value tier caches EVERY coupled channel from ONE decomposition sweep.
+    // C2 vector v=(0,1), v⊗v = 1 ⊕ (2,0) ⊕ (0,2). After a single cgc_entries for
+    // channel (2,0), the *other* channel (0,2) must already be in the tier — i.e.
+    // one sweep populated both, so a later (0,2) request is a hit, not a re-sweep.
+    // Red-first: before the P1 fix each cgc() re-decomposed v⊗v per channel, so
+    // (0,2) would be absent after the (2,0) request.
+    //
+    // Asserted via tier CONTENTS (specific keys), not a shared sweep-counter
+    // delta, so it is robust to other tests touching the process-global tier
+    // concurrently. (The counter `cgc_sweeps()` remains for the bench/PR arith.)
+    crate::cache::reset();
+    let mut cat = CanonicalCatalog::new(Series::C, 2).unwrap();
+    let v = irr(Series::C, &[0, 1]);
+    let c1 = irr(Series::C, &[2, 0]);
+    let c2 = irr(Series::C, &[0, 2]);
+
+    let sweeps_before = CGC_SWEEPS.load(Ordering::Relaxed);
+    {
+        let mut fam = BcdFamily { cat: &mut cat };
+        fam.cgc_entries(&v, &v, &c1).unwrap(); // one sweep of v⊗v
+    }
+    let tier = crate::cache::cache_bcd_cgc();
+    assert!(
+        tier.get(&(v.clone(), v.clone(), c1.clone())).is_some(),
+        "requested channel must be cached"
+    );
+    assert!(
+        tier.get(&(v.clone(), v.clone(), c2.clone())).is_some(),
+        "the OTHER channel of the same product must be cached by the same sweep \
+         (no per-channel re-sweep)"
+    );
+    // At least the one sweep ran; the point is (0,2) needed no separate one.
+    assert!(CGC_SWEEPS.load(Ordering::Relaxed) > sweeps_before);
 }
 
 // ---- guard inventory: red-first ill-posed inputs ----
@@ -108,23 +149,53 @@ fn c2_vector_cubed_f_is_multiplicity_free_scalar() {
 }
 
 #[test]
-fn d3_adjoint_cubed_f_block_has_om_axis() {
-    // D3 adjoint g=(0,1,1) dim15; g⊗g → g has multiplicity 2 (exact S3.0), so the
-    // F(g,g,g,g,g,g) block must carry a length-2 outer-multiplicity axis.
-    use crate::bcd::directproduct;
+fn d3_adjoint_square_84_channel_is_basis_incoherent() {
+    // Red-first for the restored QSpace coherence guard (issue #15 instance 5).
+    // D3 adjoint g=(0,1,1) dim15; g⊗g has multiplicity 2 at g (exact S3.0), but
+    // its 84=(0,2,2) channel is near-rank-deficient in QR (PR #24) and its
+    // embedding here is in an O(1)-rotated frame vs the stored canonical basis.
+    // The catalog must REFUSE the incoherent value with a typed error naming the
+    // irrep, the product, and the residual — not silently return a wrong CGC.
+    use crate::bcd::{directproduct, CatalogError};
     let g = irr(Series::D, &[0, 1, 1]);
-    let n = directproduct(&g, &g).unwrap().get(&g).copied().unwrap();
     assert_eq!(
-        n, 2,
+        directproduct(&g, &g).unwrap().get(&g).copied().unwrap(),
+        2,
         "exact layer must predict OM=2 for the D3 adjoint square"
     );
 
     let mut cat = CanonicalCatalog::new(Series::D, 3).unwrap();
-    let block = f_symbol(&mut cat, &g, &g, &g, &g, &g, &g).unwrap();
+    let eightyfour = irr(Series::D, &[0, 2, 2]);
+    let err = cat.cgc(&g, &g, &eightyfour).unwrap_err();
+    match err {
+        CatalogError::BasisIncoherent {
+            irrep,
+            product,
+            residual,
+        } => {
+            assert_eq!(irrep, vec![0, 2, 2]);
+            assert_eq!(product, (vec![0, 1, 1], vec![0, 1, 1]));
+            assert!(
+                residual > 1e-3,
+                "residual {residual} must be O(1), not noise"
+            );
+        }
+        other => panic!("expected BasisIncoherent, got {other:?}"),
+    }
+}
+
+#[test]
+fn d3_adjoint_f_symbol_surfaces_basis_incoherence() {
+    // Consequently the D3-adjoint OM>=2 F-move terminates in BasisIncoherent (via
+    // the 84 channel of g⊗g), rather than returning a non-unitary block. This is
+    // the EXPECTED current behavior until the intertwiner-alignment follow-up.
+    use crate::bcd::CatalogError;
+    let g = irr(Series::D, &[0, 1, 1]);
+    let mut cat = CanonicalCatalog::new(Series::D, 3).unwrap();
+    let err = f_symbol(&mut cat, &g, &g, &g, &g, &g, &g).unwrap_err();
     assert!(
-        block.dims().contains(&2),
-        "F block dims {:?} must contain an OM=2 axis",
-        block.dims()
+        matches!(err, FrError::Catalog(CatalogError::BasisIncoherent { .. })),
+        "got {err:?}"
     );
 }
 

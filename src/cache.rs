@@ -393,6 +393,63 @@ pub(crate) fn cache_bcd_f(
     &bcd_f_cache::CACHE_BCD_F
 }
 
+/// Bounded, byte-accounted B/C/D CGC value tier (`cgc-gen`, Stage 3 S3.4 P1
+/// review, issue #27).
+///
+/// The B/C/D analogue of the SU(N) [`cache_cgc`] tier: a
+/// [`CatalogCgc`](crate::bcd::CatalogCgc) is expensive (a full decomposition
+/// sweep), and the F/R gates request the **same** `s1 ⊗ s2` product decomposed
+/// to many different coupled `s3`. Without this tier every `bcd::f_symbol` /
+/// gate call re-runs the whole sweep in `CanonicalCatalog::cgc`; with it, the
+/// tier holds each channel's isometry so a warm request is a hash lookup, and
+/// (populated all-channels-per-sweep from `CanonicalCatalog::cgc_product`) the
+/// sweep runs once per **product**, not once per **triple**.
+///
+/// Keyed by the canonical `(s1, s2, s3)` labels — the complete value key, since
+/// the CGC is a deterministic function of the labels and the canonical gauge
+/// (Ruling 2), independent of which catalog instance produced it (exactly the
+/// SU(N) `cache_cgc` argument). In-memory only: values are gauge/algorithm-
+/// dependent, so a persisted store would need a version key.
+///
+/// # Why a single (s1,s2,s3) tier and not a global tier plus a per-call memo
+///
+/// One process-global value tier serves both roles the P1 review split out — it
+/// dedups the sweep across coupled channels (all channels of a product share the
+/// one sweep that first populates any of them) *and* across calls. A separate
+/// call-scoped memo would duplicate ownership of the same CGC across a global
+/// and a local store, which the workspace cache policy warns against; the single
+/// tier keeps ownership singular.
+#[cfg(feature = "cgc-gen")]
+mod bcd_cgc_cache {
+    use super::{CacheCharge, FifoCache};
+    use crate::bcd::{CatalogCgc, Irrep};
+    use std::sync::{Arc, LazyLock};
+
+    /// Canonical cache key: the three B/C/D irrep labels.
+    pub(crate) type BcdCgcKey = (Irrep, Irrep, Irrep);
+
+    impl CacheCharge for Arc<CatalogCgc> {
+        fn value_bytes(&self) -> usize {
+            self.storage_bytes()
+        }
+    }
+
+    /// Entry cap; the byte cap is the real backstop.
+    const BCD_CGC_MAX_ENTRIES: usize = 1 << 16;
+    /// Byte cap (256 MiB): dense product isometries are far larger than an F
+    /// block, so this tier gets its own generous budget (as the SU(N) CGC tier).
+    const BCD_CGC_MAX_BYTES: usize = 256 << 20;
+
+    pub(crate) static CACHE_BCD_CGC: LazyLock<FifoCache<BcdCgcKey, Arc<CatalogCgc>>> =
+        LazyLock::new(|| FifoCache::new(BCD_CGC_MAX_ENTRIES, BCD_CGC_MAX_BYTES));
+}
+
+#[cfg(feature = "cgc-gen")]
+pub(crate) fn cache_bcd_cgc(
+) -> &'static FifoCache<bcd_cgc_cache::BcdCgcKey, std::sync::Arc<crate::bcd::CatalogCgc>> {
+    &bcd_cgc_cache::CACHE_BCD_CGC
+}
+
 /// Clear the 3j, 6j, and derived-f64 F-symbol caches (and, under `cgc-gen`, the
 /// SU(N) CGC cache) and their hit/miss counters.
 pub fn reset() {
@@ -404,6 +461,7 @@ pub fn reset() {
         cgc_cache::CACHE_CGC.reset();
         sun_f_cache::CACHE_SUN_F.reset();
         bcd_f_cache::CACHE_BCD_F.reset();
+        bcd_cgc_cache::CACHE_BCD_CGC.reset();
     }
 }
 
@@ -418,7 +476,13 @@ pub fn stats() -> CacheStats {
         let (h, m, e, b) = cgc_cache::CACHE_CGC.snapshot();
         let (h2, m2, e2, b2) = sun_f_cache::CACHE_SUN_F.snapshot();
         let (h3, m3, e3, b3) = bcd_f_cache::CACHE_BCD_F.snapshot();
-        (h + h2 + h3, m + m2 + m3, e + e2 + e3, b + b2 + b3)
+        let (h4, m4, e4, b4) = bcd_cgc_cache::CACHE_BCD_CGC.snapshot();
+        (
+            h + h2 + h3 + h4,
+            m + m2 + m3 + m4,
+            e + e2 + e3 + e4,
+            b + b2 + b3 + b4,
+        )
     };
     #[cfg(not(feature = "cgc-gen"))]
     let (hc, mc, ec, bc) = (0u64, 0u64, 0usize, 0usize);
