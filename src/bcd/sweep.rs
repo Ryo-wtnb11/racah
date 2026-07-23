@@ -281,11 +281,24 @@ impl Generators {
     pub fn rank(&self) -> usize {
         self.rank
     }
-    /// Test-only: the `i`-th Cartan diagonal, to pin the Kronecker
-    /// composite-index convention at its site (§1 of `docs/gauge_soN.md`).
-    #[cfg(test)]
+    /// The `i`-th Cartan diagonal. Pins the Kronecker composite-index
+    /// convention at its site (§1 of `docs/gauge_soN.md`) and lets the S3.3
+    /// catalog compare a rediscovered block's Cartan spectrum against a stored
+    /// generator set (the debug-assert that replaces QSpace's `normDiff`
+    /// cross-copy check, `clebsch.cc:6710-6718 @ dd2cc7e`).
     pub(crate) fn cartan_diag(&self, i: usize) -> &[f64] {
         &self.sz[i]
+    }
+
+    /// Worst residual of the S3.1 commutator relations satisfied by this
+    /// generator set (`f64` analogue — the projected `Sp` are generally
+    /// irrational). Exposed for the S3.3 chain-depth error bench (issue #18
+    /// watch item): a catalog entry materialized through a deep canonical-parent
+    /// chain accumulates round-off, and this reports it. The sweep already gates
+    /// every stored set at `≤ EPS_SWEEP`, so a stored set's residual is bounded.
+    #[cfg(test)]
+    pub(crate) fn max_commutator_residual(&self) -> f64 {
+        commutator_residual(&self.sp, &self.sz, self.dim)
     }
 
     /// The carrier dimension `D`.
@@ -319,6 +332,19 @@ impl Generators {
             dim: d,
             sp,
             sz,
+        }
+    }
+
+    /// The trivial (vacuum) generator set of `series` at rank `r`: a
+    /// 1-dimensional carrier on which every raising and Cartan operator is zero.
+    /// The `≺`-minimal base case for the S3.3 catalog (§14 of `docs/gauge_soN.md`).
+    pub fn trivial(series: Series, r: usize) -> Generators {
+        Generators {
+            series,
+            rank: r,
+            dim: 1,
+            sp: (0..r).map(|_| Dense::zeros(1, 1)).collect(),
+            sz: (0..r).map(|_| vec![0.0]).collect(),
         }
     }
 

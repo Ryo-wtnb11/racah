@@ -274,6 +274,18 @@ impl Irrep {
         Self::from_dynkin(series, &vec![0i64; r])
     }
 
+    /// Construct directly from an ε-basis integer partition `weight`, bypassing
+    /// the Dynkin validation. `pub(crate)` for the S3.3 catalog's bounded-dim
+    /// irrep enumeration (`bcd::catalog`), which only ever produces valid
+    /// integer dominant weights of this family; not a public constructor
+    /// (the public path is [`Irrep::from_dynkin`], which validates).
+    pub(crate) fn from_weight(series: Series, weight: Vec<i64>) -> Irrep {
+        Irrep {
+            series,
+            weight: weight.into_boxed_slice(),
+        }
+    }
+
     /// The series (`B`, `C` or `D`).
     pub fn series(&self) -> Series {
         self.series
@@ -870,6 +882,13 @@ mod sweep;
 pub use sweep::{
     decompose, decompose_defining_product, Block, Decomposition, Generators, SweepError,
 };
+
+// The S3.3 canonical catalog (append-only generator ownership) sits on top of
+// the sweep, so it shares the `cgc-gen` feature gate.
+#[cfg(feature = "cgc-gen")]
+mod catalog;
+#[cfg(feature = "cgc-gen")]
+pub use catalog::{CanonicalCatalog, CatalogCgc, CatalogError};
 
 #[cfg(test)]
 mod tests;
