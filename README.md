@@ -8,6 +8,82 @@ Coefficients for any admissible labels are computed on demand in exact or
 verification-gated arithmetic — there is no precomputed table and no label
 ceiling.
 
+## Installation
+
+Not yet published to crates.io: the `cgc-gen` feature depends on
+[tenferro-rs](https://github.com/tensor4all/tenferro-rs), which is not itself
+published, so a crates.io release is blocked upstream. The supported path today
+is a git dependency:
+
+```toml
+[dependencies]
+racah = { git = "https://github.com/Ryo-wtnb11/racah" }
+# generated SU(N)/SO(N)/Sp(2N) families:
+# racah = { git = "https://github.com/Ryo-wtnb11/racah", features = ["cgc-gen"] }
+```
+
+MSRV: latest stable Rust (CI pins no minimum version; it builds and tests on
+`stable`).
+
+## Feature flags
+
+| Feature | Adds | Pulls in |
+|---|---|---|
+| *(default)* | Exact SU(2): 3j / 6j / Clebsch–Gordan / F / R, closed-form big-rational | `num-bigint`, `num-rational`, `num-traits` only |
+| `cgc-gen` | Runtime CGC / F / R generation for SU(N) (Gelfand–Tsetlin) and SO(N)/Sp(2N) (generator bootstrap) | `tenferro-linalg` / `-cpu` / `-runtime` (the dense factorization + contraction backend) |
+
+The `cgc-gen` dependencies are pinned to an exact `tenferro-rs` git revision
+(see `Cargo.toml`), so a fresh checkout resolves without a sibling tenferro on
+disk. Consumers enabling `cgc-gen` inherit that pinned revision; bumping it is
+an ordinary reviewed commit. The default build stays dependency-light and needs
+no linear-algebra stack.
+
+## Quick start
+
+One minimal example per layer. Each is a literal copy of a crate doctest, so it
+compiles against the current API (`cargo test` / `cargo test --all-features`).
+
+Exact SU(2) 6j (base, no features). Spins are doubled (`dj = 2j`), so `2` means
+spin 1; `{1 1 1; 1 1 1} = 1/6`:
+
+```rust
+use racah::wigner_6j;
+
+let sixj = wigner_6j(2, 2, 2, 2, 2, 2);
+assert!((sixj.to_f64() - 1.0 / 6.0).abs() < 1e-14);
+```
+
+SU(N) F-symbol (`cgc-gen`). Irreps are built from Dynkin labels (length `N-1`);
+this is the SU(3) sextet `1 ⊗ 3 ⊗ 3 → 6`, a `1×1×1×1` identity move:
+
+```rust
+use racah::sun::{f_symbol, Irrep};
+
+let triv = Irrep::trivial(3).unwrap(); // SU(3) singlet
+let three = Irrep::from_dynkin(&[1, 0]).unwrap(); // fundamental
+let six = Irrep::from_dynkin(&[2, 0]).unwrap();
+
+let block = f_symbol(&triv, &three, &three, &six, &three, &six).unwrap();
+assert_eq!(block.dims(), [1, 1, 1, 1]);
+assert!((block.at(0, 0, 0, 0) - 1.0).abs() < 1e-12);
+```
+
+SO(N)/Sp(2N) F-symbol (`cgc-gen`). Generation runs through a per-(series, rank)
+`CanonicalCatalog` that caches the aligned CGC; this is an Sp(4) (`C_2`) block:
+
+```rust
+use racah::bcd::{f_symbol, CanonicalCatalog, Irrep, Series};
+
+let mut cat = CanonicalCatalog::new(Series::C, 2).unwrap(); // Sp(4)
+let triv = Irrep::trivial(Series::C, 2).unwrap();
+let v = Irrep::from_dynkin(Series::C, &[0, 1]).unwrap(); // vector
+let adj = Irrep::from_dynkin(Series::C, &[2, 0]).unwrap(); // in v ⊗ v
+
+let block = f_symbol(&mut cat, &triv, &v, &v, &adj, &v, &adj).unwrap();
+assert_eq!(block.dims(), [1, 1, 1, 1]);
+assert!((block.at(0, 0, 0, 0) - 1.0).abs() < 1e-9);
+```
+
 ## Why this crate exists
 
 Symmetric tensor libraries need, for every symmetry group they support, the
@@ -165,9 +241,43 @@ Oracles are independent of the code under test:
 
 ## Status
 
-Scaffold only; no implementation yet. Planned order: exact SU(2) base →
-GT combinatorics (exact layer) → SU(N) generation → F/R contraction and
-verification gates → SO(N)/Sp(2N).
+Feature-complete for its v0 scope; all three families are implemented and
+oracle-checked:
+
+- **SU(2)** (base): exact 3j / 6j / Clebsch–Gordan / F / R in big-rational
+  arithmetic.
+- **SU(N)** (`cgc-gen`): the full Gelfand–Tsetlin pipeline — CGC, F, R, with
+  outer-multiplicity indices.
+- **SO(N) / Sp(2N)** (`cgc-gen`): the generator-bootstrap pipeline (B/C/D
+  Cartan series) — CGC, F, R.
+
+Verification (every claim below is backed by a merged test; the crate ships its
+self-checks — orthogonality, F-unitarity, pentagon, hexagon — as public API):
+
+- **SU(2)**: exhaustive agreement with `wigner-symbols` 0.5.1 over its label
+  domain, plus reference fixtures beyond it.
+- **SU(N)**: signed element-wise table regeneration against
+  SUNRepresentations.jl v0.4.0 — a dim ≤ 8 slice on every `cargo test`, and a
+  full dim ≤ 27 sweep (76,853 F blocks) run explicitly. Products and
+  multiplicities are cross-checked against GroupMath 1.1.3 fixtures.
+- **SO(N) / Sp(2N)**: the QSpace v4 CGC projector battery — **33** of the
+  fixture's rank-2/3 B/C/D channels are projector-tested against QSpace to
+  round-off (via verified factor-basis dictionaries), **0** remain
+  structural-only, and **9** higher-rank rows (SO(7)/Sp(6)/SO(8)) are out of the
+  rank-2/3 anchor's scope and skipped. See
+  `src/bcd/qspace_oracle_tests.rs` for the full coverage note.
+
+Not published to crates.io yet (blocked on the `tenferro-rs` publish); the git
+dependency above is the supported path. See [Installation](#installation) and
+[Feature flags](#feature-flags).
+
+## More
+
+- Gauge conventions: [`docs/gauge.md`](docs/gauge.md) (SU(N)),
+  [`docs/gauge_soN.md`](docs/gauge_soN.md) (SO(N)/Sp(2N)).
+- Fixture provenance and the oracle matrix: [`tools/README.md`](tools/README.md).
+- Guard discipline (every port PR carries a guard inventory): issue
+  [#15](https://github.com/Ryo-wtnb11/racah/issues/15).
 
 ## License
 
