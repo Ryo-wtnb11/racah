@@ -26,14 +26,29 @@
 //! multiplicity-free so `O_f` collapses to a signed permutation; for the adjoint
 //! it carries genuine orthogonal blocks on the degenerate weight spaces.
 //!
-//! With the verified dictionaries applied, every fixture channel's full projector
-//! matches QSpace to round-off (`< 1e-9`): the defining (vector²) products, the
-//! SO(5)/SO(6) adjoint² products — **including the SO(6) 84 = (0,2,2) and the OM=2
-//! 15-channel** — and the defining⊗adjoint cross products. Sp4's adjoint is [2 0]
-//! (dim 10); the CGC fixture has no [2 0]⊗[2 0] channel, so Sp4 adjoint² is not
-//! testable and stays covered by the structural anchor only. Every fixture channel
-//! is additionally anchored structurally (coupled dimension + outer multiplicity)
-//! by [`qspace_channel_structure_matches`].
+//! With the verified dictionaries applied, the full projector matches QSpace to
+//! round-off (`< 1e-9`) for the channels whose **both** factors have exported
+//! generators — **28** of the fixture's B/C/D channels:
+//! - SO(5) `[1 0]`/`[0 2]`: all 12 channels (vector², adjoint², and the
+//!   defining⊗adjoint cross product);
+//! - SO(6) `[1 0 0]`/`[0 1 1]`: all 13 channels — **including the 84 = (0,2,2) and
+//!   the OM=2 15-channel**;
+//! - Sp(4) `[1 0]²`: 3 channels.
+//!
+//! Not projector-tested, by construction:
+//! - Sp(4) `[0 1]²` (3 channels) and `[1 0]⊗[0 1]` (2): the `[0 1]` (dim 5) factor
+//!   has no exported generators, so its dictionary cannot be solved. Sp(4)'s
+//!   adjoint is `[2 0]` (dim 10), whose generators *are* exported, but the fixture
+//!   has no `[2 0]²` channel, so Sp(4) adjoint² is untestable here regardless.
+//! - SO(7)/Sp(6)/SO(8) (9 channels): `sym_to_series` maps only the rank-2/3 groups
+//!   the dictionaries target, so these higher-rank rows are out of this anchor's
+//!   scope (`rank == 0`).
+//!
+//! Structural coverage (coupled dimension + outer multiplicity, via
+//! [`qspace_channel_structure_matches`]) spans every rank-2/3 B/C/D channel — the
+//! 28 projector-tested ones **and** the 5 Sp(4) `[0 1]`-factor channels above (33
+//! total). The 9 SO(7)/Sp(6)/SO(8) rows are `rank == 0` to `sym_to_series` and so
+//! are skipped by that test too; the SU(2) rows belong to the su2 suites.
 
 use std::collections::HashMap;
 
