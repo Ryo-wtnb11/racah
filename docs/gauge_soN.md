@@ -427,3 +427,193 @@ identity is not promised (the backend's reductions are not bit-reproducible).
 
 A change that moves any observed value beyond these oracles' tolerances is, by
 definition of this document, a breaking release.
+
+---
+
+## 14. The canonical-parent rule (S3.3 `CanonicalCatalog`)
+
+Sections 1–13 fix the gauge of **one** decomposition of **one** product `a ⊗ b`.
+But an irrep `c` appears in *many* products, and its projected generators
+`R.Sp`/`R.Sz` (§6) — which fix `c`'s basis — are read off from whichever product
+was decomposed. If the catalog stored `c`'s generators from "whichever product
+was decomposed first", the gauge would depend on **query order**. This section
+specifies the rule that removes that dependence: each non-base irrep's generators
+come from **one** canonical parent product, chosen by a deterministic total order
+over the exact S3.0 data. This rule IS gauge — it is part of the semantic-version
+contract in the same way §§1–13 are.
+
+Design authority: issue #18 Ruling 2, issue #25. Implementation:
+`src/bcd/catalog.rs`. A reader with this section and the S3.0 `directproduct`
+(§0, `src/bcd.rs`) can re-derive every catalog gauge choice without reading the
+Rust.
+
+### 14.1 The well-order `≺` on irreps
+
+Define the total order `≺` on the tensor irreps of a fixed `(series, rank)`:
+
+```
+c₁ ≺ c₂   ⟺   ( dim(c₁), dynkin(c₁) )  <lex  ( dim(c₂), dynkin(c₂) )
+```
+
+i.e. compare exact Weyl dimensions first (a positive integer, §0), then break
+ties by the integer Dynkin label read left to right. Both components are exact
+S3.0 data; no float, no discovery order.
+
+**`≺` is a well-order** (no infinite strictly-descending chain). Proof: along any
+descending chain the dimensions are non-increasing positive integers, so they are
+eventually constant at some `D`. At a fixed dimension `D` there are only
+**finitely many** irreps (a dominant weight of bounded dimension has bounded
+entries — `dim` is strictly monotone in each partition part, §14.4), and the
+Dynkin-lexicographic order is a strict total order on that finite set, which has
+no infinite descending chain. ∎
+
+Well-foundedness is what makes the on-demand recursion (§14.3) terminate.
+
+### 14.2 The canonical parent
+
+The two **base cases** are the `≺`-minimal irreps and carry generators directly,
+not from any product:
+
+- the **trivial** rep (dim 1): all generators zero on a 1-dimensional carrier;
+- the **defining** rep `(1,0,…,0)`: the exact S3.1 seed (`src/bcd/seeds.rs`).
+
+They are seeded into the catalog at construction. Every other (`non-base`) irrep
+`c` has a **canonical parent pair** `(a, b)`, defined as the minimum, under the
+**pair order**
+
+```
+key(a,b) = ( dim(a) + dim(b),  dim(a),  dynkin(a),  dynkin(b) )   (lex)
+```
+
+over all pairs satisfying
+
+1. `a ≺ c` and `b ≺ c`  (both factors strictly smaller in `≺`), and
+2. `N^c_{ab} ≥ 1`, i.e. `c` appears in the exact decomposition `a ⊗ b` (S3.0
+   `directproduct`).
+
+The pair order's `dim(a)` tie-break (second component) makes the winner unique
+and puts it in canonical `a ⪯ b` form: of the two orderings `(a,b)`/`(b,a)` — which
+share the first component `dim(a)+dim(b)` — the one with the smaller-dimensional
+factor first wins. `c`'s generators are then the projected generators (§6) of the
+`c`-block produced by decomposing `a ⊗ b` (the outer-multiplicity-0 copy when
+`N^c_{ab} > 1`; the copies share the same intrinsic generators, §14.5).
+
+**Deliberate refinement of the issue-#25 sketch.** Issue #25 sketches minimizing
+`(dim_a + dim_b, dim_a, label_a, label_b)` over admissible pairs. That is exactly
+`key(a,b)` above; the refinement this document commits to is the **admissibility
+condition (1)**, `a ≺ c ∧ b ≺ c`, as the precise, computable-from-S3.0 statement
+of "already catalog-reachable", together with the proof (§14.4) that it is both
+non-empty and well-founded. The alternative anchoring "always take `a` = defining"
+was rejected: it forces `depth ~ |λ|` (one box per level, §14.6), maximizing the
+chain-depth error accumulation that issue #18 flags as a watch item, whereas the
+`dim_a+dim_b` minimizer favors **balanced** splits and shallow chains (measured:
+C2 `Sym⁶`, dim 84, has depth 3, not 5).
+
+### 14.3 On-demand recursion (materialization)
+
+`generators(c)` (and the factor bases inside `cgc(a,b,c)`) materialize `c`'s
+canonical-parent chain:
+
+```
+materialize(c):
+    if c already has generators: return
+    if c is a base case: it is already seeded; return
+    (a, b) = canonical_parent(c)          # §14.2, pure over S3.0
+    materialize(a); materialize(b)         # a ≺ c, b ≺ c
+    decompose (a ⊗ b)                      # the §1–§13 sweep
+    harvest the resulting blocks           # §14.5
+```
+
+Because each recursive call is on a **strictly `≺`-smaller** irrep and `≺` is a
+well-order, the recursion terminates — it cannot descend forever, and it bottoms
+out at the base cases (the `≺`-minimal irreps). This replaces QSpace's fixed-pass
+`dmax` enumeration (the bootstrap loop around `getSymmetryStates`,
+`clebsch.cc:6649-6773 @ dd2cc7e`): racah does **not** enumerate a fixed sequence
+of product passes up to a dimension cap; it materializes exactly the chain a query
+needs, in an order fixed by `≺` rather than by a pass counter — so the gauge is
+query-order-independent **structurally**, not procedurally.
+
+### 14.4 Existence (every non-base irrep has a canonical parent)
+
+The candidate set (pairs meeting conditions 1–2 of §14.2) is **non-empty** for
+every non-base `c`, so the minimum exists. Argument: every tensor irrep of
+`SO(N)`/`Sp(2N)` lives in a tensor power of the defining (vector) rep `V`
+(this is precisely why the object is the tensor irreps and spinors are excluded,
+§0 / Ruling 3). For non-trivial `c`, the product `V ⊗ c` contains a component `b`
+obtained by **removing one box** from `c`'s highest weight (lowering one part of
+the partition), which has strictly smaller dimension — `dim` is strictly monotone
+in each partition part — hence `b ≺ c`. The defining rep is the unique smallest
+**non-trivial** tensor irrep (the next dimension after the trivial rep's 1 is
+`dim(V) = 2r` or `2r+1`; no tensor irrep lies strictly between), so for any
+non-base `c` we have `V ≺ c` as well. By Frobenius reciprocity
+`N^c_{V,b} = N^b_{V*,c} = N^b_{V,c} ≥ 1` (`V` is self-dual), so `c ∈ V ⊗ b`.
+Thus `(V, b)` satisfies conditions 1–2, and the candidate set is non-empty. The
+actual canonical parent is the `key`-minimum over this non-empty finite set, which
+may be a more balanced pair than `(V, b)`. ∎
+
+The search is finite and computable from S3.0 alone: enumerate the finite set
+`{ x : x ≺ c }` (all irreps with `dim ≤ dim(c)`, obtained by a depth-first walk
+over integer partitions with `dim`-monotone pruning — §14.1's finiteness), and for
+each candidate `a`, read the admissible `b` directly from `directproduct(a*, c)`
+(the reciprocity above). Pruning: iterating `a` in ascending `≺`, stop once
+`2·dim(a)` exceeds the best sum found — safe because the `key`-minimum pair `{x,y}`
+with `dim(x) ≤ dim(y)` is always reached via its smaller factor `x`
+(`2·dim(x) ≤ dim(x)+dim(y) ≤` best sum).
+
+### 14.5 Harvest discipline (append-only, canonical-gated)
+
+Decomposing `a ⊗ b` yields blocks for several irreps at once. The catalog appends
+a block's generators **iff**:
+
+- the block's irrep `c'` has **no** generators yet (append-only; never overwrite,
+  never evict — Ruling 2), **and**
+- `(a, b)` is exactly `c'`'s canonical parent (§14.2), taking the
+  outer-multiplicity-0 copy.
+
+Blocks whose canonical parent is a *different* product are **not** written here;
+they are materialized later from their own canonical parent (or are base cases).
+This is what makes the stored gauge independent of which product happened to be
+decomposed — a second product that rediscovers `c'` finds it already present and
+**never** writes.
+
+**Deviation-by-design from QSpace's cross-copy check
+(`clebsch.cc:6710-6718 @ dd2cc7e`).** QSpace, lacking a canonical-parent rule,
+reaches the same coupled irrep `J` from multiple products and reconciles the
+copies at runtime: it compares the freshly projected generators `G` against the
+stored `G0` with `normDiff(G,G0,1e-10)` and aborts on disagreement, and it may
+**replace** the stored copy when the new one has a smaller commutator error
+(`e2 ≤ 0.5·e0 ⇒ saveR=2`, the "replacing RStore" branch). racah's canonical-parent
+rule makes a second *written* copy **structurally impossible**, so there is
+nothing to reconcile and nothing to replace — the replacement branch has no
+analogue. Where a non-canonical product *rediscovers* an already-stored `c'`, racah
+keeps only a **debug-assert-class** check: the rediscovered block's Cartan (weight)
+spectrum must match the stored generators' (cheap, loud, `debug_assert`; the
+weights are gauge-independent so this is a fast structural sanity check, not the
+full `normDiff`). QSpace's error-driven replacement is deliberately dropped: the
+canonical parent — not "whichever copy is numerically cleaner this run" — fixes the
+gauge, so the stored copy must never depend on runtime residuals.
+
+### 14.6 Atomicity of the byte budget (Ruling 2)
+
+The catalog is byte-bounded. A materialization that would exceed the budget fails
+with a typed error **before any commit**, leaving no partial chain. The mechanism
+is **compute-fully-then-commit**: the whole chain's new generator sets are
+assembled in a staging buffer (reading committed entries and the staging buffer,
+appending only what is missing), the staging buffer's total byte charge is added
+to the current retained bytes, and only if the sum is within budget are the staged
+entries committed; otherwise the staging buffer is discarded untouched. Because
+the chain is a deterministic function of `c` (§14.2–14.5), the failed request is
+reproducible and the committed state is exactly what it was before the call. This
+was chosen over incremental commit-as-you-go (which could leave a half-registered
+chain on the entry that overflows) because atomicity is a Ruling-2 requirement.
+
+### 14.7 What the catalog does NOT own
+
+CGC/F/R **values** are not stored in the catalog (Ruling 2): `cgc(a,b,c)` returns
+the isometry to the caller and does not cache it here. The catalog owns only
+generator **sets** and a byte counter. The generators are `f64` (§12); a chain of
+depth `d` accumulates round-off across `d` sweeps, but each sweep re-gates the
+commutator relations at `≤ EPS_SWEEP` (§6), so a stored set's residual is bounded.
+Measured accumulation stays deep below the gate (C2 symmetric powers: depth-3 sets
+have worst commutator residual `~10⁻¹⁴`), which is the issue-#18 chain-depth watch
+item's evidence.
