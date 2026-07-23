@@ -449,23 +449,37 @@ Rust.
 
 ### 14.1 The well-order `≺` on irreps
 
-Define the total order `≺` on the tensor irreps of a fixed `(series, rank)`:
+Define the total order `≺` on the tensor irreps of a fixed `(series, rank)` by
+**box count first**:
 
 ```
-c₁ ≺ c₂   ⟺   ( dim(c₁), dynkin(c₁) )  <lex  ( dim(c₂), dynkin(c₂) )
+box(c)  = Σ_i |λ_i|                              (number of ε-basis boxes)
+c₁ ≺ c₂ ⟺ ( box(c₁), dim(c₁), dynkin(c₁) ) <lex ( box(c₂), dim(c₂), dynkin(c₂) )
 ```
 
-i.e. compare exact Weyl dimensions first (a positive integer, §0), then break
-ties by the integer Dynkin label read left to right. Both components are exact
-S3.0 data; no float, no discovery order.
+i.e. compare the box count first, then the exact Weyl dimension, then the integer
+Dynkin label read left to right. All three components are exact S3.0 data; no
+float, no discovery order.
+
+**Why box count is primary, not dimension.** `dim` alone is **not** a sound
+primary key: `dim` is *not* monotone in the last (sign-carrying) D-series
+partition coordinate. Concretely for `D₃ = SO(6)`, partition `(1,1,0)` (the
+adjoint `(0,1,1)`) has dim **15**, while `(1,1,±1)` (the chirality pair
+`(0,0,2)`/`(0,2,0)`) has dim **10** — adding a box to the last coordinate *lowers*
+the dimension. Under a dim-first order the chirality label `(0,0,2)` would have an
+**empty** admissible-parent set (every factor of `dim < 10` fails to reproduce it,
+and the box-removed `(0,1,1)` has *larger* dim so is not `≺` it) — a real hole,
+caught by the reviewer. Box count fixes this: removing a box strictly lowers
+`box`, so the box-removed parent is always `≺` its child (§14.4), for all three
+series including D chirality.
 
 **`≺` is a well-order** (no infinite strictly-descending chain). Proof: along any
-descending chain the dimensions are non-increasing positive integers, so they are
-eventually constant at some `D`. At a fixed dimension `D` there are only
-**finitely many** irreps (a dominant weight of bounded dimension has bounded
-entries — `dim` is strictly monotone in each partition part, §14.4), and the
-Dynkin-lexicographic order is a strict total order on that finite set, which has
-no infinite descending chain. ∎
+descending chain the box counts are non-increasing non-negative integers, so they
+are eventually constant at some `m`. At a fixed box count `m` and fixed rank there
+are only **finitely many** irreps (each `|λ_i| ≤ m`, so the partition is drawn
+from a finite box), and the `(dim, dynkin)`-lexicographic order is a strict total
+order on that finite set, which has no infinite descending chain. ∎ (Only
+`box`-monotonicity, not the false `dim`-monotonicity, is used.)
 
 Well-foundedness is what makes the on-demand recursion (§14.3) terminate.
 
@@ -496,18 +510,30 @@ and puts it in canonical `a ⪯ b` form: of the two orderings `(a,b)`/`(b,a)` �
 share the first component `dim(a)+dim(b)` — the one with the smaller-dimensional
 factor first wins. `c`'s generators are then the projected generators (§6) of the
 `c`-block produced by decomposing `a ⊗ b` (the outer-multiplicity-0 copy when
-`N^c_{ab} > 1`; the copies share the same intrinsic generators, §14.5).
+`N^c_{ab} > 1`; §14.5 states precisely in what sense the copies agree).
+
+**Two separate orders, by design.** The **candidate set** (condition 1) is filtered
+by the box-count-first well-order `≺` (§14.1) — that is what makes the recursion
+terminate and the existence proof valid. The **selection** among admissible pairs
+uses the dimension-based `key(a,b)` above — box count is irrelevant to numerical
+stability, whereas total dimension is (smaller product space ⇒ balanced split ⇒
+shallow chain ⇒ less round-off, the issue-#18 watch item). Keeping the pair key on
+`(dim_a+dim_b, …)` also minimizes churn: switching only the candidate-set order to
+box-count-first leaves **every** B/C parent, every D non-chiral parent, and the
+already-reachable D4 chirality labels **bitwise unchanged** — the sole parent delta
+is the two previously-unreachable D₃ labels `(0,0,2)`/`(0,2,0)`, which go from
+"no admissible parent (error)" to `(defining, (0,1,1))`.
 
 **Deliberate refinement of the issue-#25 sketch.** Issue #25 sketches minimizing
 `(dim_a + dim_b, dim_a, label_a, label_b)` over admissible pairs. That is exactly
 `key(a,b)` above; the refinement this document commits to is the **admissibility
-condition (1)**, `a ≺ c ∧ b ≺ c`, as the precise, computable-from-S3.0 statement
-of "already catalog-reachable", together with the proof (§14.4) that it is both
-non-empty and well-founded. The alternative anchoring "always take `a` = defining"
-was rejected: it forces `depth ~ |λ|` (one box per level, §14.6), maximizing the
-chain-depth error accumulation that issue #18 flags as a watch item, whereas the
-`dim_a+dim_b` minimizer favors **balanced** splits and shallow chains (measured:
-C2 `Sym⁶`, dim 84, has depth 3, not 5).
+condition (1)**, `a ≺ c ∧ b ≺ c` under the box-count-first `≺`, as the precise,
+computable-from-S3.0 statement of "already catalog-reachable", together with the
+proof (§14.4) that it is both non-empty and well-founded. The alternative anchoring
+"always take `a` = defining" was rejected: it forces `depth ~ box(c)` (one box per
+level, §14.6), maximizing the chain-depth error accumulation that issue #18 flags
+as a watch item, whereas the `dim_a+dim_b` minimizer favors **balanced** splits and
+shallow chains (measured: C2 `Sym⁶`, dim 84, has depth 3, not 5).
 
 ### 14.3 On-demand recursion (materialization)
 
@@ -540,24 +566,26 @@ every non-base `c`, so the minimum exists. Argument: every tensor irrep of
 `SO(N)`/`Sp(2N)` lives in a tensor power of the defining (vector) rep `V`
 (this is precisely why the object is the tensor irreps and spinors are excluded,
 §0 / Ruling 3). For non-trivial `c`, the product `V ⊗ c` contains a component `b`
-obtained by **removing one box** from `c`'s highest weight (lowering one part of
-the partition), which has strictly smaller dimension — `dim` is strictly monotone
-in each partition part — hence `b ≺ c`. The defining rep is the unique smallest
-**non-trivial** tensor irrep (the next dimension after the trivial rep's 1 is
-`dim(V) = 2r` or `2r+1`; no tensor irrep lies strictly between), so for any
-non-base `c` we have `V ≺ c` as well. By Frobenius reciprocity
-`N^c_{V,b} = N^b_{V*,c} = N^b_{V,c} ≥ 1` (`V` is self-dual), so `c ∈ V ⊗ b`.
-Thus `(V, b)` satisfies conditions 1–2, and the candidate set is non-empty. The
-actual canonical parent is the `key`-minimum over this non-empty finite set, which
-may be a more balanced pair than `(V, b)`. ∎
+obtained by **removing one box** from `c`'s highest weight (lowering the absolute
+value of one part of the partition by 1). Then `box(b) = box(c) − 1 < box(c)`, so
+`b ≺ c` under the box-count-first order — **regardless of `dim(b)`** (this is the
+crux: `dim(b)` may exceed `dim(c)`, as for `D₃` `b=(0,1,1)` dim 15 vs `c=(0,0,2)`
+dim 10, and a dim-first order would wrongly exclude it). The defining rep has
+`box(V)=1`, and for any non-base `c` (`box(c) ≥ 2`) we have `box(V)=1 < box(c)`, so
+`V ≺ c`. By Frobenius reciprocity `N^c_{V,b} = N^b_{V*,c} = N^b_{V,c} ≥ 1` (`V` is
+self-dual), so `c ∈ V ⊗ b`. Thus `(V, b)` satisfies conditions 1–2, and the
+candidate set is non-empty. The actual canonical parent is the `key`-minimum over
+this non-empty finite set, which may be a more balanced pair than `(V, b)`. ∎
 
 The search is finite and computable from S3.0 alone: enumerate the finite set
-`{ x : x ≺ c }` (all irreps with `dim ≤ dim(c)`, obtained by a depth-first walk
-over integer partitions with `dim`-monotone pruning — §14.1's finiteness), and for
-each candidate `a`, read the admissible `b` directly from `directproduct(a*, c)`
-(the reciprocity above). Pruning: iterating `a` in ascending `≺`, stop once
-`2·dim(a)` exceeds the best sum found — safe because the `key`-minimum pair `{x,y}`
-with `dim(x) ≤ dim(y)` is always reached via its smaller factor `x`
+`{ x : x ≺ c }` (contained in the irreps with `box(x) ≤ box(c)`, obtained by a
+depth-first walk over integer partitions with **box-count** pruning — box count is
+monotone in every coordinate, so the prune is exact for all three series, unlike a
+`dim`-based prune which would skip valid D last-coordinate candidates). For each
+candidate `a`, read the admissible `b` directly from `directproduct(a*, c)` (the
+reciprocity above). Pruning the pair search: iterating `a` in ascending **`dim`**,
+stop once `2·dim(a)` exceeds the best sum found — safe because the `key`-minimum
+pair `{x,y}` with `dim(x) ≤ dim(y)` is always reached via its smaller factor `x`
 (`2·dim(x) ≤ dim(x)+dim(y) ≤` best sum).
 
 ### 14.5 Harvest discipline (append-only, canonical-gated)
@@ -587,11 +615,29 @@ rule makes a second *written* copy **structurally impossible**, so there is
 nothing to reconcile and nothing to replace — the replacement branch has no
 analogue. Where a non-canonical product *rediscovers* an already-stored `c'`, racah
 keeps only a **debug-assert-class** check: the rediscovered block's Cartan (weight)
-spectrum must match the stored generators' (cheap, loud, `debug_assert`; the
-weights are gauge-independent so this is a fast structural sanity check, not the
-full `normDiff`). QSpace's error-driven replacement is deliberately dropped: the
+spectrum, compared as a **multiset** of per-state weight vectors, must match the
+stored generators' (cheap, loud, `debug_assert`). The comparison is a multiset,
+not state-by-state, because only the weight *content* is gauge-independent, not the
+state *order*: a stored **base-case** entry (the S3.1 defining seed, whose native
+basis is *not* the sweep's descending-weight order, §6/§7) carries the same weights
+in a different order than a fresh sweep block — a state-by-state check would false-
+positive there. QSpace's error-driven replacement is deliberately dropped: the
 canonical parent — not "whichever copy is numerically cleaner this run" — fixes the
 gauge, so the stored copy must never depend on runtime residuals.
+
+**On "the copies agree" (the OM ≥ 2 and rediscovery claim).** What is asserted is
+the multiset above, which is a theorem: the projected `Sz` eigenvalues of any block
+labelled `c` are exactly the weight system of the irrep `c` (§6 gates each `R.Sz`
+diagonal and integer-snaps it; the weight system is an intrinsic, gauge-independent
+invariant of `c`). The *full* generator matrices `R.Sp`/`R.Sz` of two copies are
+**not** claimed bitwise-equal in general — that would require the descending-weight
+gauge (§7) plus the sign convention (§8) to pin every ladder sign uniquely, which
+holds for multiplicity-free weight systems but is not proven for degenerate ones.
+racah does not depend on that stronger statement: query-order independence follows
+structurally from the canonical **factor** bases (`a`, `b` are materialized from
+their own canonical parents), and the stored `c` generators come from `c`'s *one*
+canonical parent — never reconciled against another copy. The multiset check is the
+honest, provable sanity gate; the stronger per-matrix agreement is left unclaimed.
 
 ### 14.6 Atomicity of the byte budget (Ruling 2)
 
