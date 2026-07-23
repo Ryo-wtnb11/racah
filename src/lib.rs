@@ -42,6 +42,12 @@ pub mod sun;
 #[cfg(feature = "cgc-gen")]
 pub mod bcd;
 
+// Family-generic F/R contraction + gates core, shared by `sun::fr` and
+// `bcd::fr` (Stage 3 S3.4, issue #27). Private: the public F/R surfaces stay
+// per-family; only the block types (`FBlock`/`RBlock`) are re-exported.
+#[cfg(feature = "cgc-gen")]
+mod frcore;
+
 pub use exact::SignedSqrtRational;
 pub use su2::{
     canonical_regge_3j, canonical_regge_6j, clebsch_gordan, su2_f_symbol, su2_frobenius_schur,
