@@ -67,3 +67,9 @@ required-features = ["cgc-gen"]
 name = "sun_fr"
 harness = false
 required-features = ["cgc-gen"]
+
+# B/C/D F-symbol generation cost (cold catalog+sweep+contraction + warm hit).
+[[bench]]
+name = "bcd_fr"
+harness = false
+required-features = ["cgc-gen"]

@@ -414,3 +414,50 @@ fn assert_close(cgc: &[f64], _cols: usize, col: usize, row: usize, v: f64) {
         "CGC[{row},{col}] = {got}, expected {v}"
     );
 }
+
+// ---- coherence guard: deterministic synthetic rotation (issue #15 instance 5) ----
+
+/// Pins `Generators::coherence_residual` (the restored QSpace `normDiff`
+/// cross-copy measure) on EVERY platform, independent of which real ill-
+/// conditioned irrep happens to rotate on a given target. Two embeddings that
+/// differ by a known orthogonal rotation `W` inside a degenerate weight space —
+/// exactly the incoherence class — must register an O(1) residual, well above
+/// `TOL_BASIS_COHERENT` (1e-10). The `findabsmax` precedent: test the decision
+/// function with constructed input, not an accident of a numeric sweep.
+#[test]
+fn coherence_residual_detects_degenerate_rotation() {
+    use super::super::linalg::Dense;
+    // A 2-dim carrier at a single (degenerate) weight 0, with one raising op.
+    let raising = |m: [[f64; 2]; 2]| {
+        let mut d = Dense::zeros(2, 2);
+        for (r, row) in m.iter().enumerate() {
+            for (c, &v) in row.iter().enumerate() {
+                d.set(r, c, v);
+            }
+        }
+        d
+    };
+    let canonical = Generators {
+        series: Series::D,
+        rank: 1,
+        dim: 2,
+        sp: vec![raising([[0.0, 1.0], [0.0, 0.0]])],
+        sz: vec![vec![0.0, 0.0]], // degenerate weight: rotation is a real gauge freedom
+    };
+    // Rotate the degenerate 2-space by 45°: Sp' = W Sp Wᵀ, weights unchanged.
+    let c = std::f64::consts::FRAC_1_SQRT_2;
+    let rotated = Generators {
+        series: Series::D,
+        rank: 1,
+        dim: 2,
+        sp: vec![raising([[-c * c, c * c], [-c * c, c * c]])],
+        sz: vec![vec![0.0, 0.0]],
+    };
+    let residual = canonical.coherence_residual(&rotated);
+    assert!(
+        residual > 1e-3,
+        "a degenerate-space rotation must register O(1), got {residual}"
+    );
+    // Sanity: a set is coherent with itself.
+    assert_eq!(canonical.coherence_residual(&canonical), 0.0);
+}

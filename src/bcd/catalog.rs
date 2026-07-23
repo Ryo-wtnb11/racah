@@ -54,6 +54,14 @@ use super::{defining_seed, directproduct, BcdError, Irrep, Series};
 /// [`CatalogError::BudgetExceeded`] before committing.
 const DEFAULT_MAX_BYTES: usize = 256 << 20;
 
+/// Coherence tolerance for the restored QSpace cross-copy check
+/// ([`CatalogError::BasisIncoherent`]): two embeddings of one irrep must present
+/// the same canonical basis to this element-wise generator residual. Provenance:
+/// QSpace `normDiff <= 1e-10` (`clebsch.cc:6710-6718 @ dd2cc7e`). A coherent pair
+/// agrees to ~1e-15 (well-conditioned sweep gauge); an ill-conditioned rotation
+/// is O(1) — the tolerance cleanly separates the two.
+const TOL_BASIS_COHERENT: f64 = 1.0e-10;
+
 // ---- typed errors (guard inventory, issue #15) -----------------------------
 
 /// Failure of a [`CanonicalCatalog`] request. Every ill-posed input is a typed
@@ -104,6 +112,24 @@ pub enum CatalogError {
     /// materializing a canonical-parent chain. Surfaced, not panicked: the
     /// floating-point stages are verification-gated (Ruling 1).
     Sweep(SweepError),
+    /// A coupled multiplet discovered in one product does **not** present the
+    /// same canonical carrier basis as the stored embedding of that irrep — its
+    /// projected generators differ beyond the coherence tolerance (the restored
+    /// QSpace `normDiff` cross-copy check, `clebsch.cc:6710-6718 @ dd2cc7e`;
+    /// issue #15 instance 5). An ill-conditioned QR can leave an irrep in a
+    /// rotated frame between two embeddings, which would silently corrupt every
+    /// F/R contraction that shares that irrep across its coupled and factor
+    /// roles; this crate refuses to return such a value. Alignment of the two
+    /// frames (an intertwiner fit) is a separate, reviewed follow-up.
+    BasisIncoherent {
+        /// Dynkin label of the incoherent coupled irrep.
+        irrep: Vec<i64>,
+        /// Dynkin labels of the product `(s1, s2)` that produced the rotated
+        /// embedding.
+        product: (Vec<i64>, Vec<i64>),
+        /// The worst generator-element residual against the stored basis.
+        residual: f64,
+    },
     /// A non-base irrep had **no** admissible canonical-parent pair (§14.4).
     /// This is **unreachable by the box-count-first existence theorem**
     /// (`(defining, c-minus-a-box)` is always admissible); it is surfaced as a
@@ -134,6 +160,17 @@ impl std::fmt::Display for CatalogError {
                 "byte budget exceeded: request needs {needed} bytes, budget is {limit}"
             ),
             CatalogError::Sweep(e) => write!(f, "sweep failed during materialization: {e}"),
+            CatalogError::BasisIncoherent {
+                irrep,
+                product,
+                residual,
+            } => write!(
+                f,
+                "irrep {irrep:?} from product {:?}⊗{:?} is in a rotated frame vs its \
+                 stored canonical basis (generator residual {residual:e} > coherence tol) — \
+                 ill-conditioned embedding; intertwiner alignment is a separate follow-up",
+                product.0, product.1
+            ),
             CatalogError::NoCanonicalParent { dynkin } => write!(
                 f,
                 "no admissible canonical parent for irrep {dynkin:?} \
@@ -214,6 +251,13 @@ impl CatalogCgc {
     /// The whole concatenated coefficient buffer (all copies, in order).
     pub fn data(&self) -> &[f64] {
         &self.cols
+    }
+
+    /// Conservative retained-byte charge for the value cache tier
+    /// ([`crate::cache::cache_bcd_cgc`]): the dense coefficient buffer plus a
+    /// fixed shell. Mirrors [`crate::sun::Cgc::storage_bytes`].
+    pub(crate) fn storage_bytes(&self) -> usize {
+        self.cols.len() * std::mem::size_of::<f64>() + std::mem::size_of::<Self>()
     }
 }
 
@@ -379,15 +423,97 @@ impl CanonicalCatalog {
         // Collect the s3 copies in outer-multiplicity index order.
         let mut copies: Vec<&Block> = decomp.blocks().iter().filter(|b| b.irrep() == s3).collect();
         copies.sort_by_key(|b| b.outer_multiplicity().0);
+        self.assemble_cgc(s1, s2, s3, &copies)
+    }
 
-        let stored = self.store.get(s3).expect("ensured");
+    /// Every coupled channel of `s1 ⊗ s2` from a **single** decomposition sweep,
+    /// one [`CatalogCgc`] per distinct coupled irrep `s3` (each byte-identical to
+    /// [`cgc`](Self::cgc)`(s1, s2, s3)`).
+    ///
+    /// This is the sweep-once-per-product primitive the B/C/D F/R value tier
+    /// ([`crate::cache::cache_bcd_cgc`]) is built on: the associativity/braiding
+    /// gates request many different `s3` from the same `s1 ⊗ s2`, and
+    /// [`cgc`](Self::cgc) re-runs the full `s1 ⊗ s2` sweep for each — this runs it
+    /// once and hands back all channels (issue #27 P1 review). `pub(crate)`: the
+    /// per-channel [`cgc`](Self::cgc) stays the public surface.
+    ///
+    /// # Errors
+    /// - [`CatalogError::WrongGroup`] if `s1`/`s2` are not of this family.
+    /// - [`CatalogError::BudgetExceeded`] / [`CatalogError::Sweep`] as for
+    ///   [`generators`](Self::generators).
+    pub(crate) fn cgc_product(
+        &mut self,
+        s1: &Irrep,
+        s2: &Irrep,
+    ) -> Result<Vec<CatalogCgc>, CatalogError> {
+        self.check_group(s1)?;
+        self.check_group(s2)?;
+        self.ensure(s1)?;
+        self.ensure(s2)?;
+
+        let expected = directproduct(s1, s2)?;
+        let g1 = self.store.get(s1).expect("ensured").clone();
+        let g2 = self.store.get(s2).expect("ensured").clone();
+        let product = Generators::product(&g1, &g2)?;
+        let decomp = decompose(&product, &expected)?;
+
+        // Group blocks by coupled irrep; assemble one CatalogCgc per channel.
+        let mut by_irrep: std::collections::BTreeMap<Irrep, Vec<&Block>> =
+            std::collections::BTreeMap::new();
+        for b in decomp.blocks() {
+            by_irrep.entry(b.irrep().clone()).or_default().push(b);
+        }
+        // Materialize each channel's canonical basis so the coherence guard in
+        // `assemble_cgc` can compare against it (a production check now, so this
+        // runs in release too, not only debug).
+        let channels: Vec<Irrep> = by_irrep.keys().cloned().collect();
+        for c in &channels {
+            self.ensure(c)?;
+        }
+        let mut out = Vec::with_capacity(by_irrep.len());
+        for (c, mut copies) in by_irrep {
+            copies.sort_by_key(|b| b.outer_multiplicity().0);
+            out.push(self.assemble_cgc(s1, s2, &c, &copies)?);
+        }
+        Ok(out)
+    }
+
+    /// Assemble a [`CatalogCgc`] for `s1 ⊗ s2 → s3` from its outer-multiplicity
+    /// copies (already OM-sorted). Shared by [`cgc`](Self::cgc) and
+    /// [`cgc_product`](Self::cgc_product) so both produce the identical isometry.
+    ///
+    /// Enforces the restored QSpace coherence guard (issue #15 instance 5): each
+    /// copy's projected generators must match `s3`'s stored canonical basis to
+    /// [`TOL_BASIS_COHERENT`], else [`CatalogError::BasisIncoherent`]. The two
+    /// base cases (trivial, defining) are exempt — their stored basis is the S3.1
+    /// seed rather than a descending-weight sweep, so an element-wise comparison
+    /// is not meaningful, and neither is ever the ill-conditioned case the guard
+    /// targets.
+    fn assemble_cgc(
+        &self,
+        s1: &Irrep,
+        s2: &Irrep,
+        s3: &Irrep,
+        copies: &[&Block],
+    ) -> Result<CatalogCgc, CatalogError> {
+        let stored = self.store.get(s3).expect("caller ensured s3");
+        let check = !self.is_base_case(s3);
         let (rows, d3) = copies[0].cgc_shape();
         let mut cols = Vec::with_capacity(rows * d3 * copies.len());
-        for b in &copies {
+        for b in copies {
             debug_assert_cartan_matches(b, stored);
+            if check {
+                let residual = b.generators().coherence_residual(stored);
+                if residual > TOL_BASIS_COHERENT {
+                    return Err(CatalogError::BasisIncoherent {
+                        irrep: s3.dynkin(),
+                        product: (s1.dynkin(), s2.dynkin()),
+                        residual,
+                    });
+                }
+            }
             cols.extend_from_slice(b.cgc());
         }
-
         Ok(CatalogCgc {
             s1: s1.clone(),
             s2: s2.clone(),
@@ -397,6 +523,16 @@ impl CanonicalCatalog {
             multiplicity: copies.len(),
             cols,
         })
+    }
+
+    /// Whether `c` is one of the two seeded base cases (trivial or defining),
+    /// whose stored basis is an S3.1 seed rather than a sweep and is therefore
+    /// exempt from the element-wise coherence guard.
+    fn is_base_case(&self, c: &Irrep) -> bool {
+        Irrep::trivial(self.series, self.rank)
+            .map(|t| &t == c)
+            .unwrap_or(false)
+            || self.defining_irrep().map(|d| &d == c).unwrap_or(false)
     }
 
     /// Drop every discovered generator set and re-seed the base cases, returning

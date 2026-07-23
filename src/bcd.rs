@@ -890,5 +890,15 @@ mod catalog;
 #[cfg(feature = "cgc-gen")]
 pub use catalog::{CanonicalCatalog, CatalogCgc, CatalogError};
 
+// S3.4 (#27): the B/C/D binding of the family-generic F/R core, over the S3.3
+// catalog's canonical CGC.
+#[cfg(feature = "cgc-gen")]
+mod fr;
+#[cfg(feature = "cgc-gen")]
+pub use fr::{
+    cgc_sweeps, check_f_unitarity, check_hexagon, check_pentagon, f_symbol, r_symbol, FBlock,
+    FrError, RBlock,
+};
+
 #[cfg(test)]
 mod tests;
