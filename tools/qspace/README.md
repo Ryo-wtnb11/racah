@@ -26,7 +26,7 @@ reference implementation's own CGC numbers, for gauge-alignment cross-checks
   that are useless to an external consumer; the patch hand-builds a plain-double
   dense struct and handles both `wbsparray` flat-dense and diagonal storage.
 - `gen_qspace_generators.m`: generator producing `tests/fixtures/qspace_generators.txt`
-  (the six irreps SO5 `[1 0]`/`[0 2]`, Sp4 `[1 0]`/`[2 0]`, SO6 `[1 0 0]`/`[0 1 1]`).
+  (the seven irreps SO5 `[1 0]`/`[0 2]`, Sp4 `[1 0]`/`[0 1]`/`[2 0]`, SO6 `[1 0 0]`/`[0 1 1]`).
   Requires the patched `getRC.mexmaca64` on the MATLAB path. These generators let
   the S3.5 anchor derive the factor-basis dictionary as a **verified intertwiner**
   (residual `≤ 1e-10`) between racah's and QSpace's generator sets, instead of
