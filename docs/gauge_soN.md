@@ -23,11 +23,19 @@ the Gram–Schmidt order, the descending-weight sort and its tie-break, and the
 sign conventions are discrete facts; only the QR/matmul stages are floating
 point, and they are verification-gated (§10).
 
-Deliberate racah deviation from QSpace, called out once here and at each site:
-the column orthonormalization uses `tenferro-linalg`'s **PositiveDiagonal** QR
-gauge, a *tightening* of QSpace's unspecified `OrthoNormalizeColsQR` sign. This
-fixes the sign of each retained orthonormal direction deterministically. It is a
-value-affecting gauge choice and therefore part of this contract.
+Two deliberate racah deviations from QSpace, called out once here and again at
+their sites:
+
+1. **PositiveDiagonal QR gauge** (§4a): the column orthonormalization uses
+   `tenferro-linalg`'s **PositiveDiagonal** QR gauge, a *tightening* of QSpace's
+   unspecified `OrthoNormalizeColsQR` sign, fixing the sign of each retained
+   orthonormal direction deterministically.
+2. **Unconditional block sign convention** (§8): racah applies
+   `rangeSignConvention` to every block; QSpace applies it only when the
+   weight-sort permutation is nontrivial (the `:304` call sits inside
+   `if (!P.isIdentityPerm())`, `clebsch_aux.cc:297-305 @ dd2cc7e`).
+
+Both are value-affecting gauge choices and therefore part of this contract.
 
 ---
 
@@ -247,12 +255,26 @@ generators.
 ## 8. Sign convention
 
 Reference: `signFirstVal`/`rangeSignConvention` (`clebsch_aux.cc:26-51 @
-dd2cc7e`), applied to the sorted `V` (`:304`). The **whole block's** sign is
-fixed so that the **first significant** CGC entry (first `|·| > CG_EPS1` scanning
-the flattened, sorted `V` in storage order) is **positive**; if it is negative,
-negate the whole block. This is `rangeSignConvention` on `V.D`. The CGC entries
-are then integer-snapped where they land on integers (FixRational,
-`:307`); genuinely irrational entries are left as-is.
+dd2cc7e`). The **whole block's** sign is fixed so that the **first significant**
+CGC entry (first `|·| > CG_EPS1` scanning the flattened, sorted `V` in storage
+order) is **positive**; if it is negative, negate the whole block. This is
+`rangeSignConvention` on `V.D`. The CGC entries are then integer-snapped where
+they land on integers (FixRational, `:307`); genuinely irrational entries are
+left as-is.
+
+**Deliberate racah deviation #2 (unconditional block sign).** QSpace applies
+`rangeSignConvention` only when the descending-weight sort actually permuted the
+block: the `:304` call sits inside `if (!P.isIdentityPerm())`
+(`clebsch_aux.cc:297-305 @ dd2cc7e`), so a block already in descending-weight
+order (identity permutation) keeps whatever whole-block sign the QR/descent
+happened to produce. racah instead applies the sign convention to **every**
+block, unconditionally. Rationale: a uniform, permutation-independent gauge is
+more predictable, and the QSpace conditionality appears accidental (the sign of
+a coupled block should not depend on whether its states happened to be generated
+already sorted). Consequence for the S3.5 QSpace-CGC-fixture harness: on
+identity-permutation blocks the two implementations may differ by a whole-block
+sign; those are expected and are absorbed by the harness's signed-permutation
+alignment (§13 of the S3.5 plan), not treated as defects.
 
 ---
 
