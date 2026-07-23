@@ -62,6 +62,26 @@
 //!   to): `wdim_C/B/D` (`:458/486/524`) and `findMaxWeight` label maps and
 //!   low-rank redirects (`:957–1045`, guards at `:990/1001/1018`) — the
 //!   numerical oracle whose dimension values this module reproduces.
+//!
+//! # Example
+//!
+//! F/R generation for B/C/D runs through a per-(series, rank)
+//! [`CanonicalCatalog`](crate::bcd::CanonicalCatalog)
+//! that caches the aligned CGC. This computes an Sp(4) (`C_2`) F-symbol block;
+//! with `a` trivial it is the `1×1×1×1` identity (value 1):
+//!
+//! ```
+//! use racah::bcd::{f_symbol, CanonicalCatalog, Irrep, Series};
+//!
+//! let mut cat = CanonicalCatalog::new(Series::C, 2).unwrap(); // Sp(4)
+//! let triv = Irrep::trivial(Series::C, 2).unwrap();
+//! let v = Irrep::from_dynkin(Series::C, &[0, 1]).unwrap(); // vector
+//! let adj = Irrep::from_dynkin(Series::C, &[2, 0]).unwrap(); // in v ⊗ v
+//!
+//! let block = f_symbol(&mut cat, &triv, &v, &v, &adj, &v, &adj).unwrap();
+//! assert_eq!(block.dims(), [1, 1, 1, 1]);
+//! assert!((block.at(0, 0, 0, 0) - 1.0).abs() < 1e-9);
+//! ```
 
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;

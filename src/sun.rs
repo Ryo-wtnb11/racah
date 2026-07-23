@@ -22,6 +22,24 @@
 //! shift-invariant: any representative is accepted and normalized by
 //! subtracting `λ_N`. The Dynkin labels `aᵢ = λᵢ − λᵢ₊₁` (all `≥ 0`) are
 //! derivable via [`Irrep::dynkin`](crate::sun::Irrep::dynkin).
+//!
+//! # Example
+//!
+//! Irreps are built from Dynkin labels (length `N-1`). This computes an
+//! SU(3) F-symbol block for the sextet `1 ⊗ 3 ⊗ 3 → 6`; with `a` trivial the
+//! move is the `1×1×1×1` identity (value 1):
+//!
+//! ```
+//! use racah::sun::{f_symbol, Irrep};
+//!
+//! let triv = Irrep::trivial(3).unwrap(); // SU(3) singlet
+//! let three = Irrep::from_dynkin(&[1, 0]).unwrap(); // fundamental
+//! let six = Irrep::from_dynkin(&[2, 0]).unwrap();
+//!
+//! let block = f_symbol(&triv, &three, &three, &six, &three, &six).unwrap();
+//! assert_eq!(block.dims(), [1, 1, 1, 1]);
+//! assert!((block.at(0, 0, 0, 0) - 1.0).abs() < 1e-12);
+//! ```
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
