@@ -355,15 +355,29 @@ fn kronecker_first_factor_is_fast_index() {
 // ---- 9. golden CGC value snapshot (gauge regression guard) ----------------
 
 /// A **regression snapshot** (not an independent oracle) pinning specific CGC
-/// entries of `B2 vector²`. Because the Gram–Schmidt order, the second
-/// orthonormalization, and the sign convention change CGC *values* but not the
-/// decomposition (labels/dims/multiplicities/isometry are gauge-invariant), no
-/// label oracle can catch a mutation to them; an external QSpace CGC fixture
-/// (S3.5) is the independent oracle. This snapshot catches such value-affecting
-/// gauge changes as regressions, per the mutation-sanity requirement. Columns
-/// 1/4/9 of the adjoint block are *descended* states, so they exercise the
-/// descent gauge (GS order + second orthonormalization); the tolerance (1e-9)
-/// is far below the O(1) shift any such mutation produces.
+/// entries of `B2 vector²`. It guards the CGC *values* against
+/// value-affecting gauge mutations that no label oracle can catch (the
+/// decomposition — labels/dims/multiplicities/isometry — is gauge-invariant); an
+/// external QSpace CGC fixture (S3.5) is the independent oracle.
+///
+/// Not every gauge choice is catchable here, and the distinction is by
+/// *magnitude*:
+/// - **O(1)-catchable** (this snapshot catches them): the sign convention, the
+///   seed order, the weight-sort tie-break, and the QR gauge (PositiveDiagonal)
+///   — a mutation flips a sign or permutes/re-mixes states, shifting a pinned
+///   entry by O(1), far above the 1e-9 tolerance. Verified: disabling the sign
+///   convention fails this test.
+/// - **round-off-neutral** (this snapshot cannot catch them, and correctly so):
+///   the Gram–Schmidt *order* within pass 1 and the *second* orthonormalization.
+///   `U`, `V`, and the current level are mutually orthogonal, so projecting them
+///   out commutes and the second pass is a no-op once the first converges; a
+///   mutation to either shifts values only at the `~1e-13` round-off floor (see
+///   the round-off-neutrality note in `docs/gauge_soN.md` §4). These are
+///   genuinely value-neutral, like `docs/gauge.md`'s value-neutral `cref`
+///   tie-break, and are pinned by the doc, not by a value test.
+///
+/// Columns 1/4/9 of the adjoint block are *descended* states (they would move
+/// under a sign/tie-break/QR-gauge change to the descent).
 #[test]
 fn cgc_value_snapshot_b2_regression() {
     let seed = defining_seed(Series::B, 2).unwrap();

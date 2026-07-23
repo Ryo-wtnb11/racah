@@ -171,9 +171,40 @@ sign into `Q`) — the **deliberate racah tightening** of QSpace's unspecified
 Rank is read from `R = QᵀA` by **row norm**, not the diagonal: the backend's QR
 is un-pivoted, so a zero or dependent *leading* column shifts the pivots off the
 diagonal (a rank-2 input can produce an all-zero `R` diagonal). Row `i` of `R`
-is nonzero iff `Q[:,i]` lies in the column space of `A`; the retained columns are
-exactly `{ i : ‖R[i,·]‖ > CG_EPS1 }`, giving an orthonormal basis of the column
-space with no spurious padding vectors. (`src/bcd/linalg.rs:qr_positive_q`.)
+is (with the guarantees stated below) the row of `R` that certifies `Q[:,i]`
+participates in representing `A`; the retained columns are exactly
+`{ i : ‖R[i,·]‖ > CG_EPS1 }`, giving an orthonormal basis of the column space.
+(`src/bcd/linalg.rs:qr_positive_q`.)
+
+What the row-norm test guarantees (it is *not* the theorem "row `i` nonzero iff
+`Q[:,i] ∈ col(A)`", which can fail mid-matrix — a Householder reflector with
+`τ = 0` can leave a nonzero `R` row for a `Q` column outside `col(A)`):
+
+- **No genuine direction is lost.** With `R_k` the retained rows and `Q_k` the
+  retained columns, `A = Q_k R_k` up to `k·CG_EPS1`, so every column of `A` — and
+  thus its whole column space — is reproduced by the retained orthonormal basis.
+- **A spurious retained column is impossible for a trailing dependency** (the
+  case that actually arises in the descent, where the zero/dependent columns are
+  the later lowering images), and if one ever slipped through elsewhere it is
+  caught **loudly** downstream: it would inflate a block beyond its irrep
+  dimension and break the Cartan-diagonality (§6) or the dimension-bookkeeping /
+  `U†U` (§5) gates, never a silent wrong answer. QSpace's `OrthoNormalizeColsQR`
+  R-staircase check is therefore not ported — it would be redundant with those
+  gates (a few lines that duplicate existing loud coverage; skipped per the
+  fewest-moving-parts rule).
+
+**Round-off-neutrality note (Gram–Schmidt order and the second pass).** Within
+pass 1, `U`, `V`, and the current level `Vi` are mutually orthonormal subspaces,
+so the three `x ← x − Q(Qᵀx)` projections **commute**: their order changes the
+result only at the floating-point round-off floor (`~1e-13` here), not the
+gauge. Likewise the **second** orthonormalization (pass 2 + its QR) is a
+numerical-cleanup no-op once pass 1 has converged — it re-projects vectors that
+are already orthogonal, shifting values by `~1e-13`. Both are faithful ports of
+QSpace and are kept for numerical robustness, but neither is value-affecting:
+they are round-off-neutral gauge choices (the analogue of `docs/gauge.md` §4a's
+value-neutral reduced-column-echelon tie rule), so no CGC value oracle can — or
+should — distinguish them. The *order* is nonetheless documented above so the
+procedure is fully specified.
 
 ---
 

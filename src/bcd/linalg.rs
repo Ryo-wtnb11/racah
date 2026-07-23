@@ -161,9 +161,19 @@ pub(crate) fn tmatmul(a: &Dense, b: &Dense) -> Result<Dense, SweepError> {
 /// Rank is read from `R = QᵀA` by **row** norm, not the diagonal: tenferro's QR
 /// is *un-pivoted*, so a zero/dependent leading column shifts the pivots off the
 /// diagonal (e.g. a rank-2 input can yield an all-zero `R` diagonal with the
-/// content on the superdiagonal). Row `i` of `R` is nonzero iff `Q[:,i]` lies in
-/// `a`'s column space, so `A = Q[:,keep]·R[keep,:]` exactly and `{Q[:,keep]}` is
-/// the correct orthonormal basis.
+/// content on the superdiagonal).
+///
+/// Guarantees (this is *not* the theorem "row `i` nonzero iff `Q[:,i] ∈ col(A)`",
+/// which a `τ = 0` Householder reflector can violate mid-matrix):
+/// - keeping `{ i : ‖R[i,·]‖ > tol }` loses **no genuine direction** —
+///   `A = Q[:,keep]·R[keep,:]` up to `keep.len()·tol`, so the whole column space
+///   is spanned;
+/// - a spurious retained column cannot arise for a **trailing** dependency (the
+///   only case the descent produces — the dependent columns are the later
+///   lowering images); were one ever retained elsewhere, it inflates the block
+///   past its irrep dimension and is caught **loudly** by the caller's Cartan
+///   diagonality / `U†U` / dimension gates, never silently. QSpace's R-staircase
+///   check is therefore not ported (it would duplicate that loud coverage).
 pub(crate) fn qr_positive_q(a: &Dense, tol: f64) -> Result<Dense, SweepError> {
     let ta = traced(a)?;
     let (q, rr) = ta
