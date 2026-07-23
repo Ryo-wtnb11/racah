@@ -17,9 +17,11 @@ using Oscar
 using SHA
 using Random
 
+# Oscar rejects D_3 (it requires D-rank >= 4, since D_3 = A_3); racah's D_3 is
+# covered by the Sage script and the D_3 = SU(4) cross-check instead.
 const CASES = [("B", 2), ("B", 3), ("B", 4),
                ("C", 2), ("C", 3), ("C", 4),
-               ("D", 3), ("D", 4)]
+               ("D", 4)]
 const PAIRS_PER_CASE = 8
 const MAX_LABEL = Dict(2 => 3, 3 => 2, 4 => 1)
 const SEED = 0x0BCD0019
@@ -55,17 +57,22 @@ function main()
         for _ in 1:PAIRS_PER_CASE
             da = rand_label(rng, series, r)
             db = rand_label(rng, series, r)
-            Va = simple_module(L, da)
-            Vb = simple_module(L, db)
-            # Decompose the tensor product into simple highest-weight modules.
+            # Formula-based dimension (Weyl dim formula); do NOT construct the
+            # highest-weight module — building its basis for rank-4 labels is
+            # the slow path (thousand-dim modules), while both the dim formula
+            # and the decomposition below are instant.
+            dim_a = dim_of_simple_module(L, da)
+            dim_b = dim_of_simple_module(L, db)
+            # Decompose the tensor product into simple highest-weight modules;
+            # returns an MSet of Dynkin-label weights.
             dec = tensor_product_decomposition(L, da, db)
             terms = String[]
-            for (wt, mult) in dec
+            for (wt, mult) in dec.dict
                 push!(terms, join(Int.(wt), ",") * ":" * string(Int(mult)))
             end
             sort!(terms)
             push!(out, "$series $r | $(join(da, ",")) | $(join(db, ",")) | " *
-                       "$(dim(Va)) $(dim(Vb)) | $(join(terms, " "))")
+                       "$dim_a $dim_b | $(join(terms, " "))")
         end
     end
 
