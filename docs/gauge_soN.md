@@ -719,11 +719,21 @@ A · W_S  =  W_T · B ,   A = R_can[i]ᵀ|_{T,S},   B = R_block[i]ᵀ|_{T,S}
 ```
 
 Stacking `C = A·W_S` and `B` over all `(i, S)`, `W_T` is the orthogonal
-**Procrustes** solution of `W_T·B = C`, i.e. `W_T = U·Vᵀ` from `SVD(C·Bᵀ)`. This is
-a small, well-conditioned per-space solve — it does **not** reintroduce the near-tie
-sensitivity PR #28 removed, because its target is the fixed canonical frame, not a
-freshly discovered one. Processing weight spaces in descending-weight order
-guarantees every source `S` (strictly higher weight) is solved before its target.
+**Procrustes** solution of `W_T·B = C`, i.e. `W_T = U·Vᵀ` from `SVD(C·Bᵀ)`.
+
+Why this does **not** reintroduce the near-tie sensitivity PR #28 removed: the
+tempting-but-wrong justification is "`C·Bᵀ` is orthogonal up to noise, singular
+values `≈ 1`". That is false — `C·Bᵀ = W_T·(B·Bᵀ)` has *ladder-sized* singular
+values (the squared singular values of the stacked lowering map). The correct
+argument: `B·Bᵀ` is symmetric PSD, so the orthogonal polar factor of `C·Bᵀ` is
+**exactly** `W_T`, and `U·Vᵀ` recovers that polar factor. Unlike the PR #24/#28 QR
+danger class there are **no discrete choices** here (no rank cuts, pivots, or
+keep/drop): `U·Vᵀ` is a *continuous* function of the data near nonsingular `B·Bᵀ`,
+and the target frame is the fixed canonical one, so platform noise perturbs `W_T`
+only at round-off scale. A genuinely singular `B·Bᵀ` (the only conditioning
+hazard) surfaces as a loud post-alignment residual failure (§15.5), never a silent
+wrong value. Processing weight spaces in descending-weight order guarantees every
+source `S` (strictly higher weight) is solved before its target.
 
 ### 15.4 Uniqueness / the `±1` (D-odd chirality included)
 
