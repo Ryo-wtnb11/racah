@@ -1,5 +1,5 @@
---- /Users/ryowatanabe/Research/codes/MyTensorNetworks/codebases/refs/qspace-v4-pub/Source/getRC.cc	2026-07-10 17:42:09
-+++ /private/tmp/claude-501/-Users-ryowatanabe-Research-codes-MyTensorNetworks/5431698b-7c0a-400d-aa24-649c82587fb1/scratchpad/qspace-build/Source/getRC.cc	2026-07-23 23:16:36
+--- a/Source/getRC.cc
++++ b/Source/getRC.cc
 @@ -86,7 +86,62 @@
               genRG_struct<gTQ,RTD> &B=gRS.Buf(t);
               const genRG_base<gTQ,RTD> &R=B.RSet[qs];

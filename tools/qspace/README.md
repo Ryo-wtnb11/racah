@@ -30,7 +30,10 @@ reference implementation's own CGC numbers, for gauge-alignment cross-checks
   Requires the patched `getRC.mexmaca64` on the MATLAB path. These generators let
   the S3.5 anchor derive the factor-basis dictionary as a **verified intertwiner**
   (residual `≤ 1e-10`) between racah's and QSpace's generator sets, instead of
-  fitting the dictionary against the same projector it is asserted on.
+  fitting the dictionary against the same projector it is asserted on. The Sp4
+  `[2 0]` (dim-10 adjoint) block is currently unused by any test — the CGC fixture
+  has no `[2 0]²` channel — and is exported for completeness and future Sp4
+  adjoint² work should that channel be added.
 
 ## Conventions observed (verified against SU2)
 
