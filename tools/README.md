@@ -49,6 +49,29 @@ without commercial licenses. Therefore:
 - If this directory grows past easy scanning, split by semantics
   (per group family or per oracle kind), not by language.
 
+## Fixture and spec rules (binding)
+
+These apply to every fixture strand and to any spec/issue that drives one:
+
+- **Reference-inventory rule.** Any claim of the form "the existing X" (a
+  function, symbol, test, or fixture that a spec/issue/PR builds on) must carry
+  a concrete `file::symbol` and be verified to exist before anything is built
+  on it. An unverified "existing X" is not evidence; it is a hypothesis.
+  Generated/derived APIs additionally satisfy the warm-no-resweep rule below.
+- **Warm-no-resweep rule.** Any coefficient-*generation* API (SU(N)/SO(N)/Sp
+  CGC/F/R sweeps and their caches) must ship a test proving a warm second call
+  returns from the cache without re-running the sweep — otherwise a "cache"
+  that silently recomputes is indistinguishable from a correct one. A strand
+  that only *consumes* an existing decomposition (e.g. the GroupMath and
+  isomorphism strands, which call `directproduct`) adds no generation API and
+  is exempt; the rule binds whoever adds or touches the generation path.
+- **Per-strand header rule.** Every fixture strand documents, in its header,
+  its **normalization**, its **outer-multiplicity (OM) axis convention**, and
+  its **label format**. `tools/qspace/README.md` is the model;
+  `tools/groupmath/gen_groupmath_products.wls` (channel/multiplicity oracle,
+  with the `Invariants` CGC-basis reconnaissance) and `tests/isomorphism.rs`
+  (the Dynkin label maps) follow it.
+
 ## Reference-coverage roles (who verifies what)
 
 Each verification strand has one role; strands do not substitute for each
