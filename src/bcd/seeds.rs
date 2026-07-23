@@ -105,6 +105,17 @@ impl Seed {
     pub fn cartan(&self) -> &[Vec<i64>] {
         &self.sz
     }
+
+    /// Test-only mutable access, for the mutation-sanity tests that corrupt one
+    /// entry and assert [`check_commutators`] then rejects the seed.
+    #[cfg(test)]
+    fn raising_mut(&mut self) -> &mut [Vec<(usize, usize, i64)>] {
+        &mut self.sp
+    }
+    #[cfg(test)]
+    fn cartan_mut(&mut self) -> &mut [Vec<i64>] {
+        &mut self.sz
+    }
 }
 
 /// The exact defining-rep generator seed for `series` at rank `r`.
@@ -427,3 +438,6 @@ fn commutator(a: &[i64], b: &[i64], d: usize) -> Vec<i64> {
 fn fro_diag(u: &[i64], v: &[i64]) -> i64 {
     u.iter().zip(v).map(|(&a, &b)| a * b).sum()
 }
+
+#[cfg(test)]
+mod tests;
