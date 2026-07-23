@@ -85,6 +85,10 @@ def main():
                 dc = dynkin_of(R, wt)
                 terms.append("%s:%d" % (",".join(map(str, dc)), int(mult)))
             terms.sort()
+            # A.degree() is the Weyl-dimension FORMULA (no module is
+            # constructed), so it stays fast even for rank-4 labels — unlike
+            # Oscar, where building the h.w. module to read its dim is the slow
+            # path (see gen_bcd_fixtures.jl).
             out.append("%s %d | %s | %s | %d %d | %s" % (
                 series, r,
                 ",".join(map(str, da)),
