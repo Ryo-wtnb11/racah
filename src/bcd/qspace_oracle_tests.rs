@@ -28,27 +28,26 @@
 //!
 //! With the verified dictionaries applied, the full projector matches QSpace to
 //! round-off (`< 1e-9`) for the channels whose **both** factors have exported
-//! generators — **28** of the fixture's B/C/D channels:
+//! generators — **33** of the fixture's B/C/D channels:
 //! - SO(5) `[1 0]`/`[0 2]`: all 12 channels (vector², adjoint², and the
 //!   defining⊗adjoint cross product);
 //! - SO(6) `[1 0 0]`/`[0 1 1]`: all 13 channels — **including the 84 = (0,2,2) and
 //!   the OM=2 15-channel**;
-//! - Sp(4) `[1 0]²`: 3 channels.
+//! - Sp(4) `[1 0]`/`[0 1]`: all 8 channels (`[1 0]²`, `[0 1]²`, and the
+//!   `[1 0]⊗[0 1]` cross product). Sp(4)'s adjoint is `[2 0]` (dim 10), whose
+//!   generators *are* exported, but the fixture has no `[2 0]²` channel, so Sp(4)
+//!   adjoint² is untestable here regardless.
 //!
 //! Not projector-tested, by construction:
-//! - Sp(4) `[0 1]²` (3 channels) and `[1 0]⊗[0 1]` (2): the `[0 1]` (dim 5) factor
-//!   has no exported generators, so its dictionary cannot be solved. Sp(4)'s
-//!   adjoint is `[2 0]` (dim 10), whose generators *are* exported, but the fixture
-//!   has no `[2 0]²` channel, so Sp(4) adjoint² is untestable here regardless.
 //! - SO(7)/Sp(6)/SO(8) (9 channels): `sym_to_series` maps only the rank-2/3 groups
 //!   the dictionaries target, so these higher-rank rows are out of this anchor's
 //!   scope (`rank == 0`).
 //!
 //! Structural coverage (coupled dimension + outer multiplicity, via
-//! [`qspace_channel_structure_matches`]) spans every rank-2/3 B/C/D channel — the
-//! 28 projector-tested ones **and** the 5 Sp(4) `[0 1]`-factor channels above (33
-//! total). The 9 SO(7)/Sp(6)/SO(8) rows are `rank == 0` to `sym_to_series` and so
-//! are skipped by that test too; the SU(2) rows belong to the su2 suites.
+//! [`qspace_channel_structure_matches`]) spans every rank-2/3 B/C/D channel — all
+//! 33 are now projector-tested. The 9 SO(7)/Sp(6)/SO(8) rows are `rank == 0` to
+//! `sym_to_series` and so are skipped by that test too; the SU(2) rows belong to
+//! the su2 suites.
 
 use std::collections::HashMap;
 
@@ -576,12 +575,24 @@ fn check_group(series: Series, rank: usize, sym: &str, factors: &[Vec<i64>], cha
 /// Defining-factor anchor (item 1): the vector² channels, now against a
 /// **verified** dictionary (fit-free, the reviewer's P2). One dictionary per group,
 /// solved from QSpace's own generators and asserted as an element-wise intertwiner.
+/// Sp(4) has its own combined test below (both factors).
 #[test]
 fn qspace_vector_products_match_under_verified_dictionary() {
     let channels = parse_fixture();
     check_group(Series::B, 2, "SO5", &[vec![1, 0]], &channels);
-    check_group(Series::C, 2, "Sp4", &[vec![1, 0]], &channels);
     check_group(Series::D, 3, "SO6", &[vec![1, 0, 0]], &channels);
+}
+
+/// Sp(4) anchor (issue #36): the full `P = Σ C_μ C_μᵀ` projector match for **all
+/// 8** Sp(4) `[1 0]`/`[0 1]` channels — `[1 0]²`, `[0 1]²`, and the `[1 0]⊗[0 1]`
+/// cross product — each under its own verified factor-basis dictionary. Promotes
+/// the five `[0 1]`-factor channels from structural-only now that Sp(4) `[0 1]`
+/// (dim 5) generators are exported. Sp(4)'s adjoint `[2 0]` has exported generators
+/// but no `[2 0]²` fixture channel, so adjoint² stays untestable here.
+#[test]
+fn qspace_sp4_products_match_under_verified_dictionary() {
+    let channels = parse_fixture();
+    check_group(Series::C, 2, "Sp4", &[vec![1, 0], vec![0, 1]], &channels);
 }
 
 /// Adjoint-factor anchor (item 2): the full `P = Σ C_μ C_μᵀ` projector match for
@@ -592,7 +603,7 @@ fn qspace_vector_products_match_under_verified_dictionary() {
 ///
 /// Sp4's adjoint is [2 0] (dim 10); the CGC fixture has no [2 0]⊗[2 0] channel, so
 /// Sp4 adjoint² is not testable here and stays covered only by the structural
-/// anchor. Sp4's [0 1] (dim 5) has no exported generators either.
+/// anchor. Sp4's [1 0]/[0 1] channels have their own combined test above.
 #[test]
 fn qspace_adjoint_products_match_under_verified_dictionary() {
     let channels = parse_fixture();
