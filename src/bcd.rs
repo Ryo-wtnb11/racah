@@ -902,3 +902,7 @@ pub use fr::{
 
 #[cfg(test)]
 mod tests;
+
+// S3.5 external anchor: QSpace CGC oracle, behind the factor-basis dictionary.
+#[cfg(all(test, feature = "cgc-gen"))]
+mod qspace_oracle_tests;
