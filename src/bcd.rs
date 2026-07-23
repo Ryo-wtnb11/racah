@@ -153,6 +153,19 @@ pub enum BcdError {
         /// The second operand as `(series, rank)`.
         b: (Series, usize),
     },
+    /// A defining-rep generator seed failed the exact commutator self-check
+    /// ([`check_commutators`]) — the Rust analogue of QSpace's `checkCommRel`
+    /// error. Names the violated relation and the generator indices involved.
+    CommutatorViolation {
+        /// The series.
+        series: Series,
+        /// The violated relation (e.g. `"cartan not mutually orthogonal"`).
+        relation: &'static str,
+        /// First generator index.
+        i: usize,
+        /// Second generator index.
+        j: usize,
+    },
 }
 
 impl fmt::Display for BcdError {
@@ -181,6 +194,17 @@ impl fmt::Display for BcdError {
                 f,
                 "directproduct across distinct groups {:?} and {:?}",
                 a, b
+            ),
+            BcdError::CommutatorViolation {
+                series,
+                relation,
+                i,
+                j,
+            } => write!(
+                f,
+                "series {} defining-seed commutator self-check failed: {relation} \
+                 (generators i={i}, j={j})",
+                series.name()
             ),
         }
     }
@@ -831,6 +855,9 @@ pub fn directproduct(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, BcdEr
     }
     Ok(result)
 }
+
+mod seeds;
+pub use seeds::{check_commutators, defining_seed, CommReport, Seed};
 
 #[cfg(test)]
 mod tests;
