@@ -21,6 +21,23 @@
 //! Exactness contract: combinatorial structure and discrete data are exact;
 //! gauge fixing is a deterministic function of the subspace; floating-point
 //! stages are verification-gated and versioned.
+//!
+//! # Quick start
+//!
+//! Exact SU(2) recoupling needs no features. Spins are doubled (`dj = 2j`), so
+//! `2` means spin 1; a non-admissible label set returns exact zero, never an
+//! error. Here `{1 1 1; 1 1 1} = 1/6`:
+//!
+//! ```
+//! use racah::wigner_6j;
+//!
+//! let sixj = wigner_6j(2, 2, 2, 2, 2, 2);
+//! assert!((sixj.to_f64() - 1.0 / 6.0).abs() < 1e-14);
+//! ```
+//!
+//! The generated families (SU(N), SO(N)/Sp(2N)) live behind the `cgc-gen`
+//! feature; see the `sun` and `bcd` module docs for runnable examples of
+//! their Clebsch–Gordan and F/R surfaces.
 #![warn(missing_docs)]
 
 pub mod cache;

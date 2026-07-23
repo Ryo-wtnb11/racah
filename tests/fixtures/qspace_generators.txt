@@ -1,5 +1,5 @@
 --- QSpace generator export (basis = QSpace RSet, via patched getRC, plain double)
---- source: QSpace v4-pub @ dd2cc7e; convention: Sz{k} diagonal Cartan (weight coords), Sp{k} ladder ops; [Sp_k,Sp_k^T] closes on integer combos of Sz
+--- source: QSpace v4-pub @ dd2cc7e; convention: Sz{k} diagonal Cartan (weight coords), Sp{k} ladder ops; [Sp_k,Sp_k^T] closes on rational combos of Sz
 --- format: IRREP sym | J | dim | nops ; Z rows ; OP SP|SZ k: "row col value" 0-based dense-nonzeros
 IRREP SO5 | 1  0 | dim=5 | nops=2
 Z 0 1
