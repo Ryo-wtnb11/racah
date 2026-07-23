@@ -17,8 +17,11 @@
 //!
 //! # Dynkin label maps
 //!
-//! All maps were established empirically (matching dimensions and product
-//! channels through both sides), never assumed. `A_{n}` uses [`racah::sun`]
+//! Each label map is a **theorem** — the diagram-theoretic derivation is given
+//! per isomorphism in the sections below (the node identification from the folded
+//! / relabelled Dynkin diagram) and then cross-checked against matching dimensions
+//! and product channels through both sides, never merely assumed from a numerical
+//! coincidence. `A_{n}` uses [`racah::sun`]
 //! Dynkin labels `(a_1,…,a_n)`; `B_r`/`C_r`/`D_r` use [`racah::bcd`] Dynkin
 //! labels `(b_0,…,b_{r-1})` in the module's node order (node 0 = vector for
 //! `B`/`D`, per `docs/gauge_soN.md`).
@@ -228,20 +231,20 @@ fn so4_su2xsu2_two_paths_agree() {
             let dr = Sun::from_dynkin(&[q]).unwrap().dim();
             assert_eq!(dl.clone() * dr, num_bigint::BigInt::from((p + 1) * (q + 1)));
 
-            // Factor products: SU(2) via GT engine (sun N=2) vs exact base.
+            // Factor products: SU(2) via GT engine (sun N=2) vs exact base. Only
+            // the left factor (p, p2) is exercised — the right factor (q) obeys the
+            // identical SU(2) rule, so a q2 loop would add redundant, not new,
+            // coverage (the reviewer's dead-loop nit, PR #33).
             for &p2 in &spins {
-                for &q2 in &spins {
-                    let gt_left = sun_channels(
-                        &Sun::from_dynkin(&[p]).unwrap(),
-                        &Sun::from_dynkin(&[p2]).unwrap(),
-                    );
-                    // Compare against base-module multiplicities for every dj3.
-                    for dj3 in 0..=(p + p2) {
-                        let gt = *gt_left.get(&vec![dj3]).unwrap_or(&0);
-                        let base = su2_mult_base(p as i32, p2 as i32, dj3 as i32);
-                        assert_eq!(gt, base, "SU(2) mult {p} x {p2} -> {dj3}");
-                    }
-                    let _ = q2; // right factor is the same SU(2) rule
+                let gt_left = sun_channels(
+                    &Sun::from_dynkin(&[p]).unwrap(),
+                    &Sun::from_dynkin(&[p2]).unwrap(),
+                );
+                // Compare against base-module multiplicities for every dj3.
+                for dj3 in 0..=(p + p2) {
+                    let gt = *gt_left.get(&vec![dj3]).unwrap_or(&0);
+                    let base = su2_mult_base(p as i32, p2 as i32, dj3 as i32);
+                    assert_eq!(gt, base, "SU(2) mult {p} x {p2} -> {dj3}");
                 }
             }
         }

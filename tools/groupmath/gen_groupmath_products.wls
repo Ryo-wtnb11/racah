@@ -51,8 +51,11 @@
 
 groupmathDir = Environment["GROUPMATH_DIR"];
 If[groupmathDir === $Failed,
-  groupmathDir = FileNameJoin[{ParentDirectory[ParentDirectory[DirectoryName[$InputFileName]]],
-    "..", "..", "scratchpad", "groupmath"}]];
+  (* No session-scratchpad default: a fresh checkout has no such path, and a
+     silent fallback into a nonexistent directory yields a confusing GroupMath
+     load failure downstream. Fail loudly with the fix instead. *)
+  (Print["ERROR: set GROUPMATH_DIR to the directory containing the GroupMath` package"];
+   Exit[1])];
 AppendTo[$Path, groupmathDir];
 (* Suppress GroupMath's load-time banner (a Print) so stdout is pure fixture. *)
 Block[{Print = (Null &)}, Quiet[Get["GroupMath`"]]];
