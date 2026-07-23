@@ -5,7 +5,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Racah-Wigner calculus for compact Lie groups: exact SU(2) recoupling, and runtime Clebsch-Gordan / F- / R-coefficient generation for SU(N), SO(N), and Sp(2N)"
 repository = "https://github.com/Ryo-wtnb11/racah"
-keywords = ["representation-theory", "clebsch-gordan", "wigner", "lie-group", "6j"]
+keywords = ["recoupling", "clebsch-gordan", "wigner", "lie-group", "6j"]
 categories = ["mathematics", "science"]
 
 # docs.rs builds the generated SU(N)/SO(N)/Sp(2N) surfaces too, not just the
