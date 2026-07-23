@@ -859,5 +859,17 @@ pub fn directproduct(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, BcdEr
 mod seeds;
 pub use seeds::{check_commutators, defining_seed, CommReport, Seed};
 
+// The decomposition sweep (S3.2) and its dense linalg seam depend on
+// `tenferro-linalg`, so they live behind the `cgc-gen` feature like the SU(N)
+// CGC pipeline; the base crate stays dependency-light.
+#[cfg(feature = "cgc-gen")]
+mod linalg;
+#[cfg(feature = "cgc-gen")]
+mod sweep;
+#[cfg(feature = "cgc-gen")]
+pub use sweep::{
+    decompose, decompose_defining_product, Block, Decomposition, Generators, SweepError,
+};
+
 #[cfg(test)]
 mod tests;
