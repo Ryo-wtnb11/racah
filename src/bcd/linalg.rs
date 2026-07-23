@@ -151,6 +151,35 @@ pub(crate) fn tmatmul(a: &Dense, b: &Dense) -> Result<Dense, SweepError> {
     matmul(&a.transpose(), b)
 }
 
+/// Thin SVD `A = U · diag(s) · Vᵀ`, routed through the tenferro traced surface.
+///
+/// Returns `(U, s, Vt)` with `U` (`rows × k`), `s` (length `k`), `Vt` (`k × cols`),
+/// `k = min(rows, cols)`. The only consumer is the small per-weight-space
+/// orthogonal Procrustes solve in intertwiner alignment (issue #29): for a square
+/// `M`, `W = U · Vt` is the nearest orthogonal matrix to `M`. No hand-rolled
+/// kernel — the decision to route factorizations through the backend is `AGENTS.md`.
+pub(crate) fn svd(a: &Dense) -> Result<(Dense, Vec<f64>, Dense), SweepError> {
+    let k = a.rows.min(a.cols);
+    if k == 0 {
+        return Ok((Dense::zeros(a.rows, 0), Vec::new(), Dense::zeros(0, a.cols)));
+    }
+    let ta = traced(a)?;
+    let (u, s, vt) = ta.svd().map_err(|e| linalg_err("svd", e))?;
+    let out = run(&[&u, &s, &vt])?;
+    let u = Dense {
+        rows: a.rows,
+        cols: k,
+        data: f64_out(&out[0])?,
+    };
+    let s = f64_out(&out[1])?;
+    let vt = Dense {
+        rows: k,
+        cols: a.cols,
+        data: f64_out(&out[2])?,
+    };
+    Ok((u, s, vt))
+}
+
 /// Rank-revealing orthonormalization of the columns of `a` (QSpace
 /// `OrthoNormalizeColsQR(FL, tol)`): an orthonormal basis of `a`'s column space,
 /// dropping linearly dependent/zero columns so a rank-deficient input never
@@ -199,4 +228,41 @@ pub(crate) fn qr_positive_q(a: &Dense, tol: f64) -> Result<Dense, SweepError> {
         })
         .collect();
     Ok(q.select_cols(&keep))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn svd_reconstructs_and_procrustes_recovers_rotation() {
+        // A known 2×2, plus: the nearest-orthogonal of a rotation IS that rotation.
+        let m = Dense {
+            rows: 2,
+            cols: 2,
+            data: vec![2.0, 0.0, 0.0, 3.0], // diag(2,3), column-major
+        };
+        let (u, s, vt) = svd(&m).unwrap();
+        // reconstruct U·diag(s)·Vt.
+        let mut sd = Dense::zeros(2, 2);
+        for (i, &sv) in s.iter().enumerate() {
+            sd.set(i, i, sv);
+        }
+        let recon = matmul(&matmul(&u, &sd).unwrap(), &vt).unwrap();
+        for i in 0..4 {
+            assert!((recon.data[i] - m.data[i]).abs() < 1e-12);
+        }
+        // Procrustes on a pure rotation returns the rotation itself (s ≈ [1,1]).
+        let c = std::f64::consts::FRAC_1_SQRT_2;
+        let rot = Dense {
+            rows: 2,
+            cols: 2,
+            data: vec![c, c, -c, c], // [[c,-c],[c,c]] column-major
+        };
+        let (u, _s, vt) = svd(&rot).unwrap();
+        let w = matmul(&u, &vt).unwrap();
+        for i in 0..4 {
+            assert!((w.data[i] - rot.data[i]).abs() < 1e-12);
+        }
+    }
 }

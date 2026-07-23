@@ -461,3 +461,151 @@ fn coherence_residual_detects_degenerate_rotation() {
     // Sanity: a set is coherent with itself.
     assert_eq!(canonical.coherence_residual(&canonical), 0.0);
 }
+
+// ---- intertwiner alignment (issue #29) -------------------------------------
+
+/// A real coupled block with a degenerate weight space: the SO(5) adjoint (0,2),
+/// dim 10, from vector⊗vector. Its zero-weight space has multiplicity `rank = 2`,
+/// so a within-space rotation is a genuine gauge freedom — the incoherence class.
+fn so5_adjoint_block() -> Block {
+    let seed = defining_seed(Series::B, 2).unwrap();
+    let g = Generators::from_seed(&seed);
+    let prod = Generators::product(&g, &g).unwrap();
+    let v = defining_irrep(Series::B, 2);
+    let expected = directproduct(&v, &v).unwrap();
+    let decomp = decompose(&prod, &expected).unwrap();
+    let adj = Irrep::from_dynkin(Series::B, &[0, 2]).unwrap();
+    decomp
+        .blocks()
+        .iter()
+        .find(|b| b.irrep() == &adj)
+        .expect("vector⊗vector must contain the adjoint")
+        .clone()
+}
+
+/// The `d × d` identity except a 45° rotation on the two `zero`-weight indices.
+fn rotation_on(d: usize, zero: [usize; 2]) -> Dense {
+    let mut w = Dense::zeros(d, d);
+    for i in 0..d {
+        w.set(i, i, 1.0);
+    }
+    let c = std::f64::consts::FRAC_1_SQRT_2;
+    // [[c,-c],[c,c]] on the 2×2 sub-block.
+    w.set(zero[0], zero[0], c);
+    w.set(zero[0], zero[1], -c);
+    w.set(zero[1], zero[0], c);
+    w.set(zero[1], zero[1], c);
+    w
+}
+
+/// The two zero-weight state indices of a block (all Cartan diagonals zero).
+fn zero_weight_indices(g: &Generators) -> [usize; 2] {
+    let zeros: Vec<usize> = (0..g.dim())
+        .filter(|&s| (0..g.rank()).all(|j| g.cartan_diag(j)[s].abs() < 1e-9))
+        .collect();
+    assert_eq!(
+        zeros.len(),
+        2,
+        "SO(5) adjoint has a doubly-degenerate zero weight"
+    );
+    [zeros[0], zeros[1]]
+}
+
+/// PR #28 template — rotate, align, require exact recovery of the canonical
+/// values. A block put into an O(1)-rotated frame inside its degenerate weight
+/// space (the platform-fragile incoherence class) aligns back to the canonical
+/// frame: the aligned generators match the canonical set below the guard
+/// tolerance and the aligned CGC recovers the canonical CGC — independent of the
+/// rotation, so every platform's rotated embedding maps onto one answer.
+#[test]
+fn alignment_recovers_canonical_frame_after_rotation() {
+    let b0 = so5_adjoint_block();
+    let g0 = b0.generators().clone();
+    let zero = zero_weight_indices(&g0);
+    let w0 = rotation_on(g0.dim(), zero);
+
+    // Rotated frame: G1 = W0ᵀ·G0·W0, V1 = V0·W0 (V1ᵀ Sp V1 = W0ᵀ (V0ᵀ Sp V0) W0).
+    let g1 = conjugate_generators(&g0, &w0.transpose()).unwrap();
+    let v1 = matmul(&b0.cgc, &w0).unwrap();
+    let b1 = Block {
+        irrep: b0.irrep().clone(),
+        cgc: v1,
+        gens: g1.clone(),
+        z: b0.z.clone(),
+        om: b0.outer_multiplicity(),
+    };
+
+    // The rotated frame WOULD brick the guard (O(1) residual).
+    assert!(
+        g1.coherence_residual(&g0) > 1e-3,
+        "the synthetic rotation must be a real incoherence"
+    );
+
+    let (aligned_cgc, residual) = align_block(&b1, &g0).unwrap();
+    assert!(
+        residual < 1e-10,
+        "alignment must drive the generator residual under the guard tol, got {residual:e}"
+    );
+    // Aligned CGC recovers the canonical CGC element-wise.
+    let mut worst = 0.0f64;
+    for (a, b) in aligned_cgc.data.iter().zip(b0.cgc.data.iter()) {
+        worst = worst.max((a - b).abs());
+    }
+    assert!(
+        worst < 1e-9,
+        "aligned CGC must recover canonical, worst {worst:e}"
+    );
+}
+
+/// A well-conditioned (already-coherent) block aligns to `W = identity` up to
+/// sign: the aligned CGC equals the input CGC, and the residual is at the sweep's
+/// round-off floor. (This is why the catalog fast-path — skip alignment when the
+/// raw residual already passes — is bit-exact.)
+#[test]
+fn alignment_of_coherent_block_is_identity() {
+    let b0 = so5_adjoint_block();
+    let g0 = b0.generators().clone();
+    let w = intertwiner(&g0, &g0).unwrap();
+    // W ≈ I.
+    for i in 0..g0.dim() {
+        for j in 0..g0.dim() {
+            let target = if i == j { 1.0 } else { 0.0 };
+            assert!(
+                (w.at(i, j) - target).abs() < 1e-9,
+                "intertwiner(G,G) must be I"
+            );
+        }
+    }
+    let (aligned_cgc, residual) = align_block(&b0, &g0).unwrap();
+    assert!(residual < 1e-9, "self-alignment residual {residual:e}");
+    let mut worst = 0.0f64;
+    for (a, b) in aligned_cgc.data.iter().zip(b0.cgc.data.iter()) {
+        worst = worst.max((a - b).abs());
+    }
+    assert!(
+        worst < 1e-9,
+        "self-alignment must not move the CGC, worst {worst:e}"
+    );
+}
+
+/// Determinism: aligning the SAME rotated block twice yields bit-identical CGC
+/// (the SVD-based Procrustes is a deterministic function of its inputs).
+#[test]
+fn alignment_is_deterministic() {
+    let b0 = so5_adjoint_block();
+    let g0 = b0.generators().clone();
+    let zero = zero_weight_indices(&g0);
+    let w0 = rotation_on(g0.dim(), zero);
+    let g1 = conjugate_generators(&g0, &w0.transpose()).unwrap();
+    let v1 = matmul(&b0.cgc, &w0).unwrap();
+    let b1 = Block {
+        irrep: b0.irrep().clone(),
+        cgc: v1,
+        gens: g1,
+        z: b0.z.clone(),
+        om: b0.outer_multiplicity(),
+    };
+    let (c1, _) = align_block(&b1, &g0).unwrap();
+    let (c2, _) = align_block(&b1, &g0).unwrap();
+    assert_eq!(c1.data, c2.data, "alignment must be bitwise deterministic");
+}

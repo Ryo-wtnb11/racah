@@ -45,7 +45,7 @@ use std::collections::HashMap;
 
 use num_bigint::BigInt;
 
-use super::sweep::{decompose, Block, Generators, SweepError};
+use super::sweep::{align_block, decompose, Block, Generators, SweepError};
 use super::{defining_seed, directproduct, BcdError, Irrep, Series};
 
 /// Default byte budget for a catalog (256 MiB). Generator sets are dense `f64`
@@ -119,8 +119,11 @@ pub enum CatalogError {
     /// issue #15 instance 5). An ill-conditioned QR can leave an irrep in a
     /// rotated frame between two embeddings, which would silently corrupt every
     /// F/R contraction that shares that irrep across its coupled and factor
-    /// roles; this crate refuses to return such a value. Alignment of the two
-    /// frames (an intertwiner fit) is a separate, reviewed follow-up.
+    /// roles; this crate refuses to return such a value. Intertwiner alignment
+    /// (issue #29) first tries to rotate the frame onto the canonical stored
+    /// basis; this error is what remains when even the aligned frame disagrees
+    /// beyond tolerance (a genuinely different irrep, or a numerically hopeless
+    /// embedding whose remedy would be the out-of-scope extended-precision tier).
     BasisIncoherent {
         /// Dynkin label of the incoherent coupled irrep.
         irrep: Vec<i64>,
@@ -166,9 +169,9 @@ impl std::fmt::Display for CatalogError {
                 residual,
             } => write!(
                 f,
-                "irrep {irrep:?} from product {:?}⊗{:?} is in a rotated frame vs its \
-                 stored canonical basis (generator residual {residual:e} > coherence tol) — \
-                 ill-conditioned embedding; intertwiner alignment is a separate follow-up",
+                "irrep {irrep:?} from product {:?}⊗{:?} could not be aligned onto its \
+                 stored canonical basis (post-alignment generator residual {residual:e} > \
+                 coherence tol) — genuinely different frame or a numerically hopeless embedding",
                 product.0, product.1
             ),
             CatalogError::NoCanonicalParent { dynkin } => write!(
@@ -482,13 +485,17 @@ impl CanonicalCatalog {
     /// copies (already OM-sorted). Shared by [`cgc`](Self::cgc) and
     /// [`cgc_product`](Self::cgc_product) so both produce the identical isometry.
     ///
-    /// Enforces the restored QSpace coherence guard (issue #15 instance 5): each
-    /// copy's projected generators must match `s3`'s stored canonical basis to
-    /// [`TOL_BASIS_COHERENT`], else [`CatalogError::BasisIncoherent`]. The two
-    /// base cases (trivial, defining) are exempt — their stored basis is the S3.1
-    /// seed rather than a descending-weight sweep, so an element-wise comparison
-    /// is not meaningful, and neither is ever the ill-conditioned case the guard
-    /// targets.
+    /// Each copy is brought into `s3`'s stored canonical frame before its columns
+    /// are appended (issue #29): a copy already coherent to [`TOL_BASIS_COHERENT`]
+    /// is used verbatim (bit-exact fast path); a copy in a rotated frame (issue
+    /// #24 ill-conditioning) is aligned by [`align_block`] and re-verified. The
+    /// coherence guard (issue #15 instance 5) still fires — now on the
+    /// **post-alignment** residual — as [`CatalogError::BasisIncoherent`] when a
+    /// frame cannot be aligned within tolerance (a genuinely different irrep or a
+    /// numerically hopeless embedding). The two base cases (trivial, defining) are
+    /// exempt — their stored basis is the S3.1 seed rather than a descending-weight
+    /// sweep, so an element-wise comparison is not meaningful, and neither is ever
+    /// the ill-conditioned case the guard targets.
     fn assemble_cgc(
         &self,
         s1: &Irrep,
@@ -503,16 +510,32 @@ impl CanonicalCatalog {
         for b in copies {
             debug_assert_cartan_matches(b, stored);
             if check {
-                let residual = b.generators().coherence_residual(stored);
-                if residual > TOL_BASIS_COHERENT {
-                    return Err(CatalogError::BasisIncoherent {
-                        irrep: s3.dynkin(),
-                        product: (s1.dynkin(), s2.dynkin()),
-                        residual,
-                    });
+                let raw = b.generators().coherence_residual(stored);
+                if raw <= TOL_BASIS_COHERENT {
+                    // Already in the canonical frame: use the block CGC verbatim
+                    // (bit-exact fast path — alignment on a coherent block is the
+                    // identity up to sign, so this avoids perturbing stored values).
+                    cols.extend_from_slice(b.cgc());
+                } else {
+                    // Rotated frame (issue #24 ill-conditioning): align to the
+                    // canonical stored frame (issue #29) instead of bricking. The
+                    // coherence guard now runs on the POST-alignment residual — it
+                    // moved after alignment, it was not removed (issue #15 ledger):
+                    // a frame that still disagrees is a genuinely different irrep
+                    // or a numerically hopeless embedding and stays BasisIncoherent.
+                    let (aligned, residual) = align_block(b, stored)?;
+                    if residual > TOL_BASIS_COHERENT {
+                        return Err(CatalogError::BasisIncoherent {
+                            irrep: s3.dynkin(),
+                            product: (s1.dynkin(), s2.dynkin()),
+                            residual,
+                        });
+                    }
+                    cols.extend_from_slice(&aligned.data);
                 }
+            } else {
+                cols.extend_from_slice(b.cgc());
             }
-            cols.extend_from_slice(b.cgc());
         }
         Ok(CatalogCgc {
             s1: s1.clone(),

@@ -663,3 +663,99 @@ commutator relations at `≤ EPS_SWEEP` (§6), so a stored set's residual is bou
 Measured accumulation stays deep below the gate (C2 symmetric powers: depth-3 sets
 have worst commutator residual `~10⁻¹⁴`), which is the issue-#18 chain-depth watch
 item's evidence.
+
+---
+
+## 15. Intertwiner alignment of rediscovered frames (this IS gauge)
+
+Reference/authority: issue #29, the PR #28 adjudication, and issue #15 instance 5.
+This section is the re-derivation-standard specification of the rung that turns a
+rediscovered coupled block's frame into the **canonical** frame before its CGC is
+returned. It is gauge: it deterministically fixes the frame of every coupled
+multiplet, so a value-affecting change here is a breaking release.
+
+### 15.1 The problem it fixes
+
+The sweep gauge (§6–§8) is intrinsic in exact arithmetic but analytically
+**ill-conditioned**: a near-rank-deficient weight space (the QR conditioning
+flagged in PR #24) can leave a coupled multiplet in an O(1)-**rotated** frame
+between two embeddings of the same irrep. The projected generators then carry the
+correct weight *system* (§6 gates each `R.Sz` to the intrinsic, gauge-independent
+weight multiset) but differ from the stored canonical generators by an orthogonal
+rotation inside each degenerate weight space. `Generators::coherence_residual` (the
+restored QSpace `normDiff` guard, `clebsch.cc:6710-6718 @ dd2cc7e`) measures that
+rotation: a well-conditioned embedding agrees to `~1e-15`; a rotated one is O(1)
+(e.g. the D3 `84 = (0,2,2)` at residual 3.65). Because the precondition is analytic
+(frame conditioning), not combinatorial, no OM/label predicate can pre-select the
+rotated channels — the frame must be *measured and repaired*, exactly as the
+reference measured it.
+
+### 15.2 The alignment
+
+For a rediscovered block with generators `R_block[i]` and the stored canonical
+generators `R_can[i]` of the same irrep, solve the orthogonal intertwiner `W` with
+
+```
+R_can[i] · W  =  W · R_block[i]      for every generator i (all Sp and, trivially, Sz)
+```
+
+and return `V_can = V · Wᵀ` as the block's CGC (`|can_k⟩ = Σ_j W_kj |block_j⟩`).
+`W` is unique up to an overall sign (the real-type commutant is `ℝ·I`; §15.4), and
+the sign is pinned by §8 applied to the aligned block.
+
+### 15.3 Why `W` is block-diagonal, and the solve
+
+`W` commutes with the snapped Cartans (`Sz` is integer-equal between the two
+frames, §6), so `W` is **block-diagonal over weight spaces**, with one orthogonal
+block per weight space of dimension = the weight multiplicity. Non-degenerate
+weight spaces (multiplicity 1) carry a `±1`; only degenerate spaces need a genuine
+orthogonal block. The solve propagates from the **1-dim highest-weight space**
+(block `= +1`, which fixes the global sign) down the ladder: for a target weight
+space `T`, each lowering operator `Sp[i]ᵀ` from an already-solved higher space `S`
+gives the exact relation
+
+```
+A · W_S  =  W_T · B ,   A = R_can[i]ᵀ|_{T,S},   B = R_block[i]ᵀ|_{T,S}
+```
+
+Stacking `C = A·W_S` and `B` over all `(i, S)`, `W_T` is the orthogonal
+**Procrustes** solution of `W_T·B = C`, i.e. `W_T = U·Vᵀ` from `SVD(C·Bᵀ)`. This is
+a small, well-conditioned per-space solve — it does **not** reintroduce the near-tie
+sensitivity PR #28 removed, because its target is the fixed canonical frame, not a
+freshly discovered one. Processing weight spaces in descending-weight order
+guarantees every source `S` (strictly higher weight) is solved before its target.
+
+### 15.4 Uniqueness / the `±1` (D-odd chirality included)
+
+The commutant of an irrep in the real-matrix ladder basis is `ℝ·I` for all three
+series and both chiralities of the D-odd spinor-tensor labels: complex-type
+Frobenius–Schur structure lives in the compact-unitary picture and creates no
+`SO(2)` rung in the real ladder basis (the PR #28 adjudication settled this). So
+`W` is determined up to the single global sign, which §8 pins. There is no
+continuous gauge freedom left to fix beyond the per-degenerate-space orthogonal
+block the ladder already determines.
+
+### 15.5 Verification (the guard moved, it was not removed)
+
+`W` is computed numerically, then **verified**: the aligned generators
+`W·R_block·Wᵀ` are compared element-wise against `R_can` at the guard tolerance
+(`TOL_BASIS_COHERENT = 1e-10`, QSpace `normDiff` provenance). A frame that still
+disagrees after alignment — a genuinely different irrep, or a numerically hopeless
+embedding whose only remedy is the out-of-scope extended-precision tier (§11, the
+QSpace MPFR analogue) — stays a loud `CatalogError::BasisIncoherent`. The coherence
+guard therefore **moves from before to after** alignment (issue #15 instance 5,
+before/after positions recorded in the PR body); it is never bypassed, and a
+coherent block (raw residual already `≤ tol`) skips alignment on a bit-exact fast
+path so no stored value is perturbed.
+
+### 15.6 OM ≥ 2
+
+When `N^c_{ab} ≥ 2`, alignment runs **per copy**: each copy's coupled-side frame is
+rotated onto the canonical `R_can` independently, so all copies share one carrier
+frame and every four-CGC contraction over the shared `c` leg is coherent (this is
+what unblocks the OM≥2 batteries). The OM *index* order is the catalog's existing
+discovery-order convention (§9). The residual freedom of the O(N) multiplicity-space
+mixing is **not** further canonicalized here: the F/R self-consistency gates and the
+gauge-invariant isotypic projector `P = Σ_μ C_μ C_μᵀ` are both invariant under it,
+and a full canonical multiplicity gauge is left to the S3.5 fitted-unitary harness.
+This is the one alignment freedom this rung deliberately does not pin.

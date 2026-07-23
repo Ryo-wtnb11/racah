@@ -35,7 +35,9 @@
 
 use std::collections::BTreeMap;
 
-use super::linalg::{matmul, qr_positive_q, tmatmul, Dense};
+use std::collections::HashMap;
+
+use super::linalg::{matmul, qr_positive_q, svd, tmatmul, Dense};
 use super::seeds::Seed;
 use super::{directproduct, Irrep, Series};
 
@@ -1288,6 +1290,207 @@ fn snap_int(x: f64) -> f64 {
     } else {
         x
     }
+}
+
+// ---- intertwiner alignment of rediscovered frames (issue #29, gauge_soN §15) --
+
+/// Threshold separating distinct integer weights when partitioning states into
+/// weight spaces, and detecting a nonzero ladder coupling `Sp[i]` matrix element.
+/// Weights are integer-snapped (§6), so distinct weights differ by ≥ 1; ladder
+/// matrix elements of a normalized carrier are O(1). `1e-6` sits comfortably
+/// between (matches the `FixRational` snap floor).
+const ALIGN_COUPLING_TOL: f64 = 1e-6;
+
+/// The `d × d` identity as a [`Dense`].
+fn identity(d: usize) -> Dense {
+    let mut m = Dense::zeros(d, d);
+    for i in 0..d {
+        m.set(i, i, 1.0);
+    }
+    m
+}
+
+/// Align a rediscovered block's frame to the stored **canonical** frame and
+/// return `(aligned CGC, post-alignment generator residual)`.
+///
+/// The sweep gauge is intrinsic in exact arithmetic but analytically
+/// ill-conditioned: a near-rank-deficient weight space (issue #24) can leave a
+/// coupled multiplet in an O(1)-rotated frame between two embeddings, which
+/// [`Generators::coherence_residual`] detects (the restored QSpace `normDiff`
+/// guard, issue #15 instance 5). Rather than brick, this solves the orthogonal
+/// intertwiner `W` with `R_can[i]·W = W·R_block[i]` for every generator `i`,
+/// applies `Wᵀ` to the block's CGC columns (`V_can = V·Wᵀ`), and re-derives the
+/// residual against the canonical generators. A residual still above the guard
+/// tolerance is a genuinely different irrep or a numerically hopeless frame — the
+/// caller keeps that as `BasisIncoherent` (the guard moved *after* alignment, not
+/// removed; issue #29 exactness contract).
+///
+/// `W` is computed numerically but the returned residual is the element-wise
+/// generator agreement, so the caller re-verifies it against the same tolerance —
+/// alignment never fabricates a coherent-looking value. Determinism: `W` targets
+/// the canonical stored frame, so every platform's rotated `R_block` maps onto the
+/// one canonical answer (the near-tie sensitivity of PR #28 is not reintroduced —
+/// the alignment target is fixed, not discovered).
+pub(crate) fn align_block(
+    block: &Block,
+    canonical: &Generators,
+) -> Result<(Dense, f64), SweepError> {
+    let w = intertwiner(&block.gens, canonical)?;
+    let aligned = conjugate_generators(&block.gens, &w)?;
+    let residual = aligned.coherence_residual(canonical);
+    // Coupled-side transform of the CGC columns: |can_k⟩ = Σ_j W_kj |block_j⟩ ⇒
+    // V_can = V·Wᵀ. The highest-weight column (non-degenerate ⇒ W-block = +1) is
+    // unchanged, so the sweep's first-significant-entry sign convention (§8) still
+    // holds; re-apply it for determinism, and re-snap the exact CGC entries.
+    let mut cgc = matmul(&block.cgc, &w.transpose())?;
+    range_sign_convention(&mut cgc.data);
+    for x in cgc.data.iter_mut() {
+        *x = snap_int(*x);
+    }
+    Ok((cgc, residual))
+}
+
+/// Conjugate a generator set by an orthogonal `W`: `Sp[i] ↦ W·Sp[i]·Wᵀ`. The
+/// Cartan diagonals are **unchanged**: `W` is block-diagonal over weight spaces
+/// (it commutes with the snapped Cartans), and each `Sz[i]` is constant on a
+/// weight space, so `W·Sz[i]·Wᵀ = Sz[i]` exactly.
+fn conjugate_generators(g: &Generators, w: &Dense) -> Result<Generators, SweepError> {
+    let wt = w.transpose();
+    let mut sp = Vec::with_capacity(g.rank);
+    for spi in &g.sp {
+        let ws = matmul(w, spi)?;
+        sp.push(matmul(&ws, &wt)?);
+    }
+    Ok(Generators {
+        series: g.series,
+        rank: g.rank,
+        dim: g.dim,
+        sp,
+        sz: g.sz.clone(),
+    })
+}
+
+/// Solve the orthogonal intertwiner `W` (`d × d`) with `R_can[i]·W = W·R_block[i]`
+/// for all generators, block-diagonal over weight spaces.
+///
+/// Method (issue #29 spec, §2): `W` commutes with the snapped Cartans, hence is
+/// block-diagonal with one orthogonal block per weight space. Propagate from the
+/// 1-dim highest-weight space (block `= +1`, fixing the global sign) down the
+/// ladder: for a target weight space `T`, every lowering operator `Sp[i]ᵀ` from an
+/// already-solved higher space `S` gives the exact relation `A·W_S = W_T·B` with
+/// `A = R_can[i]ᵀ|_{T,S}`, `B = R_block[i]ᵀ|_{T,S}`. Stacking those over all `(i,S)`,
+/// `W_T` is the orthogonal Procrustes solution of `W_T·B = A·W_S = C`, i.e.
+/// `W_T = U·Vᵀ` from `SVD(C·Bᵀ)` — a small, well-conditioned per-space solve.
+///
+/// Returns the identity (so the caller's residual re-check bricks loudly) when the
+/// two sets cannot share a weight partition (different `dim`/`rank`, or a weight
+/// mismatch) — that is a genuinely different frame, not a within-space rotation.
+fn intertwiner(block: &Generators, canonical: &Generators) -> Result<Dense, SweepError> {
+    let d = canonical.dim;
+    let r = canonical.rank;
+    let nz = canonical.sz.len();
+    let w = identity(d);
+    if block.dim != d || block.rank != r || nz == 0 {
+        return Ok(w);
+    }
+    let weight = |g: &Generators, s: usize| -> Vec<i64> {
+        (0..nz).map(|j| g.sz[j][s].round() as i64).collect()
+    };
+    // A shared weight partition is a precondition; a mismatch is not a rotation.
+    for s in 0..d {
+        if weight(block, s) != weight(canonical, s) {
+            return Ok(w);
+        }
+    }
+
+    // Partition states into weight spaces, in first-seen (descending-weight) order.
+    let mut spaces: Vec<Vec<usize>> = Vec::new();
+    let mut space_of: HashMap<Vec<i64>, usize> = HashMap::new();
+    let mut state_space = vec![0usize; d];
+    // `s` indexes three parallel structures (canonical weight, spaces, state_space);
+    // a range loop is clearer than zipping them.
+    #[allow(clippy::needless_range_loop)]
+    for s in 0..d {
+        let key = weight(canonical, s);
+        let idx = *space_of.entry(key).or_insert_with(|| {
+            spaces.push(Vec::new());
+            spaces.len() - 1
+        });
+        spaces[idx].push(s);
+        state_space[s] = idx;
+    }
+
+    let mut w = w;
+    let mut wblocks: Vec<Option<Dense>> = vec![None; spaces.len()];
+    for ti in 0..spaces.len() {
+        let target = &spaces[ti];
+        let n_t = target.len();
+        // Stack C = A·W_S and B over every raising generator and its solved source.
+        let mut c_cols: Vec<f64> = Vec::new();
+        let mut b_cols: Vec<f64> = Vec::new();
+        let mut cols = 0usize;
+        for i in 0..r {
+            // Source space = weight(T)+α_i: the space of any state the canonical
+            // raising Sp[i] feeds into a target column (all such states share it).
+            let mut src: Option<usize> = None;
+            'find: for &t in target {
+                // `s` indexes the raising matrix row and the state→space map.
+                #[allow(clippy::needless_range_loop)]
+                for s in 0..d {
+                    if canonical.sp[i].at(s, t).abs() > ALIGN_COUPLING_TOL {
+                        src = Some(state_space[s]);
+                        break 'find;
+                    }
+                }
+            }
+            let Some(si) = src else { continue };
+            // Higher weight ⇒ solved earlier; if not (unreachable for a connected
+            // irrep in descending order), skip and let the residual gate catch it.
+            let Some(ws) = wblocks[si].clone() else {
+                continue;
+            };
+            let source = &spaces[si];
+            let n_s = source.len();
+            // A[tl,sl] = R_can[i]ᵀ = canonical.sp[i].at(source, target); B from block.
+            let mut a = Dense::zeros(n_t, n_s);
+            let mut bmat = Dense::zeros(n_t, n_s);
+            for (tl, &t) in target.iter().enumerate() {
+                for (sl, &s) in source.iter().enumerate() {
+                    a.set(tl, sl, canonical.sp[i].at(s, t));
+                    bmat.set(tl, sl, block.sp[i].at(s, t));
+                }
+            }
+            let c = matmul(&a, &ws)?;
+            c_cols.extend_from_slice(&c.data);
+            b_cols.extend_from_slice(&bmat.data);
+            cols += n_s;
+        }
+        let wblock = if cols == 0 {
+            // Highest-weight space (no solved source): +1 fixes the global sign.
+            identity(n_t)
+        } else {
+            let cmat = Dense {
+                rows: n_t,
+                cols,
+                data: c_cols,
+            };
+            let bmat = Dense {
+                rows: n_t,
+                cols,
+                data: b_cols,
+            };
+            let m = matmul(&cmat, &bmat.transpose())?;
+            let (u, _s, vt) = svd(&m)?;
+            matmul(&u, &vt)?
+        };
+        for (tl, &t) in target.iter().enumerate() {
+            for (ul, &u2) in target.iter().enumerate() {
+                w.set(t, u2, wblock.at(tl, ul));
+            }
+        }
+        wblocks[ti] = Some(wblock);
+    }
+    Ok(w)
 }
 
 #[cfg(test)]
