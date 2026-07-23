@@ -1,6 +1,6 @@
 --- racah GroupMath product fixtures (external value oracle)
 --- tool: GroupMath 1.1.3 (arXiv:2011.01764)
---- script: gen_groupmath_products.wls sha256=6c3c5015fcf90fe25d0758d04261d5ad3091ddee39dfd7c5030fe311a8c2ce23
+--- script: gen_groupmath_products.wls sha256=82585a8a1ea36dce19ed169a10fbd4af65553b07f3f8df700cf480f2007eefdc
 --- entry point: ReduceRepProduct (gauge-free multiplicities; CGC via Invariants deferred to #29)
 --- format: GROUP | a | b | dim_a dim_b | c:n c:n ...
 SU2 | 2 | 2 | 3 3 | 4:1 0:1 2:1

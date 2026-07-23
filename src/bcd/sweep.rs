@@ -292,6 +292,15 @@ impl Generators {
         &self.sz[i]
     }
 
+    /// The `i`-th raising operator (dense `D×D`, column-major). The counterpart
+    /// of [`cartan_diag`](Self::cartan_diag) for the ladder matrices; used by the
+    /// S3.5 QSpace external anchor to solve the factor-basis dictionary as a
+    /// verified intertwiner between racah's and QSpace's generator sets.
+    #[cfg(test)]
+    pub(crate) fn raising(&self, i: usize) -> &Dense {
+        &self.sp[i]
+    }
+
     /// Worst element-wise difference between this generator set and `other`'s —
     /// the restored QSpace cross-copy coherence measure (`normDiff`,
     /// `clebsch.cc:6710-6718 @ dd2cc7e`; issue #15 instance 5).
@@ -1380,7 +1389,16 @@ fn conjugate_generators(g: &Generators, w: &Dense) -> Result<Generators, SweepEr
 /// already-solved higher space `S` gives the exact relation `A·W_S = W_T·B` with
 /// `A = R_can[i]ᵀ|_{T,S}`, `B = R_block[i]ᵀ|_{T,S}`. Stacking those over all `(i,S)`,
 /// `W_T` is the orthogonal Procrustes solution of `W_T·B = A·W_S = C`, i.e.
-/// `W_T = U·Vᵀ` from `SVD(C·Bᵀ)` — a small, well-conditioned per-space solve.
+/// `W_T = U·Vᵀ` from `SVD(C·Bᵀ)`. Note `C·Bᵀ = W_T·(B·Bᵀ)` has *ladder-sized*
+/// singular values (the squared singular values of the stacked lowering map), not
+/// `≈ 1` — but that is irrelevant: `B·Bᵀ` is symmetric PSD, so the orthogonal
+/// polar factor of `C·Bᵀ` is **exactly** `W_T`, and `U·Vᵀ` recovers that polar
+/// factor. Crucially `U·Vᵀ` is a *continuous* function of the data near
+/// nonsingular `B·Bᵀ` with **no discrete choices** (no rank cuts, pivots, or
+/// keep/drop decisions), and the target frame is the fixed canonical one, so
+/// platform noise perturbs `W_T` only at round-off scale — the PR #28 near-tie
+/// flip class is not reintroduced. A genuinely singular `B·Bᵀ` surfaces as a loud
+/// post-alignment residual failure, never a silent wrong value.
 ///
 /// Returns the identity (so the caller's residual re-check bricks loudly) when the
 /// two sets cannot share a weight partition (different `dim`/`rank`, or a weight
