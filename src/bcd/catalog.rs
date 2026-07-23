@@ -104,6 +104,17 @@ pub enum CatalogError {
     /// materializing a canonical-parent chain. Surfaced, not panicked: the
     /// floating-point stages are verification-gated (Ruling 1).
     Sweep(SweepError),
+    /// A non-base irrep had **no** admissible canonical-parent pair (§14.4).
+    /// This is **unreachable by the box-count-first existence theorem**
+    /// (`(defining, c-minus-a-box)` is always admissible); it is surfaced as a
+    /// typed error rather than an `unreachable!` panic as defense-in-depth while
+    /// the corrected proof beds in — a wrong theorem should fail loudly and
+    /// recoverably at the exact label, not abort the process. Carries the
+    /// offending Dynkin label.
+    NoCanonicalParent {
+        /// The Dynkin label with no admissible parent pair.
+        dynkin: Vec<i64>,
+    },
 }
 
 impl std::fmt::Display for CatalogError {
@@ -123,6 +134,11 @@ impl std::fmt::Display for CatalogError {
                 "byte budget exceeded: request needs {needed} bytes, budget is {limit}"
             ),
             CatalogError::Sweep(e) => write!(f, "sweep failed during materialization: {e}"),
+            CatalogError::NoCanonicalParent { dynkin } => write!(
+                f,
+                "no admissible canonical parent for irrep {dynkin:?} \
+                 (unreachable by the box-count-first existence theorem)"
+            ),
         }
     }
 }
@@ -459,11 +475,23 @@ fn gen_bytes(g: &Generators) -> usize {
 
 // ---- the canonical parent rule (docs/gauge_soN.md §14) ---------------------
 
-/// The `≺` sort key of an irrep: `(dim, dynkin)`. `dim` is a positive integer
-/// and, at a fixed dim, only finitely many irreps exist, so `≺` is a **well
-/// order** — the foundation of the recursion's termination (§14).
-fn prec_key(c: &Irrep) -> (BigInt, Vec<i64>) {
-    (c.dim(), c.dynkin())
+/// The number of boxes in an irrep's highest weight: `Σ_i |λ_i|` over the
+/// ε-basis partition. Strictly monotone under adding/removing a box, and — unlike
+/// `dim` — monotone in **every** coordinate including the D-series sign-carrying
+/// last part (see §14.1). The primary `≺` component.
+fn box_count(c: &Irrep) -> i64 {
+    c.partition().iter().map(|x| x.abs()).sum()
+}
+
+/// The `≺` sort key of an irrep: `(box_count, dim, dynkin)` (§14.1). Box count
+/// is the primary component so that removing a box always yields a strictly
+/// smaller irrep — the fact the existence proof (§14.4) needs and that `dim`
+/// alone fails for the D-series chirality pair (`dim` is not monotone in the last
+/// partition coordinate: partition `(1,1,0)` has dim 15 > `(1,1,±1)` dim 10).
+/// `≺` is a **well order**: box count is a non-negative integer and, at a fixed
+/// box count and rank, only finitely many irreps exist (§14.1).
+fn prec_key(c: &Irrep) -> (i64, BigInt, Vec<i64>) {
+    (box_count(c), c.dim(), c.dynkin())
 }
 
 /// The canonical parent pair `(a, b)` of a non-base irrep `c` (§14): among all
@@ -532,77 +560,66 @@ fn canonical_parent(series: Series, rank: usize, c: &Irrep) -> Option<(Irrep, Ir
     best.map(|c| (c.a, c.b))
 }
 
-/// All tensor irreps `x` of `(series, rank)` with `x ≺ c` (i.e. `dim(x) < dim(c)`,
-/// or `dim(x) = dim(c)` and `dynkin(x) < dynkin(c)`), sorted ascending by `≺`.
+/// All tensor irreps `x` of `(series, rank)` with `x ≺ c`, sorted ascending by
+/// `(dim, dynkin)` — the order the pruning in [`canonical_parent`] relies on.
 ///
 /// Enumerated by a depth-first walk over integer partitions `λ` (ε-basis,
 /// nonincreasing, `≥ 0`; the D series additionally emits the `λ_r < 0` chiral
-/// partner) with dimension pruning: `dim` is monotone in each `λ_i`, so once the
-/// minimal completion (remaining parts `0`) exceeds the bound, larger values are
-/// skipped. The set is finite because `dim ≥ 1` bounds the partition size.
+/// partner) bounded by **box count** `Σ|λ_i| ≤ box_count(c)`. Box count is
+/// monotone in every coordinate (including the D-series last part, where `dim`
+/// is not — the P1 fix), so the prune is exact for all three series. Every
+/// `x ≺ c` has `box_count(x) ≤ box_count(c)`, so the walk is a complete
+/// superset; the `retain` keeps exactly `{ x : x ≺ c }`. The set is finite
+/// because a bounded box count bounds the partition.
 fn irreps_below(series: Series, rank: usize, c: &Irrep) -> Vec<Irrep> {
-    let bound = c.dim();
+    let max_boxes = box_count(c);
     let key_c = prec_key(c);
     let mut out: Vec<Irrep> = Vec::new();
     let mut cur = vec![0i64; rank];
-    enum_partitions(series, rank, &bound, 0, &mut cur, &mut out);
+    enum_partitions(series, rank, max_boxes, 0, 0, &mut cur, &mut out);
     out.retain(|x| prec_key(x) < key_c);
-    out.sort_by_key(prec_key);
+    out.sort_by_key(|x| (x.dim(), x.dynkin()));
     out
 }
 
 fn enum_partitions(
     series: Series,
     rank: usize,
-    bound: &BigInt,
+    max_boxes: i64,
     pos: usize,
+    used: i64,
     cur: &mut Vec<i64>,
     out: &mut Vec<Irrep>,
 ) {
     if pos == rank {
-        push_partition_irrep(series, cur, bound, out);
+        push_partition_irrep(series, cur, out);
         return;
     }
-    let upper = if pos == 0 { i64::MAX } else { cur[pos - 1] };
+    let upper = if pos == 0 { max_boxes } else { cur[pos - 1] };
     let mut v = 0i64;
     while v <= upper {
-        cur[pos] = v;
-        // Prune: dim of (cur[0..=pos], rest 0). Monotone ⇒ larger v also exceeds.
-        if partition_dim(series, cur, pos) > *bound {
+        // Prune on box count: monotone in v for every coordinate ⇒ safe break.
+        if used + v > max_boxes {
             break;
         }
-        enum_partitions(series, rank, bound, pos + 1, cur, out);
+        cur[pos] = v;
+        enum_partitions(series, rank, max_boxes, pos + 1, used + v, cur, out);
         v += 1;
     }
     cur[pos] = 0;
 }
 
-/// The dim of the partition given by `cur[0..=pos]` with the remaining parts `0`.
-fn partition_dim(series: Series, cur: &[i64], pos: usize) -> BigInt {
-    let mut w = cur.to_vec();
-    for x in w.iter_mut().skip(pos + 1) {
-        *x = 0;
-    }
-    make_irrep(series, w).dim()
-}
-
 /// Emit the (non-negative) partition `cur` as an irrep, and — for the D series
 /// with `λ_r > 0` — its chiral partner `λ_r ↦ -λ_r` (a distinct tensor irrep of
-/// the same dim). Both are kept only if `dim ≤ bound`.
-fn push_partition_irrep(series: Series, cur: &[i64], bound: &BigInt, out: &mut Vec<Irrep>) {
-    let irrep = make_irrep(series, cur.to_vec());
-    if irrep.dim() <= *bound {
-        out.push(irrep);
-    }
+/// the same box count and dim). `irreps_below`'s `retain` applies the `≺` filter.
+fn push_partition_irrep(series: Series, cur: &[i64], out: &mut Vec<Irrep>) {
+    out.push(make_irrep(series, cur.to_vec()));
     if series == Series::D {
         let last = cur.len() - 1;
         if cur[last] > 0 {
             let mut w = cur.to_vec();
             w[last] = -w[last];
-            let chiral = make_irrep(series, w);
-            if chiral.dim() <= *bound {
-                out.push(chiral);
-            }
+            out.push(make_irrep(series, w));
         }
     }
 }
@@ -649,11 +666,10 @@ fn build_into(
         return Ok(()); // already committed or staged (includes the base cases)
     }
 
-    // Non-base c: its canonical parent exists (§14 existence argument).
-    let (a, b) = canonical_parent(series, rank, c).ok_or_else(|| {
-        // Unreachable for a non-base c; base cases are pre-seeded into `store`.
-        CatalogError::Sweep(SweepError::InvalidDiscoveredLabel { dynkin: c.dynkin() })
-    })?;
+    // Non-base c: its canonical parent exists (§14.4 existence argument). The
+    // error path is unreachable by that theorem; kept as defense-in-depth.
+    let (a, b) = canonical_parent(series, rank, c)
+        .ok_or_else(|| CatalogError::NoCanonicalParent { dynkin: c.dynkin() })?;
     build_into(series, rank, store, staged, &a)?;
     build_into(series, rank, store, staged, &b)?;
 
@@ -694,26 +710,40 @@ fn build_into(
 
 /// Debug-assert that a rediscovered block's Cartan (weight) spectrum matches the
 /// stored generator set's — the cheap, loud analogue of QSpace's `normDiff`
-/// cross-copy check (`clebsch.cc:6712-6718 @ dd2cc7e`). Both are in the same
-/// descending-weight gauge, so the diagonals compare entry-for-entry.
+/// cross-copy check (`clebsch.cc:6712-6718 @ dd2cc7e`).
+///
+/// Compared as a **multiset** of per-state weight vectors, not state-by-state:
+/// the weight *content* of an irrep is gauge-independent, but the state *order*
+/// is not. A non-base entry (from a sweep) and a base-case entry (the S3.1 seed,
+/// whose native basis is not the sweep's descending-weight order) can therefore
+/// carry the same weights in a different order — a multiset check is the correct,
+/// gauge-independent statement of "same irrep, same weight system". Weights are
+/// integer Cartan eigenvalues (snapped in the sweep, §6), so they compare exactly
+/// after rounding.
 fn debug_assert_cartan_matches(block: &Block, stored: &Generators) {
     debug_assert_eq!(
         block.dim(),
         stored.dim(),
         "rediscovered block dim disagrees with stored generators"
     );
-    if cfg!(debug_assertions) {
-        for j in 0..stored.rank() {
-            let diag = stored.cartan_diag(j);
-            for (s, &d) in diag.iter().enumerate() {
-                debug_assert!(
-                    (block.weight(s, j) - d).abs() < 1e-6,
-                    "Cartan spectrum mismatch at state {s}, cartan {j}: {} vs {d}",
-                    block.weight(s, j)
-                );
-            }
-        }
+    if !cfg!(debug_assertions) {
+        return;
     }
+    let rank = stored.rank();
+    let d = stored.dim();
+    let round = |x: f64| x.round() as i64;
+    let mut block_w: Vec<Vec<i64>> = (0..d)
+        .map(|s| (0..rank).map(|j| round(block.weight(s, j))).collect())
+        .collect();
+    let mut stored_w: Vec<Vec<i64>> = (0..d)
+        .map(|s| (0..rank).map(|j| stored.cartan_diag(j)[s] as i64).collect())
+        .collect();
+    block_w.sort_unstable();
+    stored_w.sort_unstable();
+    debug_assert_eq!(
+        block_w, stored_w,
+        "rediscovered block weight multiset disagrees with stored generators"
+    );
 }
 
 #[cfg(test)]

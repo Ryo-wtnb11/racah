@@ -406,3 +406,86 @@ fn appending_from_non_canonical_product_would_diverge() {
         "target must also live in a non-canonical product for this test to bite"
     );
 }
+
+// ---- 9. D-series chirality (P1 fix: box-count-first well-order) -------------
+
+#[test]
+fn d_chirality_pairs_materialize() {
+    // dim is NOT monotone in the D last partition coordinate (partition (1,1,0)
+    // has dim 15 > (1,1,±1) dim 10), so the old (dim, dynkin) order left the
+    // D3/D4 chirality labels with an empty candidate set. Box-count-first fixes
+    // it: (defining, c-minus-a-box) is always admissible. Each must materialize
+    // and pass the S3.1 commutator gate.
+    for (series, r, dynkin) in [
+        (Series::D, 3, vec![0, 0, 2]),
+        (Series::D, 3, vec![0, 2, 0]),
+        (Series::D, 4, vec![0, 0, 0, 2]),
+        (Series::D, 3, vec![0, 0, 4]), // chirality-charged deep target
+    ] {
+        let mut cat = CanonicalCatalog::new(series, r).unwrap();
+        let c = irr(series, &dynkin);
+        cat.generators(&c)
+            .unwrap_or_else(|e| panic!("D chirality {dynkin:?} must materialize: {e}"));
+        let res = cat.stored_commutator_residual(&c).unwrap();
+        assert!(
+            res < 1e-6,
+            "commutator residual {res:e} too large for {dynkin:?}"
+        );
+    }
+}
+
+#[test]
+fn d_chirality_pair_generators_differ_from_each_other() {
+    // The two D3 chiralities (0,0,2) and (0,2,0) are distinct irreps; both must
+    // be produced with their own generators (a golden check that the fix does
+    // not collapse the pair).
+    let mut cat = CanonicalCatalog::new(Series::D, 3).unwrap();
+    let plus = irr(Series::D, &[0, 0, 2]);
+    let minus = irr(Series::D, &[0, 2, 0]);
+    cat.generators(&plus).unwrap();
+    cat.generators(&minus).unwrap();
+    assert!(cat.is_materialized(&plus) && cat.is_materialized(&minus));
+    // Same dim, distinct labels ⇒ distinct stored generator sets.
+    assert_ne!(plus, minus);
+    assert_eq!(cat.store.get(&plus).unwrap().dim(), 10);
+    assert_eq!(cat.store.get(&minus).unwrap().dim(), 10);
+}
+
+#[test]
+fn golden_canonical_parent_table() {
+    // Pin WHICH parent the minimizer selects (the gauge choice itself — the
+    // cross-order test passes for any pure function, so this is what nails the
+    // canonical parent down). Values are the box-count-first order (§14.2).
+    // (series, rank, c, expected a, expected b) as Dynkin labels.
+    type Row = (
+        Series,
+        usize,
+        &'static [i64],
+        &'static [i64],
+        &'static [i64],
+    );
+    let cases: &[Row] = &[
+        // C2 (Sp(4)) symmetric tower and adjoint: balanced/defining splits.
+        (Series::C, 2, &[2, 0], &[1, 0], &[1, 0]),
+        (Series::C, 2, &[0, 1], &[1, 0], &[1, 0]),
+        (Series::C, 2, &[1, 1], &[1, 0], &[0, 1]),
+        (Series::C, 2, &[3, 0], &[1, 0], &[2, 0]),
+        // B2 (SO(5)).
+        (Series::B, 2, &[2, 0], &[1, 0], &[1, 0]),
+        (Series::B, 2, &[0, 2], &[1, 0], &[1, 0]),
+        // D3 (SO(6)) non-chiral, and the chirality pair (the P1 fix): both now
+        // resolve to (defining, (0,1,1)) — unmaterializable under the old order.
+        (Series::D, 3, &[2, 0, 0], &[1, 0, 0], &[1, 0, 0]),
+        (Series::D, 3, &[0, 1, 1], &[1, 0, 0], &[1, 0, 0]),
+        (Series::D, 3, &[0, 0, 2], &[1, 0, 0], &[0, 1, 1]),
+        (Series::D, 3, &[0, 2, 0], &[1, 0, 0], &[0, 1, 1]),
+    ];
+    for &(series, r, c, ea, eb) in cases {
+        let (a, b) = canonical_parent(series, r, &irr(series, c)).unwrap();
+        assert_eq!(
+            (a.dynkin(), b.dynkin()),
+            (ea.to_vec(), eb.to_vec()),
+            "canonical parent of {series:?}{r} {c:?} changed"
+        );
+    }
+}
