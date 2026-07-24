@@ -26,6 +26,21 @@
 //! store would then need an algorithm-version key to stay sound. Keeping the
 //! cache process-local sidesteps that entirely — it is rebuilt from the engine
 //! every run, so it can never disagree with the engine that filled it.
+//!
+//! # Base cache resource contract (static partition)
+//!
+//! The three base SU(2) tiers (3j, 6j, derived-F) are each bounded
+//! independently by a per-tier entry and byte cap; the documented aggregate
+//! ceiling [`BASE_CACHE_MAX_BYTES`] is simply their sum. This is a **static
+//! partition, not a dynamic shared pool**: a shared budget would couple
+//! eviction across tiers whose entries differ wildly in size (big-rational
+//! exact symbols vs `f64` scalars) and whose hit patterns are unrelated, for no
+//! measured benefit — so it is deliberately rejected here and revisited only
+//! with measurements. Because each per-tier byte cap is a *true* ceiling (the
+//! `CacheCharge` accounting over-counts), the aggregate bound holds as a
+//! corollary rather than needing global enforcement. Per-tier and total
+//! statistics are exposed via [`base_cache_stats`]; reset ownership is on
+//! [`reset`]. (Design record: racah #43, PR-A.)
 
 use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
@@ -44,6 +59,30 @@ const DEFAULT_MAX_ENTRIES: usize = 1 << 20;
 /// a large working set while bounding worst-case retained memory.
 const DEFAULT_MAX_BYTES: usize = 64 << 20;
 
+/// Aggregate retained-byte ceiling for the three base SU(2) tiers (3j, 6j,
+/// derived-F), currently `192 MiB` = `3 × 64 MiB`.
+///
+/// This is a **documented static partition**, not a shared budget: each tier is
+/// bounded independently by its own per-tier byte cap (`DEFAULT_MAX_BYTES`),
+/// which is a *true* ceiling (the `CacheCharge` byte accounting over-counts,
+/// never under-counts). The aggregate is therefore a provable corollary —
+/// `Σ tier bytes ≤ Σ tier caps = BASE_CACHE_MAX_BYTES` — rather than an
+/// enforced global limit. A dynamic shared pool (tiers competing for one
+/// budget) is deliberately rejected: it would couple eviction across tiers with
+/// very different entry sizes (big-rational vs `f64`) and hit patterns for no
+/// measured benefit.
+///
+/// The `const` assertion below ties this constant to the per-tier cap so the
+/// two cannot silently drift; all three base tiers (`CACHE_3J`, `CACHE_6J`,
+/// `CACHE_F`) are constructed with the same `DEFAULT_MAX_BYTES`.
+pub const BASE_CACHE_MAX_BYTES: usize = 192 << 20;
+
+// Compile-time tie: if the per-tier byte cap changes, BASE_CACHE_MAX_BYTES must
+// be reconciled in the same edit or the crate stops building. (There is no
+// compile-time way to read the tiers' runtime `max_bytes`; anchoring to the
+// shared `DEFAULT_MAX_BYTES` they are all built from is the enforceable tie.)
+const _: () = assert!(BASE_CACHE_MAX_BYTES == 3 * DEFAULT_MAX_BYTES);
+
 /// Snapshot of the aggregate cache counters (3j and 6j kinds summed).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CacheStats {
@@ -58,6 +97,68 @@ pub struct CacheStats {
     pub entries: usize,
     /// Conservatively charged bytes currently retained across both kinds.
     pub bytes: usize,
+}
+
+/// Per-tier snapshot of one base SU(2) coefficient cache (3j, 6j, or derived-F).
+///
+/// The fields are consistent for the tier they describe (entries/bytes read
+/// under the tier lock). See [`base_cache_stats`] and [`BaseCacheStats`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TierStats {
+    /// Entries currently retained in this tier.
+    pub entries: usize,
+    /// Conservatively charged bytes currently retained in this tier.
+    pub bytes: usize,
+    /// Lookups served from a stored value in this tier.
+    pub hits: u64,
+    /// Lookups that had to compute the value in this tier. Under a
+    /// concurrent-miss race the losing thread counts a miss without inserting,
+    /// so `misses` can slightly exceed the number of stored entries.
+    pub misses: u64,
+    /// Entries removed from this tier by eviction over its lifetime, including
+    /// an entry larger than the byte cap that is admitted then immediately
+    /// evicted back out (it never fit, but it was charged, so it counts).
+    pub evictions: u64,
+}
+
+/// Per-tier statistics for the three base SU(2) coefficient tiers.
+///
+/// Covers **only** the 3j, 6j, and derived-F tiers by definition — the base
+/// SU(2) provider surface. (This is distinct from the aggregate [`stats`], which
+/// under the `cgc-gen` feature also sums the generated SU(N)/B/C/D tiers.)
+///
+/// # Snapshot consistency
+///
+/// Each per-tier [`TierStats`] is internally consistent (taken under that tier's
+/// read lock). [`total`](BaseCacheStats::total) is a field-wise sum of the three
+/// per-tier snapshots, **not** a single global atomic snapshot: a concurrent
+/// filler can interleave between the tier reads, so the total is only
+/// eventually consistent. Racah does not take a global lock spanning the tiers —
+/// that would serialize otherwise-independent lookups for no correctness gain
+/// (the individual tier bounds are already true ceilings).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BaseCacheStats {
+    /// The exact 3j tier.
+    pub three_j: TierStats,
+    /// The exact 6j tier.
+    pub six_j: TierStats,
+    /// The derived-f64 F-symbol tier.
+    pub derived_f: TierStats,
+}
+
+impl BaseCacheStats {
+    /// Field-wise sum of the three base tiers. See the type-level snapshot-
+    /// consistency note: this is a sum of per-tier snapshots, not an atomic
+    /// whole-cache snapshot.
+    pub fn total(&self) -> TierStats {
+        TierStats {
+            entries: self.three_j.entries + self.six_j.entries + self.derived_f.entries,
+            bytes: self.three_j.bytes + self.six_j.bytes + self.derived_f.bytes,
+            hits: self.three_j.hits + self.six_j.hits + self.derived_f.hits,
+            misses: self.three_j.misses + self.six_j.misses + self.derived_f.misses,
+            evictions: self.three_j.evictions + self.six_j.evictions + self.derived_f.evictions,
+        }
+    }
 }
 
 /// Conservative retained-byte charge for a stored *value*, implemented per
@@ -120,6 +221,12 @@ pub(crate) struct FifoCache<K, V> {
     inner: RwLock<Inner<K, V>>,
     hits: AtomicU64,
     misses: AtomicU64,
+    /// Entries removed by [`Self::evict`] over the cache's lifetime. Counts the
+    /// oversize-entry immediate-eviction path (`src/cache.rs` `evict`) too: such
+    /// an entry is admitted (charged, pushed) and then evicted back out on the
+    /// same insert, so counting it keeps the byte-bound story honest — every
+    /// admission that later leaves the map is one eviction.
+    evictions: AtomicU64,
     max_entries: usize,
     max_bytes: usize,
 }
@@ -134,6 +241,7 @@ impl<K: Clone + Eq + Hash, V: Clone + CacheCharge> FifoCache<K, V> {
             }),
             hits: AtomicU64::new(0),
             misses: AtomicU64::new(0),
+            evictions: AtomicU64::new(0),
             max_entries,
             max_bytes,
         }
@@ -180,6 +288,7 @@ impl<K: Clone + Eq + Hash, V: Clone + CacheCharge> FifoCache<K, V> {
             };
             if let Some(v) = inner.map.remove(&old) {
                 inner.bytes = inner.bytes.saturating_sub(entry_charge::<K, V>(&v));
+                self.evictions.fetch_add(1, Ordering::Relaxed);
             }
         }
     }
@@ -222,6 +331,23 @@ impl<K: Clone + Eq + Hash, V: Clone + CacheCharge> FifoCache<K, V> {
         inner.bytes = 0;
         self.hits.store(0, Ordering::Relaxed);
         self.misses.store(0, Ordering::Relaxed);
+        self.evictions.store(0, Ordering::Relaxed);
+    }
+
+    /// Per-tier snapshot including the eviction counter. Entries/bytes are read
+    /// under the tier read lock so they agree with each other; the atomic
+    /// counters are `Relaxed` reads taken alongside. This snapshot is internally
+    /// consistent for one tier — the cross-tier sum in [`BaseCacheStats::total`]
+    /// is not a global atomic snapshot (see its docs).
+    fn tier_stats(&self) -> TierStats {
+        let inner = self.inner.read().unwrap();
+        TierStats {
+            entries: inner.map.len(),
+            bytes: inner.bytes,
+            hits: self.hits.load(Ordering::Relaxed),
+            misses: self.misses.load(Ordering::Relaxed),
+            evictions: self.evictions.load(Ordering::Relaxed),
+        }
     }
 
     fn snapshot(&self) -> (u64, u64, usize, usize) {
@@ -451,7 +577,17 @@ pub(crate) fn cache_bcd_cgc(
 }
 
 /// Clear the 3j, 6j, and derived-f64 F-symbol caches (and, under `cgc-gen`, the
-/// SU(N) CGC cache) and their hit/miss counters.
+/// SU(N)/B/C/D CGC and F caches) and *all* their counters — entries, bytes,
+/// hits, misses, and evictions all return to zero.
+///
+/// # Reset ownership (process-global, single-owner)
+///
+/// These tiers are `static`, so `reset()` acts on process-global state. It is a
+/// **single-owner** operation: exactly one component in a consuming process
+/// (for example an engine `Runtime` that owns the coefficient authority) may own
+/// the reset policy. **A library must not call `reset()`** — doing so would
+/// clear a cache another component is relying on, since there is one shared
+/// coefficient-value authority per process (consumers must not keep a mirror).
 pub fn reset() {
     CACHE_3J.reset();
     CACHE_6J.reset();
@@ -491,6 +627,22 @@ pub fn stats() -> CacheStats {
         misses: m3 + m6 + mf + mc,
         entries: e3 + e6 + ef + ec,
         bytes: b3 + b6 + bf + bc,
+    }
+}
+
+/// Per-tier and total statistics for the three base SU(2) coefficient tiers
+/// (3j, 6j, derived-F).
+///
+/// Unlike the aggregate [`stats`] — which also sums the `cgc-gen` generated
+/// tiers when that feature is on — this reports only the base SU(2) surface,
+/// split per tier, and adds the eviction counter. Retained bytes are bounded by
+/// [`BASE_CACHE_MAX_BYTES`] (`total().bytes ≤ BASE_CACHE_MAX_BYTES`). See
+/// [`BaseCacheStats`] for the snapshot-consistency contract of `total()`.
+pub fn base_cache_stats() -> BaseCacheStats {
+    BaseCacheStats {
+        three_j: CACHE_3J.tier_stats(),
+        six_j: CACHE_6J.tier_stats(),
+        derived_f: CACHE_F.tier_stats(),
     }
 }
 
