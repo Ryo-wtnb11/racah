@@ -156,7 +156,9 @@ The symplectic reduction chain $Sp(2r) \supset Sp(2r-2)$ is **not**
 multiplicity-free: intermediate irreps recur, so there is no GT-type pattern
 that labels states uniquely, and hence no practical closed-form ladder matrix
 elements. (The orthogonal chains $SO(n) \supset SO(n-1)$ *are* multiplicity-free,
-but their closed-form matrix elements are not production-viable either.) So for
+and explicit GT-type matrix elements for them do exist $[4, 12]$, but they are
+substantially more involved and no production implementation exists, so `racah`
+follows the generator bootstrap for the whole $B/C/D$ set.) So for
 the whole $B/C/D$ set `racah` uses a **generator bootstrap** that needs almost
 no family-specific structure:
 

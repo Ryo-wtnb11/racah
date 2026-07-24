@@ -204,8 +204,10 @@ chosen for convenience (the full argument is in
   form is what makes the direct GT construction possible, and it is SU(N)-specific.
 - **SO(N) / Sp(2N)** — the symplectic chain Sp(2r) ⊃ Sp(2r-2) has branching
   multiplicities, so no GT-type basis with practical closed-form matrix elements
-  exists (the SO chains are multiplicity-free, but their closed forms are not
-  production-viable either). So these families use the generator bootstrap —
+  exists (the SO chains are multiplicity-free, and explicit GT-type matrix
+  elements for them do exist — Gelfand–Tsetlin 1950; Molev — but they are
+  substantially more involved and no production implementation exists). So these
+  families use the generator bootstrap —
   defining-representation seeds (writable explicitly per series), tensor
   products, numeric highest-weight decomposition, harvest, recurse — which needs
   almost no family-specific structure. Its price, a gauge fixed by procedural
