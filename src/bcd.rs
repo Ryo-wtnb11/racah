@@ -933,6 +933,96 @@ pub use fr::{
     FrError, RBlock,
 };
 
+/// Opaque authority fingerprint of the generated SO(N)/Sp(2N) provider.
+///
+/// The bytes identify the *convention set*, generation pipeline, and
+/// verification/tolerance policy under which every B/C/D Clebsch–Gordan isometry
+/// (and the F/R symbols contracted from it) is produced. Their sole use is
+/// equality comparison: a consumer may persist the bytes next to data derived
+/// from these coefficients and later compare them to decide whether that derived
+/// data was produced under the same convention.
+///
+/// # Contract (binding)
+///
+/// > Equal fingerprints identify the same convention, generation pipeline, and
+/// > tolerance policy. They do not imply byte-identical values or independently
+/// > prove numerical agreement.
+///
+/// This is deliberately weaker than the base SU(2) fingerprint
+/// ([`crate::su2_authority_fingerprint`]), whose exact big-rational surface lets
+/// equal bytes mean equal values. The generated B/C/D family is a *two-layer*
+/// contract (`docs/gauge_soN.md` §12: value agreement within the verification
+/// tolerances, bitwise reproducible only single-threaded in-process, not across
+/// processes): the seed/sweep/sign/alignment gauge is a deterministic function
+/// of the subspace, but the QR/matmul stages run in `f64` and the backend's
+/// reductions are not bit-reproducible across processes. **Numerical agreement
+/// is established by the generation-time verification gates** (`docs/gauge_soN.md`
+/// §5, §6, §10: orthonormality, Cartan diagonality, exact-multiplicity — typed
+/// `SweepError`/`CatalogError`, never silent) **and the independent oracle
+/// suites** (`docs/gauge_soN.md` §13: exact decomposition vs `directproduct`,
+/// OM ≥ 2, determinism, sign convention), **never by this fingerprint.**
+///
+/// # Consumer contract
+///
+/// - **Opaque.** Compare by equality only; never parse the tags or split on
+///   `:` / `=`. The internal shape is not a stable interface.
+/// - **Stable across patch and minor releases.** The value is not derived from
+///   the crate version, source, docs, a pointer, or any process-local state.
+/// - **Changes exactly with a value-affecting breaking release.** The trailing
+///   `epoch` is bumped by hand — and only — when a change can alter a returned
+///   coefficient value, its normalization, or the canonical gauge it is
+///   expressed in (the breaking-release event class of `docs/gauge_soN.md`). The
+///   compatibility-policy test (`tests/bcd_fingerprint.rs`) pins the exact bytes,
+///   so any such change is a mutation-visible review event.
+/// - **Epoch is per-family and independent.** The B/C/D `epoch` moves
+///   independently of the SU(2) and SU(N) epochs; a B/C/D gauge change never
+///   invalidates SU(2)-derived or SU(N)-derived consumer state (and vice versa).
+///   The base SU(2) surface is untouched by this fingerprint.
+///
+/// # Tags and the conventions they pin (each cites `docs/gauge_soN.md`)
+///
+/// Every tag names a rule the gauge document already pins; nothing here invents
+/// a convention. The backend identity is deliberately excluded — per-backend ULP
+/// differences are inside the tolerance class this fingerprint's contract
+/// disclaims (`docs/gauge_soN.md` §12); backend structural identity is instead a
+/// separate acceptance gate (`tests/generated_backend_identity.rs`).
+///
+/// - `ref=qspace-v4-dd2cc7e` — the port reference: QSpace v4 (Weichselbaum),
+///   revision `dd2cc7e` (`docs/gauge_soN.md`, header).
+/// - `kron=a-fast` — the Kronecker/product-basis convention `composite(m_a, m_b)
+///   = m_a + d_a·m_b` (first factor fast); a different convention permutes the
+///   CGC rows and is a different gauge (`docs/gauge_soN.md` §1).
+/// - `parent=canonical-parent` — the canonical-parent well-order that makes each
+///   irrep's stored generator frame query-order-independent (`docs/gauge_soN.md`
+///   §14).
+/// - `sweep=gs2-qrpos-posdiag` — the decomposition sweep: persistent seed
+///   selection, ascending-index raise/lower, two-pass Gram–Schmidt, and
+///   `PositiveDiagonal` QR orthonormalization (`docs/gauge_soN.md` §2–§4, 4a).
+/// - `sort=maxweight-desc` — the descending-weight sort (reversed Cartan columns)
+///   with ascending-basis-index tie-break (`docs/gauge_soN.md` §7).
+/// - `sign=first-significant-positive` — the unconditional block sign convention:
+///   the first significant CGC entry (storage order) is made positive
+///   (`docs/gauge_soN.md` §8, incl. racah deviation #2).
+/// - `align=procrustes-canonical` — the intertwiner alignment that rotates a
+///   rediscovered block's frame onto the stored canonical frame via the
+///   orthogonal Procrustes solution (`docs/gauge_soN.md` §15).
+/// - `tol=cg-eps-tier` — the QSpace CG_EPS tolerance tier (`EPS_SWEEP`,
+///   `EPS_VERIFY`, `CG_EPS1`, `EPS_MW_UNIQUE`, `FIXRATIONAL_TOL`;
+///   `docs/gauge_soN.md` §11).
+/// - `epoch=1` — the per-family manual epoch (see above).
+///
+/// # Stability
+///
+/// **Unstable: shape may change while the generated-provider contract is
+/// negotiated.** Cargo features cannot express instability tiers; this label and
+/// issue #47 are the ledger.
+#[cfg(feature = "cgc-gen")]
+pub fn bcd_authority_fingerprint() -> &'static [u8] {
+    // Manual per-family epoch: bump the trailing `epoch=N` (and the literal in
+    // tests/bcd_fingerprint.rs) only on a value-affecting breaking release.
+    b"racah:bcd-bootstrap:ref=qspace-v4-dd2cc7e:kron=a-fast:parent=canonical-parent:sweep=gs2-qrpos-posdiag:sort=maxweight-desc:sign=first-significant-positive:align=procrustes-canonical:tol=cg-eps-tier:epoch=1"
+}
+
 #[cfg(test)]
 mod tests;
 

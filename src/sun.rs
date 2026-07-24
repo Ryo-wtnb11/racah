@@ -614,6 +614,89 @@ fn signedroot(coef: &Ratio<BigInt>) -> SignedSqrtRational {
     SignedSqrtRational::from_prefactor_radical(s, coef.abs())
 }
 
+/// Opaque authority fingerprint of the generated SU(N) provider.
+///
+/// The bytes identify the *convention set*, generation pipeline, and
+/// verification/tolerance policy under which every SU(N) Clebsch–Gordan
+/// coefficient (and the F/R symbols contracted from it) is produced. Their sole
+/// use is equality comparison: a consumer may persist the bytes next to data
+/// derived from these coefficients and later compare them to decide whether that
+/// derived data was produced under the same convention.
+///
+/// # Contract (binding)
+///
+/// > Equal fingerprints identify the same convention, generation pipeline, and
+/// > tolerance policy. They do not imply byte-identical values or independently
+/// > prove numerical agreement.
+///
+/// This is deliberately weaker than the base SU(2) fingerprint
+/// ([`crate::su2_authority_fingerprint`]), whose exact big-rational surface lets
+/// equal bytes mean equal values. The generated SU(N) family is a *two-layer*
+/// contract (`docs/gauge.md` "value agreement within the oracle tolerance, not
+/// cross-process bit-identity"): the gauge/sign/structure is a deterministic
+/// function of the subspace, but the final dense linear-algebra stages run in
+/// `f64` and the backend's parallel reductions are not bit-reproducible across
+/// processes, so two builds may differ by a few ULPs. **Numerical agreement is
+/// established by the generation-time verification gates** (`docs/gauge.md` §9:
+/// multiplicity, orthonormality, ladder consistency — typed `SunError`, never
+/// silent) **and the independent oracle suites** (`docs/gauge.md` §11: the SU(2)
+/// embedding and the signed element-wise SUNRepresentations.jl v0.4.0
+/// fixtures), **never by this fingerprint.**
+///
+/// # Consumer contract
+///
+/// - **Opaque.** Compare by equality only; never parse the tags or split on
+///   `:` / `=`. The internal shape is not a stable interface.
+/// - **Stable across patch and minor releases.** The value is not derived from
+///   the crate version, source, docs, a pointer, or any process-local state.
+/// - **Changes exactly with a value-affecting breaking release.** The trailing
+///   `epoch` is bumped by hand — and only — when a change can alter a returned
+///   coefficient value, its normalization, or the canonical convention it is
+///   expressed in (the breaking-release event class of `docs/gauge.md`). The
+///   compatibility-policy test (`tests/sun_fingerprint.rs`) pins the exact bytes,
+///   so any such change is a mutation-visible review event.
+/// - **Epoch is per-family and independent.** The SU(N) `epoch` moves
+///   independently of the SU(2) and B/C/D epochs; an SU(N) gauge change never
+///   invalidates SU(2)-derived or B/C/D-derived consumer state (and vice versa).
+///   The base SU(2) surface is untouched by this fingerprint.
+///
+/// # Tags and the conventions they pin (each cites `docs/gauge.md`)
+///
+/// Every tag names a rule the gauge document already pins; nothing here invents
+/// a convention. The backend identity is deliberately excluded — per-backend ULP
+/// differences are inside the tolerance class this fingerprint's contract
+/// disclaims, and a discrete gauge flip across backends is a defect, not a
+/// tolerance event (`docs/gauge.md` §10).
+///
+/// - `ref=sunrep-0.4` — the port reference: SUNRepresentations.jl v0.4.0
+///   (`docs/gauge.md`, header).
+/// - `basis=gt-order` — the Gelfand–Tsetlin pattern basis order that indexes
+///   `m1, m2, m3`, and the highest-weight-system coupling-pair enumeration that
+///   follows from it (`docs/gauge.md` §1, §2).
+/// - `gauge=qrpos-cref` — the gauge canonicalization
+///   `gaugefix! = first ∘ qrpos! ∘ cref!`: the column-pivoted reduced echelon
+///   pivot rule and the positive-diagonal QR sign fix (`docs/gauge.md` §4, 4a/4b).
+/// - `descent=ladder-lstsq` — the lower-weight descent: reverse-lexicographic
+///   weight order and the QR least-squares lowering solve (`docs/gauge.md` §5).
+/// - `tol=sunrep-tol-tier` — the value-fixing tolerance tier (the reference
+///   SUNRepresentations `TOL_*` constants: `TOL_NULLSPACE` rank cut, `TOL_GAUGE`
+///   pivot, `TOL_PURGE`; `docs/gauge.md` §3, §4a, §6). The `TOL_ORTHO`/
+///   `TOL_LADDER` gates are excluded: they cannot move a returned value, so
+///   tightening them is not a breaking release (`docs/gauge.md` §9).
+/// - `epoch=1` — the per-family manual epoch (see above).
+///
+/// # Stability
+///
+/// **Unstable: shape may change while the generated-provider contract is
+/// negotiated.** Cargo features cannot express instability tiers; this label and
+/// issue #47 are the ledger.
+#[cfg(feature = "cgc-gen")]
+pub fn sun_authority_fingerprint() -> &'static [u8] {
+    // Manual per-family epoch: bump the trailing `epoch=N` (and the literal in
+    // tests/sun_fingerprint.rs) only on a value-affecting breaking release.
+    b"racah:sun-gt:ref=sunrep-0.4:basis=gt-order:gauge=qrpos-cref:descent=ladder-lstsq:tol=sunrep-tol-tier:epoch=1"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
