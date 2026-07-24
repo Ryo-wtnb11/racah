@@ -348,6 +348,61 @@ zero. It acts on process-global `static` state, so reset ownership is
 **single-owner**: exactly one component in a consuming process owns reset policy;
 a library must not call it.
 
+### Generated families (cgc-gen)
+
+The `cgc-gen` generated SU(N) and SO(N)/Sp(2N) providers add a parallel surface
+alongside the base one. It is **unstable**:
+
+> Unstable: shape may change while the generated-provider contract is negotiated.
+
+Cargo features cannot express instability tiers, so this label plus issue
+[#47](https://github.com/Ryo-wtnb11/racah/issues/47) are the ledger.
+
+#### Authority fingerprints
+
+`racah::sun::sun_authority_fingerprint()` and
+`racah::bcd::bcd_authority_fingerprint()` return opaque `&'static [u8]` that
+identify the convention set, generation pipeline, and verification/tolerance
+policy of each generated family. Unlike the exact SU(2) fingerprint, their
+contract is deliberately weaker:
+
+> Equal fingerprints identify the same convention, generation pipeline, and
+> tolerance policy. They do not imply byte-identical values or independently
+> prove numerical agreement.
+
+Numerical agreement is established by the generation-time verification gates and
+the independent oracle suites (`docs/gauge.md`, `docs/gauge_soN.md`), never by
+the fingerprint. Backend identity is deliberately excluded: per-backend ULP
+differences are inside the disclaimed tolerance class, and a discrete gauge flip
+across backends is a defect, not a tolerance event.
+
+Each family's `epoch` tag is **per-family and independent**: an SU(N) gauge
+change bumps only the SU(N) epoch and never invalidates SU(2)- or B/C/D-derived
+consumer state (and vice versa). Compare the bytes by equality only; never parse
+them.
+
+#### Generated cache aggregate
+
+The four generated value tiers (SU(N) CGC / F, B/C/D CGC / F) are each bounded by
+a per-tier entry and byte cap. `racah::cache::GENERATED_CACHE_MAX_BYTES`
+(640 MiB) is their documented sum, tied to the per-tier caps by a `const`
+assertion so the two cannot drift. The cache story is **two-layer**: base =
+`BASE_CACHE_MAX_BYTES`, generated = `GENERATED_CACHE_MAX_BYTES`, whole-process
+retention = the documented sum of the two. There is deliberately no single
+cross-feature constant — one number spanning feature-gated tiers would change
+meaning with the `cgc-gen` flag. `racah::cache::generated_cache_stats() ->
+GeneratedCacheStats` reports the four tiers per-tier plus a field-wise `total()`;
+`reset()` clears them alongside the base tiers.
+
+The generated CGC value cache is keyed by the complete `(s1, s2, s3)` irrep
+labels and is independent of which caller-owned `CanonicalCatalog` instance
+produced an entry. Dropping or rebuilding a catalog does not invalidate cached
+values:
+
+> Cached values remain valid because catalog instances implement the same
+> canonical convention and tolerance contract, and the complete
+> family/rank/irrep labels determine the key.
+
 ## Status
 
 Feature-complete for its v0 scope; all three families are implemented and
