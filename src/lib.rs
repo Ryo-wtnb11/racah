@@ -22,6 +22,12 @@
 //! gauge fixing is a deterministic function of the subspace; floating-point
 //! stages are verification-gated and versioned.
 //!
+//! Base SU(2) provider contract: an opaque value-convention fingerprint
+//! ([`su2_authority_fingerprint`]), a checked representation surface
+//! ([`su2::Su2Irrep`] and the `*_checked` coefficient functions), and a cache
+//! resource contract ([`cache::base_cache_stats`], [`cache::BASE_CACHE_MAX_BYTES`],
+//! [`cache::reset`]). The README "Provider contract" section carries the prose.
+//!
 //! # Quick start
 //!
 //! Exact SU(2) recoupling needs no features. Spins are doubled (`dj = 2j`), so
