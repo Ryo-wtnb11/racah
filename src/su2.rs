@@ -884,8 +884,12 @@ impl Iterator for Su2Fusion {
             return None;
         }
         let dj = self.front;
-        self.front += 2;
         self.remaining -= 1;
+        // Only advance while channels remain: on the last element `front` may
+        // sit at u32::MAX (hi == dj1 + dj2), where `+= 2` would overflow.
+        if self.remaining > 0 {
+            self.front += 2;
+        }
         Some(Su2Irrep(dj))
     }
 
@@ -900,8 +904,12 @@ impl DoubleEndedIterator for Su2Fusion {
             return None;
         }
         let dj = self.back;
-        self.back -= 2;
         self.remaining -= 1;
+        // Only advance while channels remain: on the last element `back` may
+        // sit at 0 (lo == 0, the singlet channel), where `-= 2` would underflow.
+        if self.remaining > 0 {
+            self.back -= 2;
+        }
         Some(Su2Irrep(dj))
     }
 }
