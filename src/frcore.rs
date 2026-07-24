@@ -99,7 +99,7 @@ pub(crate) trait Family {
         c: &Self::Irrep,
     ) -> Result<Vec<MEntry>, Self::Error>;
 
-    /// The fusion outputs of `a ⊗ b` (the irreps `c` with `N^c_{ab} > 0`), in a
+    /// The fusion outputs of $a \otimes b$ (the irreps `c` with $N^c_{ab} > 0$), in a
     /// deterministic order.
     fn products(
         &mut self,
@@ -112,11 +112,11 @@ pub(crate) trait Family {
 // Dense F/R blocks (family-neutral: just dims + row-major f64 data).
 // ---------------------------------------------------------------------------
 
-/// A dense F-symbol block `F^{abc}_d[e, f]`, a rank-4 array over the outer
-/// multiplicity indices `[μ, ν, κ, λ]` in **row-major** order.
+/// A dense F-symbol block $F^{abc}_d[e, f]$, a rank-4 array over the outer
+/// multiplicity indices $[\mu, \nu, \kappa, \lambda]$ in **row-major** order.
 ///
-/// The axis lengths are `[N^e_{ab}, N^d_{ec}, N^f_{bc}, N^d_{af}]`
-/// (`μ, ν, κ, λ`), matching the TensorKitSectors `GenericFusion` convention
+/// The axis lengths are $[N^e_{ab}, N^d_{ec}, N^f_{bc}, N^d_{af}]$
+/// ($\mu, \nu, \kappa, \lambda$), matching the TensorKitSectors `GenericFusion` convention
 /// (`sectors.jl:Fsymbol_from_fusiontensor`). For a multiplicity-free family
 /// (e.g. SU(2)) every axis is length 1, so the block holds the single scalar.
 #[derive(Clone, Debug, PartialEq)]
@@ -139,7 +139,7 @@ impl FBlock {
         ((mu * dims[1] + nu) * dims[2] + kappa) * dims[3] + lambda
     }
 
-    /// The axis lengths `[N^e_{ab}, N^d_{ec}, N^f_{bc}, N^d_{af}]` (`μ,ν,κ,λ`).
+    /// The axis lengths $[N^e_{ab}, N^d_{ec}, N^f_{bc}, N^d_{af}]$ ($\mu,\nu,\kappa,\lambda$).
     pub fn dims(&self) -> [usize; 4] {
         self.dims
     }
@@ -163,10 +163,10 @@ impl FBlock {
     }
 }
 
-/// A dense R-symbol block `R^{ab}_c`, an `N^c_{ab} × N^c_{ba}` matrix in
-/// **row-major** order (rows = `μ`, cols = `ν`).
+/// A dense R-symbol block $R^{ab}_c$, an $N^c_{ab} \times N^c_{ba}$ matrix in
+/// **row-major** order (rows = $\mu$, cols = $\nu$).
 ///
-/// `N^c_{ab} = N^c_{ba}` (fusion multiplicities are symmetric), so the matrix
+/// $N^c_{ab} = N^c_{ba}$ (fusion multiplicities are symmetric), so the matrix
 /// is square. For a multiplicity-free family it is the single braiding phase.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RBlock {
