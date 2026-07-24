@@ -652,6 +652,15 @@ pub(crate) fn cache_bcd_f(
 /// SU(N) `cache_cgc` argument). In-memory only: values are gauge/algorithm-
 /// dependent, so a persisted store would need a version key.
 ///
+/// # Catalog lifetime is orthogonal to this tier
+///
+/// The [`CanonicalCatalog`](crate::bcd::CanonicalCatalog) is caller-owned `&mut`
+/// state, not process-global; dropping or rebuilding one does not invalidate the
+/// entries it populated here. Cached values remain valid because catalog
+/// instances implement the same canonical convention and tolerance contract, and
+/// the complete family/rank/irrep labels determine the key. So [`reset`] and
+/// catalog lifetime stay separate axes — no coupling is needed (issue #47, D5).
+///
 /// # Why a single (s1,s2,s3) tier and not a global tier plus a per-call memo
 ///
 /// One process-global value tier serves both roles the P1 review split out — it
