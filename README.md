@@ -254,12 +254,9 @@ once): for generated families the single rounding point moves earlier — into
 the nullspace solve — while structure, gauge, and verification stay at the
 same standard.
 
-For the base SU(2) provider, `su2_authority_fingerprint()` returns opaque bytes
-that encode this convention set (the exact model plus the 3j/6j/F/R sign and
-normalization conventions) and change only on the value-affecting breaking
-release of point 4. Consumers compare them by equality and may persist them
-next to derived data; see the function's rustdoc for the full contract. (A
-consolidated "Provider contract" section follows in the docs pass.)
+For the base SU(2) provider this convention set is exposed as an opaque
+fingerprint that changes only on the value-affecting breaking release of point 4
+above; see [Provider contract](#provider-contract) below.
 
 ### Gauge continuity
 
@@ -282,6 +279,74 @@ Oracles are independent of the code under test:
 - Regge/tetrahedral symmetries, pentagon/hexagon identities, and
   orthogonality as internal consistency gates;
 - QSpace numbers for SO(N)/Sp(2N) after gauge alignment.
+
+## Provider contract
+
+The base SU(2) provider (default build, no features) exposes a small, stable
+contract so a consumer can use it as one coefficient authority without
+duplicating convention identity, representation validation, or cache accounting.
+Every item below is base-SU(2)-only and pulls no linear-algebra stack.
+
+### Authority fingerprint
+
+`su2_authority_fingerprint() -> &'static [u8]` returns opaque bytes that
+identify the *convention set* every returned SU(2) coefficient (3j, 6j,
+Clebsch–Gordan, F, R, Frobenius–Schur) is computed in.
+
+- **What it is** — an identifier for the value-fixing conventions, not a
+  document. Treat it as opaque: compare by equality only, never parse it.
+- **When it changes** — not on a rebuild, dependency bump, or additive release;
+  it is derived from none of the crate version, source, docs, or process state.
+  It changes only on a value-affecting *breaking* release — a change that can
+  alter a returned coefficient, its normalization, or its canonical convention,
+  the same event class point 4 of the exactness contract declares breaking. So
+  "fingerprint changed ⇔ value-affecting breaking release" is one reviewable
+  invariant, pinned by the compatibility-policy test `tests/su2_fingerprint.rs`.
+- **How a consumer uses it** — persist the bytes next to anything derived from
+  these coefficients (a cache, a serialized table); on load, compare for
+  equality and reject the derived data on mismatch.
+
+### Checked SU(2) representation surface
+
+The `su2` module adds a typed, checked layer over the infallible closed-form
+functions. `Su2Irrep` labels an irrep by its doubled spin (`dj = 2j`); every
+`u32` is valid, so `Su2Irrep::new` is infallible and `dj` / `dim` / `dual`
+cannot fail. `Su2Irrep::fusion` returns a non-allocating `Su2Fusion` iterator
+over the coupled irreps, or `Err(Su2Error::LabelOverflow)` when `dj1 + dj2`
+exceeds `u32`.
+
+The checked coefficient functions — `wigner_3j_checked`, `wigner_6j_checked`,
+`clebsch_gordan_checked`, `su2_f_symbol_checked`, `su2_r_symbol_checked` —
+return `Err(Su2Error::NotAdmissible(_))` for a structurally forbidden tuple
+(triangle / parity / m-range violation, named by `AdmissibilityViolation`) and
+`Ok(value)` otherwise. That `Ok` / `Err` split is the point: an admissible 6j
+can still be *accidentally* zero, so `Ok(0)` (a real zero of an admissible
+coupling) and `Err(NotAdmissible)` (a forbidden coupling) are finally
+distinguishable — where the infallible functions return the same exact zero for
+both. The checked layer is purely additive: the infallible `wigner_6j` &c. keep
+their zero convention, and both paths share one admissibility predicate, so they
+can never disagree.
+
+### Cache resource contract
+
+The three base coefficient tiers (3j, 6j, derived-F) are each bounded
+independently by a per-tier entry and byte cap. The documented aggregate ceiling
+`BASE_CACHE_MAX_BYTES` (192 MiB = 3 × 64 MiB) is their sum — a **static
+partition, not a dynamic shared pool** — and holds as a corollary of the true
+per-tier ceilings, tied to the per-tier cap by a `const` assertion so the two
+cannot drift.
+
+`base_cache_stats() -> BaseCacheStats` exposes per-tier `TierStats` (`entries`,
+`bytes`, `hits`, `misses`, `evictions`) for `three_j`, `six_j`, `derived_f`,
+plus a field-wise `total()`. Each per-tier snapshot is consistent under its tier
+lock; the total is a sum of per-tier snapshots, not a global atomic snapshot, so
+under concurrent fills it is only eventually consistent (no global lock spans the
+tiers).
+
+`reset()` returns every tier's entries, bytes, and hit/miss/eviction counters to
+zero. It acts on process-global `static` state, so reset ownership is
+**single-owner**: exactly one component in a consuming process owns reset policy;
+a library must not call it.
 
 ## Status
 
@@ -310,6 +375,10 @@ self-checks — orthogonality, F-unitarity, pentagon, hexagon — as public API)
   structural-only, and **9** higher-rank rows (SO(7)/Sp(6)/SO(8)) are out of the
   rank-2/3 anchor's scope and skipped. See
   `src/bcd/qspace_oracle_tests.rs` for the full coverage note.
+
+The base SU(2) provider's stable public surface — authority fingerprint,
+checked representation layer, and cache resource contract — is described under
+[Provider contract](#provider-contract).
 
 Not published to crates.io yet (blocked on the `tenferro-rs` publish); the git
 dependency above is the supported path. See [Installation](#installation) and
