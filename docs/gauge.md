@@ -13,8 +13,7 @@ bit-identity: the dense backend's parallel reductions are not bit-reproducible,
 so two independent generations of the same coupling can differ by a few ULPs
 (within a single process the cache serializes all readers to one winner value).
 
-The construction is a port of **SUNRepresentations.jl v0.4.0**
-(`~/.julia/packages/SUNRepresentations/BM32Z/src`). Every choice below cites the
+The construction is a port of **SUNRepresentations.jl v0.4.0** (`src/`). Every choice below cites the
 reference `file:symbol`. A reader with this document and the reference source
 can re-derive the gauge without reading the Rust implementation.
 

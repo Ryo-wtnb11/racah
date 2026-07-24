@@ -38,6 +38,20 @@
 //! The generated families (SU(N), SO(N)/Sp(2N)) live behind the `cgc-gen`
 //! feature; see the `sun` and `bcd` module docs for runnable examples of
 //! their Clebsch–Gordan and F/R surfaces.
+//!
+//! # Further reading
+//!
+//! - [`docs/theory.md`] — a light primer on the objects this API computes
+//!   (irreps, fusion multiplicities, CGC and gauge, recoupling, the two
+//!   constructions, the exactness contract).
+//! - [`docs/references.md`] — porting provenance (`file:symbol`-level) and the
+//!   verified bibliography.
+//! - [`docs/gauge.md`] / [`docs/gauge_soN.md`] — the gauge specifications.
+//!
+//! [`docs/theory.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/theory.md
+//! [`docs/references.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/references.md
+//! [`docs/gauge.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/gauge.md
+//! [`docs/gauge_soN.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/gauge_soN.md
 #![warn(missing_docs)]
 
 pub mod cache;

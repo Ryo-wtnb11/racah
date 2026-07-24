@@ -86,26 +86,34 @@ assert!((block.at(0, 0, 0, 0) - 1.0).abs() < 1e-9);
 
 ## Why this crate exists
 
-Symmetric tensor libraries need, for every symmetry group they support, the
-coefficients of its representation theory: fusion multiplicities, dimensions,
-duals, Frobenius–Schur indicators, and above all the recoupling data (the
-F- and R-symbols, i.e. generalized 6j coefficients) that drive every basis
-transformation of a symmetric tensor.
+No library — in Rust, and essentially nowhere as a standalone component —
+computes the *full* representation-theory coefficient set for the compact Lie
+groups on demand with unbounded labels. By "full set" we mean, for a given
+group and any admissible irreps: fusion multiplicities, dimensions, duals,
+Frobenius–Schur indicators, Clebsch–Gordan coefficients, and the recoupling
+data (3j / 6j and the F- and R-symbols). `racah` is that standalone library. It
+covers SU(2), SU(N), SO(N), and Sp(2N); it is pure representation mathematics
+with no tensor-network vocabulary and no dependency on any tensor engine; and it
+is usable by anyone who needs these numbers — atomic and molecular spectroscopy,
+nuclear and quantum-chemistry coupling, lattice and continuum models, symmetric
+tensor networks, and more.
 
-Two supply models exist today, and both have a ceiling:
+The existing supply of these coefficients stops short of that, in two ways:
 
-- **Precomputed tables** (offline generation, checked-in blobs) are complete
-  for *finite* fusion categories — anyon models have a fixed, small sector
-  set, so a table is the whole truth. But for compact Lie groups the sector
-  set is infinite: a growing simulation produces ever-larger irreps through
-  fusion closure, and any table has a cut that will eventually be exceeded.
-- **External coefficient crates** solve one group at a fixed scope (e.g.
-  exact SU(2) 3j/6j with a bounded label domain) and cannot be extended to
-  SU(N≥3) or SO(N), where no closed-form expressions exist.
+- **Precomputed tables** (offline generation, checked-in data) are complete for
+  *finite* symmetry sets — a fixed, small collection of irreps means a table is
+  the whole truth. But a compact Lie group has infinitely many irreps, and
+  taking tensor products only makes them larger, so any table has a cut that a
+  large-enough calculation will exceed.
+- **Single-group coefficient packages** solve one group at a fixed scope (for
+  example exact SU(2) 3j/6j over a bounded label range) and do not extend to
+  SU(N≥3), SO(N), or Sp(2N), where no closed-form expressions exist and the
+  coefficients must be *constructed*.
 
-`racah` removes both ceilings: coefficients for any irrep pair are computed
-on demand, inside the process, in pure Rust. It consolidates the roles of
-three production references into one crate:
+`racah` removes both limits: coefficients for any admissible labels are computed
+on demand, inside the process, in pure Rust, with no label ceiling. To do this
+faithfully it consolidates the algorithms of three production references, one
+per family (full provenance in [`docs/references.md`](docs/references.md)):
 
 | Reference | What is taken from it |
 |---|---|
@@ -115,7 +123,9 @@ three production references into one crate:
 
 These are complementary, not competing: the Gelfand–Tsetlin construction is
 fundamentally SU(N)-specific, while QSpace's generator-based decomposition is
-the only production reference that generates SO(N) and Sp(2N).
+the only production reference that generates SO(N) and Sp(2N). For the
+representation-theory background behind these objects, see
+[`docs/theory.md`](docs/theory.md).
 
 ## What it computes
 
@@ -176,6 +186,30 @@ The feature boundary is mathematical, not organizational: SU(2) has closed
 forms and needs no matrix computation; every other family must be generated
 numerically. Consumers that only need abelian or SU(2) symmetries never pull
 a linear-algebra stack.
+
+### Why each family gets its algorithm
+
+The construction per family is forced by the group's branching structure, not
+chosen for convenience (the full argument is in
+[`docs/theory.md`](docs/theory.md) §5):
+
+- **SU(2)** — closed forms exist (Racah), so the 3j/6j/CGC/F/R are evaluated
+  directly in exact big-rational arithmetic with a single final rounding; there
+  is nothing to generate.
+- **SU(N)** — the subgroup chain SU(N) ⊃ SU(N-1) ⊃ … ⊃ SU(1) has
+  multiplicity-free branching, so basis states are labelled uniquely by
+  Gelfand–Tsetlin patterns and the ladder operators have exact closed-form
+  matrix elements (Alex–Kalus–Huckleberry–von Delft). That closed form is what
+  makes the direct GT construction possible, and it is SU(N)-specific.
+- **SO(N) / Sp(2N)** — the symplectic chain Sp(2r) ⊃ Sp(2r-2) has branching
+  multiplicities, so no GT-type basis with practical closed-form matrix elements
+  exists (the SO chains are multiplicity-free, but their closed forms are not
+  production-viable either). So these families use the generator bootstrap —
+  defining-representation seeds (writable explicitly per series), tensor
+  products, numeric highest-weight decomposition, harvest, recurse — which needs
+  almost no family-specific structure. Its price, a gauge fixed by procedural
+  determinism rather than a formula, is what
+  [`docs/gauge_soN.md`](docs/gauge_soN.md) pins down.
 
 ### Kernel routing
 
@@ -273,6 +307,8 @@ dependency above is the supported path. See [Installation](#installation) and
 
 ## More
 
+- Theory primer (the objects the API computes): [`docs/theory.md`](docs/theory.md).
+- Porting provenance and bibliography: [`docs/references.md`](docs/references.md).
 - Gauge conventions: [`docs/gauge.md`](docs/gauge.md) (SU(N)),
   [`docs/gauge_soN.md`](docs/gauge_soN.md) (SO(N)/Sp(2N)).
 - Fixture provenance and the oracle matrix: [`tools/README.md`](tools/README.md).
