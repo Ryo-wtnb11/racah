@@ -838,6 +838,60 @@ mod tests {
     }
 
     #[test]
+    fn evictions_counted_on_entry_bound() {
+        // Cap 3 entries, insert 5 distinct keys: exactly 2 oldest evicted.
+        let c: FifoCache<u32, SignedSqrtRational> = FifoCache::new(3, 1 << 30);
+        for k in 0..5u32 {
+            c.get_or_compute(k, || val(k as i64 + 1));
+        }
+        let ts = c.tier_stats();
+        assert_eq!(ts.entries, 3);
+        assert_eq!(ts.evictions, 2, "5 inserts over a cap of 3 evict exactly 2");
+    }
+
+    #[test]
+    fn evictions_counted_on_byte_bound() {
+        // Byte budget for ~2 entries: filling 20 forces many byte-driven evictions.
+        let per = entry_charge::<u32, SignedSqrtRational>(&val(1));
+        let c: FifoCache<u32, SignedSqrtRational> = FifoCache::new(1_000_000, per * 2 + per / 2);
+        for k in 0..20u32 {
+            c.get_or_compute(k, || val(k as i64 + 1));
+        }
+        assert!(
+            c.tier_stats().evictions > 0,
+            "byte bound must count evictions"
+        );
+    }
+
+    #[test]
+    fn oversize_entry_counts_as_eviction() {
+        // Byte cap smaller than any single entry: the entry is admitted (charged,
+        // pushed) then immediately evicted back out. Documented decision: it
+        // counts as an eviction, and nothing is retained.
+        let c: FifoCache<u32, SignedSqrtRational> = FifoCache::new(1_000_000, 1);
+        c.get_or_compute(7, || val(7));
+        let ts = c.tier_stats();
+        assert_eq!(ts.entries, 0, "oversize entry is not retained");
+        assert_eq!(ts.bytes, 0);
+        assert_eq!(ts.evictions, 1, "an admitted-then-evicted entry counts");
+    }
+
+    #[test]
+    fn reset_zeroes_evictions() {
+        let c: FifoCache<u32, SignedSqrtRational> = FifoCache::new(1, 1 << 30);
+        for k in 0..5u32 {
+            c.get_or_compute(k, || val(k as i64 + 1));
+        }
+        assert!(c.tier_stats().evictions > 0, "precondition: some evictions");
+        c.reset();
+        assert_eq!(
+            c.tier_stats(),
+            TierStats::default(),
+            "reset zeroes every field"
+        );
+    }
+
+    #[test]
     fn concurrent_mixed_hit_miss_equals_sequential() {
         let c: Arc<FifoCache<u32, SignedSqrtRational>> = Arc::new(FifoCache::new(1 << 20, 1 << 30));
         let keys: Vec<u32> = (0..64).collect();
