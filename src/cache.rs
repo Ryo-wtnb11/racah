@@ -83,6 +83,53 @@ pub const BASE_CACHE_MAX_BYTES: usize = 192 << 20;
 // shared `DEFAULT_MAX_BYTES` they are all built from is the enforceable tie.)
 const _: () = assert!(BASE_CACHE_MAX_BYTES == 3 * DEFAULT_MAX_BYTES);
 
+/// Aggregate retained-byte ceiling for the four generated `cgc-gen` tiers
+/// (SU(N) CGC, SU(N) F, B/C/D CGC, B/C/D F), currently `640 MiB` =
+/// `256 MiB + 64 MiB + 256 MiB + 64 MiB`.
+///
+/// **Unstable: shape may change while the generated-provider contract is
+/// negotiated** (racah #47; there is no Cargo-feature way to express an
+/// instability tier, so this doc label plus that issue are the ledger).
+///
+/// # Two-layer aggregate story (why there is no single crate-wide constant)
+///
+/// Retained coefficient-cache memory is documented in two layers, not one
+/// number:
+///
+/// - the base SU(2) tiers are bounded by [`BASE_CACHE_MAX_BYTES`] (a static
+///   partition with a const-proved sum — see its docs);
+/// - the generated tiers are bounded by this constant.
+///
+/// The whole-process coefficient-cache ceiling is the **documented sum**
+/// `BASE_CACHE_MAX_BYTES + GENERATED_CACHE_MAX_BYTES`. There is deliberately no
+/// single cross-feature constant spanning both: this constant only exists under
+/// `cgc-gen`, so a "one number" whole-crate ceiling would *change value with the
+/// feature flag* and read as if the base ceiling shrank when `cgc-gen` is off —
+/// misleading. Two feature-honest layers instead (racah #47 design record 2,
+/// D4). Like the base ceiling this is a **static partition, not a shared pool**:
+/// each tier's per-tier byte cap is a true ceiling (the `CacheCharge` accounting
+/// over-counts), so `Σ tier bytes ≤ Σ tier caps = GENERATED_CACHE_MAX_BYTES`
+/// holds as a corollary without global enforcement.
+///
+/// Per-tier and total statistics are exposed via [`generated_cache_stats`]. The
+/// `CanonicalCatalog` is *not* a value cache (generator state, its own byte
+/// budget, `&mut` caller-owned lifecycle) and is intentionally excluded from
+/// this budget and from these stats.
+#[cfg(feature = "cgc-gen")]
+pub const GENERATED_CACHE_MAX_BYTES: usize = 640 << 20;
+
+// Compile-time tie: if any generated-tier byte cap changes, this constant must
+// be reconciled in the same edit or the crate stops building (the same drift
+// guard the base tiers use). Each cap is `pub(super)` in its tier module.
+#[cfg(feature = "cgc-gen")]
+const _: () = assert!(
+    GENERATED_CACHE_MAX_BYTES
+        == cgc_cache::CGC_MAX_BYTES
+            + sun_f_cache::SUN_F_MAX_BYTES
+            + bcd_cgc_cache::BCD_CGC_MAX_BYTES
+            + bcd_f_cache::BCD_F_MAX_BYTES
+);
+
 /// Snapshot of the aggregate cache counters (3j and 6j kinds summed).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CacheStats {
@@ -157,6 +204,69 @@ impl BaseCacheStats {
             hits: self.three_j.hits + self.six_j.hits + self.derived_f.hits,
             misses: self.three_j.misses + self.six_j.misses + self.derived_f.misses,
             evictions: self.three_j.evictions + self.six_j.evictions + self.derived_f.evictions,
+        }
+    }
+}
+
+/// Per-tier statistics for the four generated `cgc-gen` tiers (SU(N) CGC,
+/// SU(N) F, B/C/D CGC, B/C/D F).
+///
+/// **Unstable: shape may change while the generated-provider contract is
+/// negotiated** (racah #47). The struct is `#[non_exhaustive]` — it is
+/// constructed only inside the crate (by [`generated_cache_stats`]); consumers
+/// read its fields or call [`total`](GeneratedCacheStats::total).
+///
+/// Reuses the base [`TierStats`] type (no new vocabulary). This covers **only**
+/// the generated SU(N)/B/C/D tiers — the base SU(2) surface is
+/// [`base_cache_stats`], and the aggregate [`stats`] sums both. Retained bytes
+/// are bounded by [`GENERATED_CACHE_MAX_BYTES`]
+/// (`total().bytes ≤ GENERATED_CACHE_MAX_BYTES`).
+///
+/// # Snapshot consistency
+///
+/// Each per-tier [`TierStats`] is internally consistent (taken under that tier's
+/// read lock). [`total`](GeneratedCacheStats::total) is a field-wise sum of the
+/// four per-tier snapshots, **not** a single global atomic snapshot: a
+/// concurrent filler can interleave between the tier reads, so the total is only
+/// eventually consistent. Racah does not take a global lock spanning the tiers —
+/// that would serialize otherwise-independent lookups for no correctness gain
+/// (the individual tier bounds are already true ceilings). Same contract as
+/// [`BaseCacheStats`].
+#[cfg(feature = "cgc-gen")]
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GeneratedCacheStats {
+    /// The SU(N) CGC tier.
+    pub sun_cgc: TierStats,
+    /// The derived-f64 SU(N) F-symbol tier.
+    pub sun_f: TierStats,
+    /// The B/C/D CGC value tier.
+    pub bcd_cgc: TierStats,
+    /// The derived-f64 B/C/D F-symbol tier.
+    pub bcd_f: TierStats,
+}
+
+#[cfg(feature = "cgc-gen")]
+impl GeneratedCacheStats {
+    /// Field-wise sum of the four generated tiers. See the type-level snapshot-
+    /// consistency note: this is a sum of per-tier snapshots, not an atomic
+    /// whole-cache snapshot.
+    pub fn total(&self) -> TierStats {
+        TierStats {
+            entries: self.sun_cgc.entries
+                + self.sun_f.entries
+                + self.bcd_cgc.entries
+                + self.bcd_f.entries,
+            bytes: self.sun_cgc.bytes + self.sun_f.bytes + self.bcd_cgc.bytes + self.bcd_f.bytes,
+            hits: self.sun_cgc.hits + self.sun_f.hits + self.bcd_cgc.hits + self.bcd_f.hits,
+            misses: self.sun_cgc.misses
+                + self.sun_f.misses
+                + self.bcd_cgc.misses
+                + self.bcd_f.misses,
+            evictions: self.sun_cgc.evictions
+                + self.sun_f.evictions
+                + self.bcd_cgc.evictions
+                + self.bcd_f.evictions,
         }
     }
 }
@@ -422,7 +532,10 @@ mod cgc_cache {
     const CGC_MAX_ENTRIES: usize = 1 << 16;
     /// Byte cap for the CGC tier (256 MiB): CGC tensors are far larger than a
     /// scalar exact symbol, so this tier gets its own generous budget.
-    const CGC_MAX_BYTES: usize = 256 << 20;
+    ///
+    /// `pub(super)` so the parent module can tie [`super::GENERATED_CACHE_MAX_BYTES`]
+    /// to it in a compile-time assertion (the same drift guard the base tiers use).
+    pub(super) const CGC_MAX_BYTES: usize = 256 << 20;
 
     pub(crate) static CACHE_CGC: LazyLock<FifoCache<CgcKey, Arc<Cgc>>> =
         LazyLock::new(|| FifoCache::new(CGC_MAX_ENTRIES, CGC_MAX_BYTES));
@@ -468,8 +581,9 @@ mod sun_f_cache {
     /// Entry cap; the byte cap is the real backstop.
     const SUN_F_MAX_ENTRIES: usize = 1 << 16;
     /// Byte cap (64 MiB): F blocks are tiny (a few multiplicity indices), so
-    /// this holds a very large working set.
-    const SUN_F_MAX_BYTES: usize = 64 << 20;
+    /// this holds a very large working set. `pub(super)` for the
+    /// [`super::GENERATED_CACHE_MAX_BYTES`] drift assertion.
+    pub(super) const SUN_F_MAX_BYTES: usize = 64 << 20;
 
     pub(crate) static CACHE_SUN_F: LazyLock<FifoCache<SunFKey, Arc<FBlock>>> =
         LazyLock::new(|| FifoCache::new(SUN_F_MAX_ENTRIES, SUN_F_MAX_BYTES));
@@ -507,7 +621,8 @@ mod bcd_f_cache {
     /// Entry cap; the byte cap is the real backstop.
     const BCD_F_MAX_ENTRIES: usize = 1 << 16;
     /// Byte cap (64 MiB): F blocks are tiny (a few multiplicity indices).
-    const BCD_F_MAX_BYTES: usize = 64 << 20;
+    /// `pub(super)` for the [`super::GENERATED_CACHE_MAX_BYTES`] drift assertion.
+    pub(super) const BCD_F_MAX_BYTES: usize = 64 << 20;
 
     pub(crate) static CACHE_BCD_F: LazyLock<FifoCache<BcdFKey, Arc<FBlock>>> =
         LazyLock::new(|| FifoCache::new(BCD_F_MAX_ENTRIES, BCD_F_MAX_BYTES));
@@ -564,7 +679,8 @@ mod bcd_cgc_cache {
     const BCD_CGC_MAX_ENTRIES: usize = 1 << 16;
     /// Byte cap (256 MiB): dense product isometries are far larger than an F
     /// block, so this tier gets its own generous budget (as the SU(N) CGC tier).
-    const BCD_CGC_MAX_BYTES: usize = 256 << 20;
+    /// `pub(super)` for the [`super::GENERATED_CACHE_MAX_BYTES`] drift assertion.
+    pub(super) const BCD_CGC_MAX_BYTES: usize = 256 << 20;
 
     pub(crate) static CACHE_BCD_CGC: LazyLock<FifoCache<BcdCgcKey, Arc<CatalogCgc>>> =
         LazyLock::new(|| FifoCache::new(BCD_CGC_MAX_ENTRIES, BCD_CGC_MAX_BYTES));
@@ -643,6 +759,26 @@ pub fn base_cache_stats() -> BaseCacheStats {
         three_j: CACHE_3J.tier_stats(),
         six_j: CACHE_6J.tier_stats(),
         derived_f: CACHE_F.tier_stats(),
+    }
+}
+
+/// Per-tier and total statistics for the four generated `cgc-gen` tiers
+/// (SU(N) CGC, SU(N) F, B/C/D CGC, B/C/D F).
+///
+/// The generated-family analogue of [`base_cache_stats`]: unlike the aggregate
+/// [`stats`] (which sums base *and* generated tiers into one flat
+/// [`CacheStats`]), this reports each generated tier separately, adds the
+/// eviction counter, and exposes a field-wise [`total`](GeneratedCacheStats::total).
+/// Retained bytes are bounded by [`GENERATED_CACHE_MAX_BYTES`]
+/// (`total().bytes ≤ GENERATED_CACHE_MAX_BYTES`). See [`GeneratedCacheStats`]
+/// for the snapshot-consistency contract of `total()` and the stability caveat.
+#[cfg(feature = "cgc-gen")]
+pub fn generated_cache_stats() -> GeneratedCacheStats {
+    GeneratedCacheStats {
+        sun_cgc: cgc_cache::CACHE_CGC.tier_stats(),
+        sun_f: sun_f_cache::CACHE_SUN_F.tier_stats(),
+        bcd_cgc: bcd_cgc_cache::CACHE_BCD_CGC.tier_stats(),
+        bcd_f: bcd_f_cache::CACHE_BCD_F.tier_stats(),
     }
 }
 
