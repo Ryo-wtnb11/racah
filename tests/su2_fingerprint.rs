@@ -21,7 +21,7 @@ use racah::su2_authority_fingerprint;
 fn fingerprint_matches_pinned_compatibility_bytes() {
     assert_eq!(
         su2_authority_fingerprint(),
-        b"racah:su2-exact:model=bigrational-round-once:3j=condon-shortley:6j=racah-single-sum:f=tks-su2irrep:r=tks-su2irrep:epoch=1",
+        b"racah:su2-exact:model=bigrational-round-once:3j=condon-shortley:cg=condon-shortley:6j=racah-single-sum:f=tks-su2irrep:r=tks-su2irrep:fs=tks-su2irrep:epoch=1",
     );
 }
 
