@@ -44,4 +44,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --no-deps --all-features
         env:
-          RUSTDOCFLAGS: -D warnings
+          # Same KaTeX header as docs.rs (Cargo.toml [package.metadata.docs.rs]);
+          # space-separated flags compose in the one RUSTDOCFLAGS env var.
+          RUSTDOCFLAGS: -D warnings --html-in-header doc/katex-header.html

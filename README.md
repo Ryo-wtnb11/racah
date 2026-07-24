@@ -393,6 +393,8 @@ dependency above is the supported path. See [Installation](#installation) and
 - Fixture provenance and the oracle matrix: [`tools/README.md`](tools/README.md).
 - Guard discipline (every port PR carries a guard inventory): issue
   [#15](https://github.com/Ryo-wtnb11/racah/issues/15).
+- Build the docs locally with the same KaTeX math rendering as docs.rs:
+  `RUSTDOCFLAGS="--html-in-header doc/katex-header.html" cargo doc --no-deps --all-features --open`.
 
 ## License
 

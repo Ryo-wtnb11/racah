@@ -1,0 +1,34 @@
+<!--
+  KaTeX math rendering for rustdoc.
+
+  Injected via `--html-in-header` (see `[package.metadata.docs.rs]` in
+  Cargo.toml, the CI `doc` job's RUSTDOCFLAGS, and the README dev-note
+  one-liner). Renders `$...$` inline and `$$...$$` display math in doc
+  comments after the page loads.
+
+  Version is PINNED (no floating `latest`) so a doc build is reproducible; the
+  three CDN URLs below were verified to resolve at this version. Bumping it is
+  an ordinary reviewed commit.
+
+  Caveat: rendering needs network access to the CDN at *page-view* time. Docs
+  opened offline (or a `cargo doc` output viewed without a network) show the
+  raw `$...$` source instead of typeset math -- acceptable and expected; the
+  math is still readable as LaTeX.
+-->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    renderMathInElement(document.body, {
+      delimiters: [
+        { left: "$$", right: "$$", display: true },
+        { left: "$", right: "$", display: false },
+      ],
+      // Never typeset inside code: rustdoc renders backtick spans and fenced
+      // blocks as <code>/<pre>, where `$` is literal Rust/text, not math.
+      ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+      throwOnError: false,
+    });
+  });
+</script>
