@@ -64,10 +64,10 @@ pub struct CgcEntry {
     pub value: f64,
 }
 
-/// The Clebsch-Gordan coefficients coupling `s1 ⊗ s2 → s3`, as a sparse
+/// The Clebsch-Gordan coefficients coupling $s_1 \otimes s_2 \to s_3$, as a sparse
 /// m-basis tensor with the outer multiplicity carried on a trailing axis.
 ///
-/// Shape is `[dim(s1), dim(s2), dim(s3), N]` with `N = N^{s3}_{s1 s2}` the
+/// Shape is $[\dim(s_1), \dim(s_2), \dim(s_3), N]$ with $N = N^{s_3}_{s_1 s_2}$ the
 /// Layer 1 fusion multiplicity ([`directproduct`]). Only nonzero entries (after
 /// the `TOL_PURGE` cut) are stored, sorted by `(m1, m2, m3, mu)`.
 ///

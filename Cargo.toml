@@ -10,8 +10,11 @@ categories = ["mathematics", "science"]
 
 # docs.rs builds the generated SU(N)/SO(N)/Sp(2N) surfaces too, not just the
 # base SU(2) path, so the published docs cover the whole API.
+# The KaTeX header renders `$...$` / `$$...$$` math in the doc comments; local
+# and CI doc builds pass the same flag (README dev note; CI `doc` job).
 [package.metadata.docs.rs]
 all-features = true
+rustdoc-args = ["--html-in-header", "doc/katex-header.html"]
 
 [features]
 default = []

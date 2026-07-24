@@ -72,7 +72,7 @@ fn check_6j_admissible(
     Ok(())
 }
 
-/// Wigner 6j symbol `{dj1 dj2 dj3; dj4 dj5 dj6}` (doubled spins).
+/// Wigner 6j symbol $\{dj_1\, dj_2\, dj_3;\, dj_4\, dj_5\, dj_6\}$ (doubled spins).
 ///
 /// Returns exact zero unless all four triangles
 /// `(1,2,3), (1,5,6), (4,2,6), (4,5,3)` are admissible. Uses the Racah
@@ -178,10 +178,10 @@ fn wigner_6j_uncached(
     SignedSqrtRational::from_prefactor_radical(s * series, r)
 }
 
-/// Wigner 3j symbol `(dj1 dj2 dj3; dm1 dm2 dm3)` (doubled spins/projections).
+/// Wigner 3j symbol $(dj_1\, dj_2\, dj_3;\, dm_1\, dm_2\, dm_3)$ (doubled spins/projections).
 ///
-/// Returns exact zero unless the labels are admissible: triangle `(1,2,3)`,
-/// `|dm_i| <= dj_i`, `dj_i + dm_i` even for each `i`, and `dm1+dm2+dm3 == 0`.
+/// Returns exact zero unless the labels are admissible: triangle $(1,2,3)$,
+/// $|dm_i| \le dj_i$, $dj_i + dm_i$ even for each $i$, and $dm_1+dm_2+dm_3 = 0$.
 /// Condon-Shortley phase, matching the standard closed form.
 ///
 /// Transparently served from the process-local [`crate::cache`]. Unlike 6j, the
@@ -279,10 +279,10 @@ fn wigner_3j_uncached(
     SignedSqrtRational::from_prefactor_radical(value, r)
 }
 
-/// Clebsch-Gordan coefficient `<dj1 dm1, dj2 dm2 | dj3 dm3>` (doubled spins).
+/// Clebsch-Gordan coefficient $\langle dj_1\, dm_1, dj_2\, dm_2 \,|\, dj_3\, dm_3 \rangle$ (doubled spins).
 ///
 /// Composed exactly from [`wigner_3j`] via the standard relation
-/// `CG = (-1)^((-j1+j2-m3)) sqrt(2 j3 + 1) (j1 j2 j3; m1 m2 -m3)`
+/// $CG = (-1)^{-j_1+j_2-m_3}\, \sqrt{2 j_3 + 1}\; (j_1\, j_2\, j_3;\, m_1\, m_2\, -m_3)$
 /// (multiply the radicand by `dj3+1`, adjust the sign) — no recomputation.
 pub fn clebsch_gordan(
     dj1: u32,
@@ -305,10 +305,10 @@ pub fn clebsch_gordan(
     }
 }
 
-/// SU(2) R-symbol `R^{dj1,dj2}_{dj3}` as a multiplicity-free scalar.
+/// SU(2) R-symbol $R^{dj_1,dj_2}_{dj_3}$ as a multiplicity-free scalar.
 ///
-/// `(-1)^(j1+j2-j3)` on an admissible fusion triangle, exact `0.0` otherwise.
-/// In doubled units the exponent is `(dj1+dj2-dj3)/2`, an integer whenever the
+/// $(-1)^{j_1+j_2-j_3}$ on an admissible fusion triangle, exact `0.0` otherwise.
+/// In doubled units the exponent is $(dj_1+dj_2-dj_3)/2$, an integer whenever the
 /// triangle is admissible (the parity check guarantees it). The zero on a
 /// non-admissible triple mirrors `Nsymbol == 0`, so a caller never multiplies a
 /// spurious sign into a forbidden fusion channel.
@@ -326,7 +326,7 @@ pub fn su2_r_symbol(dj1: u32, dj2: u32, dj3: u32) -> f64 {
     }
 }
 
-/// Frobenius-Schur phase of an SU(2) irrep: `(-1)^(2j)` as `+-1.0`.
+/// Frobenius-Schur phase of an SU(2) irrep: $(-1)^{2j}$ as `+-1.0`.
 ///
 /// Every SU(2) irrep is self-dual; the FS indicator is the sign that
 /// distinguishes the orthogonal (integer `j`, `+1`) from the symplectic
@@ -343,8 +343,8 @@ pub fn su2_frobenius_schur(dj: u32) -> f64 {
 
 /// Exact SU(2) F-symbol as a [`SignedSqrtRational`] -- the value authority.
 ///
-/// `F = (-1)^(j1+j2+j3+j4) * sqrt((dj5+1)(dj6+1)) * {6j: dj1 dj2 dj5 / dj3 dj4
-/// dj6}`, composed exactly: the dimension factor folds into the radicand
+/// $F = (-1)^{j_1+j_2+j_3+j_4}\, \sqrt{(dj_5+1)(dj_6+1)}\; \{6j\!: dj_1\, dj_2\, dj_5 / dj_3\, dj_4\, dj_6\}$,
+/// composed exactly: the dimension factor folds into the radicand
 /// (`times_sqrt_int`), the phase into the sign, with no intermediate rounding.
 ///
 /// Convention and the exact 6j argument order / phase exponent are derived from
@@ -457,7 +457,7 @@ fn admissible_3j(dj1: u32, dj2: u32, dj3: u32, dm1: i32, dm2: i32, dm3: i32) -> 
     check_3j_admissible(dj1, dj2, dj3, dm1, dm2, dm3).is_ok()
 }
 
-/// `(-1)^p < 0`, i.e. `p` odd.
+/// $(-1)^p < 0$, i.e. `p` odd.
 #[inline]
 fn phase_is_negative(p: i64) -> bool {
     p.rem_euclid(2) == 1
@@ -1148,21 +1148,21 @@ pub fn su2_r_symbol_checked(dj1: u32, dj2: u32, dj3: u32) -> Result<f64, Su2Erro
 /// - `3j=condon-shortley` — the 3j sign convention ([`wigner_3j`] docs,
 ///   "Condon-Shortley phase").
 /// - `cg=condon-shortley` — the Clebsch-Gordan convention: composed from the 3j
-///   via the standard relation with phase `(-1)^((dj2-dj1-dm3)/2)` and
-///   `sqrt(dj3+1)` normalization ([`clebsch_gordan`] docs). Tagged separately
+///   via the standard relation with phase $(-1)^{(dj_2-dj_1-dm_3)/2}$ and
+///   $\sqrt{dj_3+1}$ normalization ([`clebsch_gordan`] docs). Tagged separately
 ///   because that phase-and-normalization step is its own value convention, not
 ///   pure 3j inheritance.
 /// - `6j=racah-single-sum` — the 6j evaluation ([`wigner_6j`] docs, "Racah
 ///   single-sum closed form").
 /// - `f=tks-su2irrep` — the F-symbol convention: the TensorKitSectors
 ///   `su2irrep.jl:Fsymbol` correspondence, including the exact 6j argument order
-///   and the `(-1)^(j1+j2+j3+j4)` phase. That convention is fixed by the exact F
+///   and the $(-1)^{j_1+j_2+j_3+j_4}$ phase. That convention is fixed by the exact F
 ///   evaluation (the private `f_symbol_exact`, see the module's TensorKitSectors
 ///   correspondence); [`su2_f_symbol`] is its cached `f64` presentation.
 /// - `r=tks-su2irrep` — the R-symbol convention: TensorKitSectors
-///   `su2irrep.jl:Rsymbol`, `(-1)^(j1+j2-j3)` on an admissible triangle
+///   `su2irrep.jl:Rsymbol`, $(-1)^{j_1+j_2-j_3}$ on an admissible triangle
 ///   ([`su2_r_symbol`] docs).
-/// - `fs=tks-su2irrep` — the Frobenius-Schur convention: `(-1)^dj`, the
+/// - `fs=tks-su2irrep` — the Frobenius-Schur convention: $(-1)^{dj}$, the
 ///   TensorKitSectors `su2irrep.jl` self-dual correspondence
 ///   ([`su2_frobenius_schur`] docs). Tagged separately from `r` because it is a
 ///   distinct formula, not the R-symbol convention.

@@ -101,10 +101,11 @@ fn require_same_rank(labels: &[&Irrep]) -> Result<(), SunError> {
 // F-symbol.
 // ---------------------------------------------------------------------------
 
-/// The F-symbol `F^{abc}_d[e, f]` as a dense `[μ, ν, κ, λ]` block.
+/// The F-symbol $F^{abc}_d[e, f]$ as a dense $[\mu, \nu, \kappa, \lambda]$ block.
 ///
 /// Ports `sector.jl:_Fsymbol` (the contraction lives in the `frcore` core). The
-/// four vertices are `a⊗b→e` (`μ`), `e⊗c→d` (`ν`), `b⊗c→f` (`κ`), `a⊗f→d` (`λ`).
+/// four vertices are $a\otimes b\to e$ ($\mu$), $e\otimes c\to d$ ($\nu$),
+/// $b\otimes c\to f$ ($\kappa$), $a\otimes f\to d$ ($\lambda$).
 ///
 /// # Errors
 ///
@@ -172,14 +173,14 @@ pub fn f_symbol(
 // R-symbol.
 // ---------------------------------------------------------------------------
 
-/// The R-symbol `R^{ab}_c` as a dense `N^c_{ab} × N^c_{ba}` matrix.
+/// The R-symbol $R^{ab}_c$ as a dense $N^c_{ab} \times N^c_{ba}$ matrix.
 ///
 /// Ports `sector.jl:_Rsymbol` (the contraction lives in the `frcore` core).
 ///
 /// # Errors
 ///
 /// - [`SunError::RankMismatch`] if `a`, `b`, `c` are not all SU(N) for one `N`.
-/// - [`SunError::ZeroFusionChannel`] if `a ⊗ b → c` is empty.
+/// - [`SunError::ZeroFusionChannel`] if $a \otimes b \to c$ is empty.
 /// - CGC generation errors are surfaced.
 pub fn r_symbol(a: &Irrep, b: &Irrep, c: &Irrep) -> Result<RBlock, SunError> {
     require_same_rank(&[a, b, c])?;

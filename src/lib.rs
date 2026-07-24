@@ -81,7 +81,7 @@ pub mod sun;
 /// (Layer S3.0 of the `cgc-gen` track): integer Dynkin labels, exact Weyl
 /// dimensions, duals, Frobenius–Schur indicators, Freudenthal weight
 /// multiplicities, and the exact Brauer–Klimyk/Racah–Speiser tensor-product
-/// decomposition `N^c_ab`. Compilation-gated behind `cgc-gen`.
+/// decomposition $N^c_{ab}$. Compilation-gated behind `cgc-gen`.
 #[cfg(feature = "cgc-gen")]
 pub mod bcd;
 

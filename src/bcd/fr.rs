@@ -213,11 +213,12 @@ fn require_catalog_family(cat: &CanonicalCatalog, labels: &[&Irrep]) -> Result<(
 // F-symbol.
 // ---------------------------------------------------------------------------
 
-/// The B/C/D F-symbol `F^{abc}_d[e, f]` as a dense `[μ, ν, κ, λ]` block, over the
-/// catalog's canonical CGC gauge.
+/// The B/C/D F-symbol $F^{abc}_d[e, f]$ as a dense $[\mu, \nu, \kappa, \lambda]$
+/// block, over the catalog's canonical CGC gauge.
 ///
-/// The four vertices are `a⊗b→e` (`μ`), `e⊗c→d` (`ν`), `b⊗c→f` (`κ`),
-/// `a⊗f→d` (`λ`). Cached in the derived-f64 B/C/D F tier
+/// The four vertices are $a\otimes b\to e$ ($\mu$), $e\otimes c\to d$ ($\nu$),
+/// $b\otimes c\to f$ ($\kappa$), $a\otimes f\to d$ ($\lambda$). Cached in the
+/// derived-f64 B/C/D F tier
 /// (the derived-f64 B/C/D F cache (`cache::cache_bcd_f`)) on the plain six-label key.
 ///
 /// # Errors
@@ -277,12 +278,12 @@ pub fn f_symbol(
 // R-symbol (uncached — a single sparse join of two CGC).
 // ---------------------------------------------------------------------------
 
-/// The B/C/D R-symbol `R^{ab}_c` as a dense `N^c_{ab} × N^c_{ba}` matrix.
+/// The B/C/D R-symbol $R^{ab}_c$ as a dense $N^c_{ab} \times N^c_{ba}$ matrix.
 ///
 /// # Errors
 ///
 /// - [`FrError::Catalog`] wrapping [`CatalogError::WrongGroup`] if a label is
-///   foreign, or [`CatalogError::ZeroFusionChannel`] if `a ⊗ b → c` is empty.
+///   foreign, or [`CatalogError::ZeroFusionChannel`] if $a \otimes b \to c$ is empty.
 /// - Materialization errors surfaced through [`FrError::Catalog`].
 pub fn r_symbol(
     cat: &mut CanonicalCatalog,
