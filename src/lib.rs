@@ -87,6 +87,8 @@ mod frcore;
 
 pub use exact::SignedSqrtRational;
 pub use su2::{
-    canonical_regge_3j, canonical_regge_6j, clebsch_gordan, su2_f_symbol, su2_frobenius_schur,
-    su2_r_symbol, wigner_3j, wigner_6j, Regge3j, Regge6j, ReggeError, ReggePhase,
+    canonical_regge_3j, canonical_regge_6j, clebsch_gordan, clebsch_gordan_checked, su2_f_symbol,
+    su2_f_symbol_checked, su2_frobenius_schur, su2_r_symbol, su2_r_symbol_checked, wigner_3j,
+    wigner_3j_checked, wigner_6j, wigner_6j_checked, AdmissibilityViolation, Regge3j, Regge6j,
+    ReggeError, ReggePhase, Su2Error, Su2Fusion, Su2Irrep,
 };
