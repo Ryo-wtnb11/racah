@@ -131,12 +131,18 @@ choice is forced by the branching structure of each family, not by convenience.
 
 ### Gelfand–Tsetlin (GT) — used for $SU(N)$
 
-The subgroup chain
-$$ SU(N) \supset SU(N-1) \supset \cdots \supset SU(1) $$
-is **multiplicity-free**: at every step an irrep of $SU(k)$ restricts to a
-*direct sum of distinct* irreps of $SU(k-1)$, each appearing at most once.
-Iterating the chain therefore labels every basis vector of an $SU(N)$ irrep
-*uniquely* by the tower of intermediate labels — a **Gelfand–Tsetlin pattern**.
+The unitary subgroup chain
+$$ U(N) \supset U(N-1) \supset \cdots \supset U(1) $$
+is **multiplicity-free**: at every step an irrep of $U(k)$ restricts to a
+*direct sum of distinct* irreps of $U(k-1)$, each appearing at most once (Weyl
+branching, the highest weights interlacing $\lambda_1 \ge \mu_1 \ge \lambda_2
+\ge \cdots \ge \mu_{k-1} \ge \lambda_k$). Iterating the chain therefore labels
+every basis vector of an $SU(N)$ irrep *uniquely* by the tower of intermediate
+labels — a **Gelfand–Tsetlin pattern**. (The $SU$ chain alone is not enough:
+$SU(k) \supset SU(k-1)$ *does* have multiplicities — the adjoint $\mathbf{8}$ of
+$SU(3)$ restricts to $SU(2)$ as $\mathbf{2} \oplus \mathbf{2} \oplus \mathbf{3}
+\oplus \mathbf{1}$ — and it is the intermediate $U(1)$ charge at each step that
+separates the recurring copies.)
 Because the labelling is unique, the ladder (raising/lowering) operators have
 **exact closed-form matrix elements** in this basis $[1]$. That is what makes a
 direct, exact CGC construction possible, and it is specific to $SU(N)$: enumerate
@@ -150,7 +156,9 @@ The symplectic reduction chain $Sp(2r) \supset Sp(2r-2)$ is **not**
 multiplicity-free: intermediate irreps recur, so there is no GT-type pattern
 that labels states uniquely, and hence no practical closed-form ladder matrix
 elements. (The orthogonal chains $SO(n) \supset SO(n-1)$ *are* multiplicity-free,
-but their closed-form matrix elements are not production-viable either.) So for
+and explicit GT-type matrix elements for them do exist $[4, 12]$, but they are
+substantially more involved and no production implementation exists, so `racah`
+follows the generator bootstrap for the whole $B/C/D$ set.) So for
 the whole $B/C/D$ set `racah` uses a **generator bootstrap** that needs almost
 no family-specific structure:
 

@@ -12,10 +12,11 @@
 //! GT ladder matrices) up to the CGC nullspace solve, which is
 //! verification-gated floating point.
 //!
-//! The GT construction applies to SU(N) because the chain
-//! `SU(N) ⊃ SU(N-1) ⊃ … ⊃ SU(1)` is multiplicity-free: GT patterns label basis
-//! states uniquely, so the ladder operators have exact closed-form matrix
-//! elements. See [`docs/theory.md`] §5 for the rationale and
+//! The GT construction applies to SU(N) because the unitary chain
+//! `U(N) ⊃ U(N-1) ⊃ … ⊃ U(1)` is multiplicity-free (the intermediate U(1) charge
+//! separates copies the SU chain alone would repeat): GT patterns label basis
+//! states of an SU(N) irrep uniquely, so the ladder operators have exact
+//! closed-form matrix elements. See [`docs/theory.md`] §5 for the rationale and
 //! [`docs/references.md`] for the port provenance.
 //!
 //! [`docs/theory.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/theory.md

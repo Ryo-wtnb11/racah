@@ -31,10 +31,11 @@ blow-up.
 
 ## SU(N) — `cgc-gen`, Gelfand–Tsetlin construction
 
-**Why this construction.** The chain $SU(N) \supset SU(N-1) \supset \cdots
-\supset SU(1)$ is multiplicity-free, so states are labelled uniquely by
-Gelfand–Tsetlin patterns and the ladder operators have exact closed-form matrix
-elements $[1]$. That closed form is what makes a direct, exact CGC construction
+**Why this construction.** The unitary chain $U(N) \supset U(N-1) \supset \cdots
+\supset U(1)$ is multiplicity-free (the intermediate $U(1)$ charge at each step
+separates copies the $SU$ chain alone would repeat), so states of an $SU(N)$
+irrep are labelled uniquely by Gelfand–Tsetlin patterns and the ladder operators
+have exact closed-form matrix elements $[1]$. That closed form is what makes a direct, exact CGC construction
 possible, and it is $SU(N)$-specific (see [`docs/theory.md`](theory.md) §5).
 
 | Implementation area (`file::symbol`) | Reference (project, version, `file:symbol`) | What was taken | Why this reference / algorithm | Deviations |
@@ -50,7 +51,9 @@ possible, and it is $SU(N)$-specific (see [`docs/theory.md`](theory.md) §5).
 **Why this construction.** The symplectic chain $Sp(2r) \supset Sp(2r-2)$ has
 branching multiplicities, so no GT-type basis with practical closed-form matrix
 elements exists; the orthogonal chains $SO(n) \supset SO(n-1)$ are
-multiplicity-free but their closed forms are not production-viable either. So the
+multiplicity-free and explicit GT-type matrix elements for them do exist
+$[4, 12]$, but they are substantially more involved and no production
+implementation exists. So the
 whole $B/C/D$ set is built by a generator bootstrap — defining-rep seeds, tensor
 products, numeric highest-weight decomposition, harvest, recurse — which needs
 almost no family-specific structure. Its price, a procedurally-defined gauge, is
@@ -126,6 +129,11 @@ Every identifier below was verified against the publisher/preprint record.
     <https://github.com/Jutho/WignerSymbols.jl>.
 11. `wigner-symbols` Rust crate (v0.5.1), P. Ruffwind.
     <https://crates.io/crates/wigner-symbols>.
+12. A. I. Molev, "Gelfand-Tsetlin bases for classical Lie algebras," in
+    *Handbook of Algebra* **4**, M. Hazewinkel (ed.), Elsevier (2006),
+    pp. 109–170.
+    DOI: [10.1016/S1570-7954(06)80006-9](https://doi.org/10.1016/S1570-7954(06)80006-9);
+    arXiv: [math/0211289](https://arxiv.org/abs/math/0211289).
 
 The port also follows the public conventions and F/R contraction wiring of
 TensorKitSectors (the categorical-symmetry layer of TensorKit), cited inline
