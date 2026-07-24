@@ -72,9 +72,7 @@ Reference: `clebschgordan.jl:highest_weight_CGC`. Over the coupling pairs
 system expressing that every simple raising operator annihilates the coupled
 highest-weight state:
 
-```
-(J⁺_l(s1) ⊗ 𝟙 + 𝟙 ⊗ J⁺_l(s2)) |m1, m2⟩ = 0,   l = 1 … N−1
-```
+$$ (J^+_l(s_1) \otimes \mathbb{1} + \mathbb{1} \otimes J^+_l(s_2))\, |m_1, m_2\rangle = 0, \quad l = 1 \dots N-1 $$
 
 The raising matrices are the exact GT ladder matrices
 (`gtpatterns.jl:creation`, `sun::Irrep::creation`), entries `signedroot(coef)`.

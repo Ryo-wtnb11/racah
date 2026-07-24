@@ -70,9 +70,7 @@ Sz_prod[j] = Sz_a[j] ⊗ 1_b + 1_a ⊗ Sz_b[j]
 **Kronecker convention — gauge, pinned here.** The product basis index of
 `|m_a, m_b⟩` is
 
-```
-composite(m_a, m_b) = m_a + d_a · m_b
-```
+$$ \mathrm{composite}(m_a, m_b) = m_a + d_a \cdot m_b $$
 
 i.e. the **first** factor (`a`) is the *fast* (least-significant) index and the
 second (`b`) the slow index. This matches QSpace's

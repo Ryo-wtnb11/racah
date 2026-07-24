@@ -130,8 +130,8 @@ representation-theory background behind these objects, see
 ## What it computes
 
 - Irrep labels, dimensions, duals, Frobenius–Schur indicators.
-- Product decomposition: fusion multiplicities N^c_ab (exact combinatorics).
-- Clebsch–Gordan coefficients C^{ab→c} (m-basis tensors, outer multiplicity
+- Product decomposition: fusion multiplicities $N^c_{ab}$ (exact combinatorics).
+- Clebsch–Gordan coefficients $C^{ab\to c}$ (m-basis tensors, outer multiplicity
   as a trailing index).
 - Recoupling coefficients: F-symbols (contraction of four CGC over all
   magnetic indices, leaving the multiplicity indices) and R-symbols
@@ -196,13 +196,13 @@ chosen for convenience (the full argument is in
 - **SU(2)** — closed forms exist (Racah), so the 3j/6j/CGC/F/R are evaluated
   directly in exact big-rational arithmetic with a single final rounding; there
   is nothing to generate.
-- **SU(N)** — the unitary chain U(N) ⊃ U(N-1) ⊃ … ⊃ U(1) has multiplicity-free
+- **SU(N)** — the unitary chain $U(N) \supset U(N-1) \supset \dots \supset U(1)$ has multiplicity-free
   branching (the intermediate U(1) charge at each step separates copies that the
   SU chain alone would repeat), so basis states of an SU(N) irrep are labelled
   uniquely by Gelfand–Tsetlin patterns and the ladder operators have exact
   closed-form matrix elements (Alex–Kalus–Huckleberry–von Delft). That closed
   form is what makes the direct GT construction possible, and it is SU(N)-specific.
-- **SO(N) / Sp(2N)** — the symplectic chain Sp(2r) ⊃ Sp(2r-2) has branching
+- **SO(N) / Sp(2N)** — the symplectic chain $Sp(2r) \supset Sp(2r-2)$ has branching
   multiplicities, so no GT-type basis with practical closed-form matrix elements
   exists (the SO chains are multiplicity-free, and explicit GT-type matrix
   elements for them do exist — Gelfand–Tsetlin 1950; Molev — but they are
