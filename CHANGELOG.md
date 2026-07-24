@@ -5,6 +5,36 @@ All notable changes to this crate are documented here. The format follows
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with the
 value/gauge rule noted below.
 
+## [Unreleased]
+
+Generated-provider (`cgc-gen`) observability and convention-identity surface
+(issue [#47](https://github.com/Ryo-wtnb11/racah/issues/47)). This whole surface
+is **unstable: shape may change while the generated-provider contract is
+negotiated** — Cargo features cannot express instability tiers, so the rustdoc
+labels plus issue #47 are the ledger.
+
+### Added
+
+- **Generated-tier cache stats** (`cgc-gen`): `generated_cache_stats() ->
+  GeneratedCacheStats` (`#[non_exhaustive]`, reusing `TierStats`) reports the
+  four generated value tiers (SU(N) CGC / F, B/C/D CGC / F) per-tier plus a
+  field-wise `total()`. `GENERATED_CACHE_MAX_BYTES` (640 MiB) is the documented
+  aggregate ceiling, tied to the per-tier caps by a `const` assertion. Two-layer
+  cache story: base = `BASE_CACHE_MAX_BYTES`, generated =
+  `GENERATED_CACHE_MAX_BYTES`, whole = the documented sum; no cross-feature
+  constant. `reset()` clears the generated tiers alongside the base ones.
+- **Generated authority fingerprints** (`cgc-gen`):
+  `sun::sun_authority_fingerprint()` and `bcd::bcd_authority_fingerprint()`
+  (`&'static [u8]`). Their contract is weaker than the exact SU(2) fingerprint —
+  equal fingerprints identify the same convention, generation pipeline, and
+  tolerance policy, but do not imply byte-identical values or independently prove
+  numerical agreement (verification gates and oracles own that). Epochs are
+  per-family and independent. Backend identity is excluded by design.
+- **Backend structural-identity gate** (`cgc-gen`, D2): a test asserting the
+  discrete/structural generation outputs are a function of the convention alone
+  (stable across independent in-process runs), the single-backend reduction of
+  the cross-backend gate.
+
 ## [0.1.0] - 2026-07-24
 
 First tagged release of the v0 scope: the full representation-theory
@@ -56,4 +86,5 @@ SU(2) provider this rule is mechanized by `su2_authority_fingerprint()`: its
 epoch is bumped only on such a value-affecting release, so a fingerprint change
 and a breaking release are one reviewable event.
 
+[Unreleased]: https://github.com/Ryo-wtnb11/racah/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/Ryo-wtnb11/racah/releases/tag/v0.1.0
