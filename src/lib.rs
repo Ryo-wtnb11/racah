@@ -57,7 +57,13 @@
 pub mod cache;
 mod exact;
 mod primefactor;
-mod su2;
+
+/// Exact SU(2) recoupling: doubled-spin labels, the infallible closed-form
+/// Wigner 3j/6j, Clebsch–Gordan, F/R/Frobenius–Schur functions (zero
+/// convention for inadmissible tuples), and an additive *checked* surface
+/// (`Su2Irrep`, `wigner_6j_checked`, …) that returns a typed error instead of
+/// requiring consumers to infer validity from a zero coefficient.
+pub mod su2;
 
 /// Exact SU(N) representation combinatorics (Layer 1 of the `cgc-gen` track):
 /// GT patterns, Weyl dimension, duality, Littlewood–Richardson products, and
