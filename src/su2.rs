@@ -1565,6 +1565,49 @@ mod checked_tests {
         assert!(Su2Irrep::new(u32::MAX - 1).fusion(Su2Irrep::new(1)).is_ok());
     }
 
+    #[test]
+    fn fusion_full_back_drain_reaches_singlet_without_underflow() {
+        // Draining from the back down to lo = 0 (dj1 == dj2, the singlet
+        // channel) must not advance the cursor past the final element:
+        // `back -= 2` at back == 0 would underflow u32 and panic in debug.
+        let got: Vec<u32> = Su2Irrep::new(2)
+            .fusion(Su2Irrep::new(2))
+            .unwrap()
+            .rev()
+            .map(|s| s.dj())
+            .collect();
+        assert_eq!(got, vec![4, 2, 0]);
+    }
+
+    #[test]
+    fn fusion_full_forward_drain_at_u32_max_without_overflow() {
+        // Draining forward up to hi == u32::MAX must not advance the cursor
+        // past the final element: `front += 2` at front == u32::MAX would
+        // overflow and panic in debug. lo = MAX-2, hi = MAX (parity-consistent).
+        let got: Vec<u32> = Su2Irrep::new(u32::MAX - 1)
+            .fusion(Su2Irrep::new(1))
+            .unwrap()
+            .map(|s| s.dj())
+            .collect();
+        assert_eq!(got, vec![u32::MAX - 2, u32::MAX]);
+    }
+
+    #[test]
+    fn fusion_mixed_drain_to_singlet_without_underflow() {
+        // Alternating next/next_back to exhaustion, ending at lo = 0, must not
+        // underflow on either cursor. 2 x 2 = {0, 2, 4}.
+        let mut it = Su2Irrep::new(2).fusion(Su2Irrep::new(2)).unwrap();
+        let mut got = vec![
+            it.next().unwrap().dj(),      // front: 0
+            it.next_back().unwrap().dj(), // back: 4
+            it.next_back().unwrap().dj(), // back: 2 (lands cursor at lo = 0)
+        ];
+        assert!(it.next().is_none());
+        assert!(it.next_back().is_none());
+        got.sort_unstable();
+        assert_eq!(got, vec![0, 2, 4]);
+    }
+
     // -- Guard inventory: one red-first typed-error test per rule ------------
 
     #[test]
