@@ -1090,6 +1090,96 @@ pub fn su2_r_symbol_checked(dj1: u32, dj2: u32, dj3: u32) -> Result<f64, Su2Erro
     Ok(su2_r_symbol(dj1, dj2, dj3))
 }
 
+/// Opaque authority fingerprint of the base SU(2) provider.
+///
+/// The bytes identify the *convention set* that every returned SU(2)
+/// coefficient (3j, 6j, Clebsch–Gordan, F, R, Frobenius–Schur) is computed in.
+/// Their sole use is equality comparison: two builds that return the same
+/// fingerprint agree on every value-fixing convention below, so a consumer may
+/// persist the bytes next to data derived from these coefficients and later
+/// compare them to decide whether that derived data is still valid.
+///
+/// # Consumer contract
+///
+/// - **Opaque.** Treat the bytes as an identifier, not a document. Compare by
+///   equality only; never parse the tags or split on `:` / `=` — the internal
+///   shape is not a stable interface and may be reorganized without changing
+///   what the fingerprint *means* (as long as the epoch rule below holds).
+/// - **Stable across patch and minor releases.** The value is *not* derived
+///   from the crate version, source, docs, a pointer, or any process-local
+///   state, so a rebuild, a dependency bump, or an additive-API release leaves
+///   it byte-identical.
+/// - **Changes exactly with a value-affecting breaking release.** The trailing
+///   `epoch` is bumped by hand — and only — when a change can alter a returned
+///   coefficient value, its normalization, or the canonical convention it is
+///   expressed in. That is the same event class the crate's semantic-versioning
+///   contract already declares breaking (README, "Exactness contract", point 4
+///   "Versioned values"; the analogous SU(N) statement is `docs/gauge.md`), so
+///   "fingerprint changed ⇔ value-affecting breaking release" is one reviewable
+///   invariant. Adding the `cg` and `fs` tags keeps `epoch=1`: the fingerprint
+///   is still unreleased (no consumer has persisted these bytes), so extending
+///   the tag set now is not a compatibility break for anyone.
+/// - **Persist alongside derived data.** A consumer that caches or serializes
+///   anything computed from these coefficients may store the fingerprint with
+///   it and reject the cache on mismatch.
+///
+/// # Why a manual epoch, not a hash or the crate version
+///
+/// A hash of the source or docs is fragile (it moves on a comment edit or a
+/// refactor that changes no value) and not reviewable (a human cannot look at
+/// it and confirm it *should* have changed). The crate version moves on every
+/// patch, which would force consumers to re-derive on releases that change no
+/// value. A hand-bumped epoch makes the change an explicit, mutation-visible
+/// review event: the compatibility-policy test (`tests/su2_fingerprint.rs`)
+/// pins the exact bytes, so any value-affecting PR must touch that test, and
+/// updating it is where the breaking-release decision is recorded. (Rationale
+/// per the issue #43 design record.)
+///
+/// # Tags and the conventions they pin
+///
+/// Each tag names a convention the crate's docs already establish; nothing here
+/// invents a convention. Value-encoding conventions are included; the API shape
+/// (how labels are passed) is not — see the exclusions below.
+///
+/// - `model=bigrational-round-once` — the exact evaluation model: values are
+///   big-rational sums carried as [`SignedSqrtRational`] with a single final
+///   rounding to `f64` (module docs above; README "Exactness contract",
+///   "compute in rationals, round once").
+/// - `3j=condon-shortley` — the 3j sign convention ([`wigner_3j`] docs,
+///   "Condon-Shortley phase").
+/// - `cg=condon-shortley` — the Clebsch-Gordan convention: composed from the 3j
+///   via the standard relation with phase `(-1)^((dj2-dj1-dm3)/2)` and
+///   `sqrt(dj3+1)` normalization ([`clebsch_gordan`] docs). Tagged separately
+///   because that phase-and-normalization step is its own value convention, not
+///   pure 3j inheritance.
+/// - `6j=racah-single-sum` — the 6j evaluation ([`wigner_6j`] docs, "Racah
+///   single-sum closed form").
+/// - `f=tks-su2irrep` — the F-symbol convention: the TensorKitSectors
+///   `su2irrep.jl:Fsymbol` correspondence, including the exact 6j argument order
+///   and the `(-1)^(j1+j2+j3+j4)` phase. That convention is fixed by the exact F
+///   evaluation (the private `f_symbol_exact`, see the module's TensorKitSectors
+///   correspondence); [`su2_f_symbol`] is its cached `f64` presentation.
+/// - `r=tks-su2irrep` — the R-symbol convention: TensorKitSectors
+///   `su2irrep.jl:Rsymbol`, `(-1)^(j1+j2-j3)` on an admissible triangle
+///   ([`su2_r_symbol`] docs).
+/// - `fs=tks-su2irrep` — the Frobenius-Schur convention: `(-1)^dj`, the
+///   TensorKitSectors `su2irrep.jl` self-dual correspondence
+///   ([`su2_frobenius_schur`] docs). Tagged separately from `r` because it is a
+///   distinct formula, not the R-symbol convention.
+/// - `epoch=1` — the manual epoch (see above).
+///
+/// Deliberately **excluded**: the doubled-spin label encoding (`dj = 2j`) is
+/// input addressing / API shape, not a property of a returned value — changing
+/// it would be an API-compatibility matter that leaves every coefficient value
+/// unchanged, so it does not belong in a value fingerprint (design record: API
+/// shape is not included). The crate version and any source/doc hash are
+/// excluded for the reasons above.
+pub fn su2_authority_fingerprint() -> &'static [u8] {
+    // Manual epoch: bump the trailing `epoch=N` (and the literal in
+    // tests/su2_fingerprint.rs) only on a value-affecting breaking release.
+    b"racah:su2-exact:model=bigrational-round-once:3j=condon-shortley:cg=condon-shortley:6j=racah-single-sum:f=tks-su2irrep:r=tks-su2irrep:fs=tks-su2irrep:epoch=1"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

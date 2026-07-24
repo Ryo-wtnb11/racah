@@ -254,6 +254,13 @@ once): for generated families the single rounding point moves earlier — into
 the nullspace solve — while structure, gauge, and verification stay at the
 same standard.
 
+For the base SU(2) provider, `su2_authority_fingerprint()` returns opaque bytes
+that encode this convention set (the exact model plus the 3j/6j/F/R sign and
+normalization conventions) and change only on the value-affecting breaking
+release of point 4. Consumers compare them by equality and may persist them
+next to derived data; see the function's rustdoc for the full contract. (A
+consolidated "Provider contract" section follows in the docs pass.)
+
 ### Gauge continuity
 
 The SU(N) pipeline reproduces the gauge of its reference implementation by
