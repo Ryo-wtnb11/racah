@@ -302,9 +302,9 @@ impl Irrep {
         let mut acc = Ratio::<BigInt>::one();
         for k2 in 2..=n {
             for k1 in 1..k2 {
-                let d = (k2 - k1) as i64;
-                let numer = d + w[k1 - 1] - w[k2 - 1];
-                acc *= Ratio::new(BigInt::from(numer), BigInt::from(d));
+                let d = BigInt::from(k2 - k1);
+                let numer = &d + BigInt::from(w[k1 - 1]) - BigInt::from(w[k2 - 1]);
+                acc *= Ratio::new(numer, d);
             }
         }
         acc.to_integer()
@@ -749,6 +749,12 @@ mod tests {
         assert_eq!(irr(&[1, 1]).dim(), BigInt::from(8)); // adjoint
         assert_eq!(irr(&[2, 0]).dim(), BigInt::from(6));
         assert_eq!(irr(&[3, 0]).dim(), BigInt::from(10));
+    }
+
+    #[test]
+    fn weyl_dim_large_su2_labels_stay_exact() {
+        assert_eq!(irr(&[i64::MAX]).dim(), BigInt::from(1_u64) << 63);
+        assert_eq!(irr(&[i64::MAX - 1]).dim(), BigInt::from(i64::MAX));
     }
 
     #[test]
