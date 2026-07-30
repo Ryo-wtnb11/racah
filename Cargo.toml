@@ -42,9 +42,9 @@ num-traits = "0.2"
 # tenferro-rs on disk) resolves. Bumping `rev` is an ordinary reviewed commit.
 # Local work against an in-progress tenferro checkout uses a gitignored
 # `.cargo/config.toml` [patch] override -- see AGENTS.md.
-tenferro-linalg = { git = "https://github.com/tensor4all/tenferro-rs", rev = "68855c2b65b5adc42dccca9bac04fd136a8f14c8", default-features = false, optional = true }
-tenferro-cpu = { git = "https://github.com/tensor4all/tenferro-rs", rev = "68855c2b65b5adc42dccca9bac04fd136a8f14c8", default-features = false, optional = true }
-tenferro-runtime = { git = "https://github.com/tensor4all/tenferro-rs", rev = "68855c2b65b5adc42dccca9bac04fd136a8f14c8", default-features = false, optional = true }
+tenferro-linalg = { git = "https://github.com/tensor4all/tenferro-rs", rev = "5ef41cc9b1746c07aea2e7c7cb618ff255f6aa5e", default-features = false, optional = true }
+tenferro-cpu = { git = "https://github.com/tensor4all/tenferro-rs", rev = "5ef41cc9b1746c07aea2e7c7cb618ff255f6aa5e", default-features = false, optional = true }
+tenferro-runtime = { git = "https://github.com/tensor4all/tenferro-rs", rev = "5ef41cc9b1746c07aea2e7c7cb618ff255f6aa5e", default-features = false, optional = true }
 
 [dev-dependencies]
 # Oracle on the doubled-spin <= 254 overlap domain; pulls rug/GMP in tests
