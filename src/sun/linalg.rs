@@ -21,7 +21,7 @@
 
 use tenferro_cpu::CpuBackend;
 use tenferro_linalg::{QrGauge, QrOptions, TracedTensorLinalgExt};
-use tenferro_runtime::{GraphCompiler, GraphExecutor, Tensor, TracedTensor};
+use tenferro_runtime::{GraphCompiler, Runtime, Tensor, TracedTensor};
 
 use super::SunError;
 
@@ -41,12 +41,24 @@ fn run(outputs: &[&TracedTensor]) -> Result<Vec<Tensor>, SunError> {
     let program = compiler
         .compile_many(outputs)
         .map_err(|e| linalg_err("compile", e))?;
-    let mut executor = GraphExecutor::new(CpuBackend::new());
-    executor
-        .register_extension(tenferro_linalg::register_runtime)
+    let backend = CpuBackend::new();
+    let mut builder = Runtime::builder();
+    builder
+        .register_engine(
+            tenferro_cpu::runtime_engine_registration(&backend)
+                .map_err(|e| linalg_err("register", e))?,
+        )
         .map_err(|e| linalg_err("register", e))?;
-    executor
-        .run_many(&program)
+    let engine_id = tenferro_cpu::runtime_engine_id().map_err(|e| linalg_err("register", e))?;
+    builder
+        .install_extension_module(
+            tenferro_linalg::extension_module::<CpuBackend>(engine_id)
+                .map_err(|e| linalg_err("register", e))?,
+        )
+        .map_err(|e| linalg_err("register", e))?;
+    let runtime = builder.build().map_err(|e| linalg_err("register", e))?;
+    runtime
+        .run_compiled(&program, &[])
         .map_err(|e| linalg_err("run", e))
 }
 
