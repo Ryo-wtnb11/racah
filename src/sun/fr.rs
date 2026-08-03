@@ -24,7 +24,7 @@
 
 use std::sync::Arc;
 
-use super::{cgc, directproduct, Irrep, SunError};
+use super::{cgc, shared_directproduct, Irrep, SunError};
 use crate::frcore::{
     self, f_block_raw, f_unitarity_residual, hexagon_residual, pentagon_residual, r_block_raw,
     Family, MEntry,
@@ -35,8 +35,9 @@ pub use crate::frcore::{FBlock, RBlock};
 /// The SU(N) binding of the generic F/R core: a stateless zero-sized provider.
 ///
 /// Its `&mut self` methods (required by [`Family`]) delegate to the free
-/// functions [`cgc`] / [`directproduct`], which are backed by the process-global
-/// CGC cache. The `&mut` is vacuous here — no interior mutability, no lock — so
+/// functions [`cgc`] / [`shared_directproduct`], which are backed by the
+/// process-global CGC and product caches. The `&mut` is vacuous here — no
+/// provider-local interior mutability — so
 /// the shared core's `&mut`-provider seam (needed by the `&mut CanonicalCatalog`
 /// B/C/D provider) costs SU(N) nothing.
 struct SunFamily;
@@ -64,7 +65,10 @@ impl Family for SunFamily {
     }
 
     fn products(&mut self, a: &Irrep, b: &Irrep) -> Result<Vec<Irrep>, SunError> {
-        Ok(directproduct(a, b)?.into_keys().collect())
+        Ok(shared_directproduct(a, b)?
+            .iter()
+            .map(|(irrep, _)| irrep.clone())
+            .collect())
     }
 }
 
@@ -83,7 +87,7 @@ fn mult(a: &Irrep, b: &Irrep, c: &Irrep) -> Result<usize, SunError> {
             b: c.rank(),
         });
     }
-    Ok(directproduct(a, b)?.get(c).copied().unwrap_or(0) as usize)
+    Ok(shared_directproduct(a, b)?.multiplicity(c) as usize)
 }
 
 /// All labels of an F/R request share one rank, or [`SunError::RankMismatch`].
@@ -253,6 +257,26 @@ mod tests {
 
     fn irr(d: &[i64]) -> Irrep {
         Irrep::from_dynkin(d).unwrap()
+    }
+
+    #[test]
+    fn private_product_consumers_do_not_reconstruct_public_maps() {
+        crate::sun::reset_public_directproduct_reconstructions();
+
+        let trivial = Irrep::trivial(3).unwrap();
+        let three = irr(&[1, 0]);
+        let six = irr(&[2, 0]);
+        let mut family = SunFamily;
+        assert_eq!(family.mult(&trivial, &three, &three).unwrap(), 1);
+        assert_eq!(
+            family.products(&trivial, &three).unwrap().as_slice(),
+            std::slice::from_ref(&three)
+        );
+        let _ = f_symbol(&trivial, &three, &three, &six, &three, &six).unwrap();
+        assert_eq!(crate::sun::public_directproduct_reconstructions(), 0);
+
+        let _ = crate::sun::directproduct(&trivial, &three).unwrap();
+        assert_eq!(crate::sun::public_directproduct_reconstructions(), 1);
     }
 
     // ---- guard inventory: red-first ill-posed inputs ----

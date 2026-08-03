@@ -15,13 +15,20 @@ labels plus issue #47 are the ledger.
 
 ### Added
 
+- **Shared SU(N) product tier** (`cgc-gen`, issue #59): exact
+  `directproduct` decompositions are retained once as sorted shared channels
+  under an order-normalized irrep pair. The unchanged public API reconstructs
+  its `BTreeMap`; Racah-private multiplicity and channel consumers use the
+  shared value directly. The tier is bounded at 256 entries and a 128 KiB
+  retained-charge backstop, sized from the checked-in collector and a
+  downstream SU(3)+SU(4) Generic HomSpace/topology probe.
 - **Generated-tier cache stats** (`cgc-gen`): `generated_cache_stats() ->
   GeneratedCacheStats` (`#[non_exhaustive]`, reusing `TierStats`) reports the
-  four generated value tiers (SU(N) CGC / F, B/C/D CGC / F) per-tier plus a
+  five generated tiers (SU(N) product / CGC / F, B/C/D CGC / F) per-tier plus a
   field-wise `total()`. `GeneratedCacheStats` `bytes` fields are conservative
   retained charges of cache-owned entries, with container scaffolding,
   allocator/RSS costs, external clones, and returned values excluded.
-  `GENERATED_CACHE_MAX_BYTES` (640 MiB) is the documented aggregate
+  `GENERATED_CACHE_MAX_BYTES` (640 MiB + 128 KiB) is the documented aggregate
   retained-charge cap, tied to the per-tier caps by a `const` assertion.
   Two-layer cache story: base = `BASE_CACHE_MAX_BYTES`, generated =
   `GENERATED_CACHE_MAX_BYTES`, whole = the documented sum; no cross-feature

@@ -21,7 +21,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::linalg::{self, Mat};
-use super::{directproduct, GtPattern, Irrep, LadderEntry, SunError};
+use super::{shared_directproduct, GtPattern, Irrep, LadderEntry, SunError};
 
 /// Absolute singular-value tolerance for the highest-weight nullspace rank cut.
 /// Reference: `clebschgordan.jl:TOL_NULLSPACE = 1.0e-13`.
@@ -68,7 +68,7 @@ pub struct CgcEntry {
 /// m-basis tensor with the outer multiplicity carried on a trailing axis.
 ///
 /// Shape is $[\dim(s_1), \dim(s_2), \dim(s_3), N]$ with $N = N^{s_3}_{s_1 s_2}$ the
-/// Layer 1 fusion multiplicity ([`directproduct`]). Only nonzero entries (after
+/// Layer 1 fusion multiplicity ([`crate::sun::directproduct`]). Only nonzero entries (after
 /// the `TOL_PURGE` cut) are stored, sorted by `(m1, m2, m3, mu)`.
 ///
 /// Coefficient values realize the SUNRepresentations.jl v0.4.0 gauge (see
@@ -245,11 +245,10 @@ fn generate(
     let d1 = s1.patterns().len();
     let d2 = s2.patterns().len();
     let d3 = s3.patterns().len();
-    let expected = expected_override.unwrap_or_else(|| {
-        directproduct(s1, s2)
-            .map(|p| p.get(s3).copied().unwrap_or(0) as usize)
-            .unwrap_or(0)
-    });
+    let expected = match expected_override {
+        Some(expected) => expected,
+        None => shared_directproduct(s1, s2)?.multiplicity(s3) as usize,
+    };
 
     // Trivial couplings (clebschgordan.jl:trivial_CGC): 1 ⊗ s → s and s ⊗ 1 → s
     // are identity embeddings, no linear algebra.
@@ -862,6 +861,18 @@ mod tests {
                 found: 1
             }
         );
+    }
+
+    #[test]
+    fn private_generate_does_not_reconstruct_public_product_maps() {
+        crate::sun::reset_public_directproduct_reconstructions();
+
+        let trivial = Irrep::trivial(3).unwrap();
+        let three = irr(&[1, 0]);
+        let c = generate(&trivial, &three, &three, None).unwrap();
+
+        assert_eq!(c.multiplicity(), 1);
+        assert_eq!(crate::sun::public_directproduct_reconstructions(), 0);
     }
 
     #[test]

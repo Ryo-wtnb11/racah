@@ -54,6 +54,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
+use std::sync::Arc;
 
 use num_bigint::BigInt;
 use num_rational::Ratio;
@@ -219,6 +220,86 @@ impl std::error::Error for SunError {}
 pub struct Irrep {
     /// Normalized highest weight, length `N`, nonincreasing, last entry `0`.
     weight: Box<[i64]>,
+}
+
+/// Order-normalized key for one SU(N) tensor-product decomposition.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct SunProductKey {
+    left: Irrep,
+    right: Irrep,
+}
+
+impl SunProductKey {
+    pub(crate) fn new(a: &Irrep, b: &Irrep) -> Self {
+        let (left, right) = if a <= b { (a, b) } else { (b, a) };
+        Self {
+            left: left.clone(),
+            right: right.clone(),
+        }
+    }
+}
+
+impl crate::cache::CacheKeyCharge for SunProductKey {
+    fn key_bytes(&self) -> usize {
+        self.left.key_bytes().saturating_add(self.right.key_bytes())
+    }
+}
+
+/// Shared, sorted channels of one SU(N) tensor-product decomposition.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SunProduct(Arc<[(Irrep, u32)]>);
+
+impl SunProduct {
+    pub(crate) fn from_map(product: BTreeMap<Irrep, u32>) -> Self {
+        Self(product.into_iter().collect())
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&Irrep, u32)> {
+        self.0
+            .iter()
+            .map(|(irrep, multiplicity)| (irrep, *multiplicity))
+    }
+
+    pub(crate) fn multiplicity(&self, irrep: &Irrep) -> u32 {
+        self.0
+            .binary_search_by(|(candidate, _)| candidate.cmp(irrep))
+            .map(|index| self.0[index].1)
+            .unwrap_or(0)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static PUBLIC_DIRECTPRODUCT_RECONSTRUCTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_public_directproduct_reconstructions() {
+    PUBLIC_DIRECTPRODUCT_RECONSTRUCTIONS.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn public_directproduct_reconstructions() -> usize {
+    PUBLIC_DIRECTPRODUCT_RECONSTRUCTIONS.with(std::cell::Cell::get)
+}
+
+impl crate::cache::CacheCharge for SunProduct {
+    fn value_bytes(&self) -> usize {
+        std::mem::size_of::<Self>()
+            .saturating_add(2 * std::mem::size_of::<usize>())
+            .saturating_add(std::mem::size_of_val(self.0.as_ref()))
+            .saturating_add(
+                self.0
+                    .iter()
+                    .map(|(irrep, _)| std::mem::size_of_val(irrep.weight.as_ref()))
+                    .sum::<usize>(),
+            )
+    }
 }
 
 impl crate::cache::CacheKeyCharge for Irrep {
@@ -568,15 +649,28 @@ fn subrow_rec(j: usize, m: usize, toprow: &[i64], cur: &mut Vec<i64>, out: &mut 
 /// iterates the smaller-dimensional basis; we replicate the `dim` swap (the
 /// result is independent of it, but the port stays faithful).
 pub fn directproduct(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, SunError> {
+    let product = shared_directproduct(a, b)?;
+    #[cfg(test)]
+    PUBLIC_DIRECTPRODUCT_RECONSTRUCTIONS.with(|count| count.set(count.get() + 1));
+    Ok(product
+        .iter()
+        .map(|(irrep, multiplicity)| (irrep.clone(), multiplicity))
+        .collect())
+}
+
+pub(crate) fn shared_directproduct(a: &Irrep, b: &Irrep) -> Result<SunProduct, SunError> {
     if a.rank() != b.rank() {
         return Err(SunError::RankMismatch {
             a: a.rank(),
             b: b.rank(),
         });
     }
-    if a.dim() > b.dim() {
-        return directproduct(b, a);
-    }
+    let key = SunProductKey::new(a, b);
+    Ok(crate::cache::cache_sun_product().get_or_compute(key, || directproduct_uncached(a, b)))
+}
+
+fn directproduct_uncached(a: &Irrep, b: &Irrep) -> SunProduct {
+    let (a, b) = if a.dim() <= b.dim() { (a, b) } else { (b, a) };
     let n = a.rank();
     let mut result: BTreeMap<Irrep, u32> = BTreeMap::new();
     for m in a.patterns() {
@@ -603,7 +697,7 @@ pub fn directproduct(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, SunEr
             *result.entry(s).or_insert(0) += 1;
         }
     }
-    Ok(result)
+    SunProduct::from_map(result)
 }
 
 /// `sign(coef) * sqrt(|coef|)` as an exact [`SignedSqrtRational`], matching
@@ -865,6 +959,89 @@ mod tests {
     #[test]
     fn directproduct_commutes_and_dual_twist() {
         assert_commute_and_dual_twist(&irr(&[2, 1]), &irr(&[1, 1]));
+    }
+
+    #[test]
+    #[ignore = "release-mode product access collector; not a CI timing gate"]
+    fn sun_product_private_collector() {
+        use std::hint::black_box;
+        use std::time::Instant;
+
+        let a = irr(&[1, 1]);
+        let b = irr(&[1, 1]);
+        let channel = irr(&[1, 1]);
+        let product = shared_directproduct(&a, &b).unwrap();
+        let repetitions = 1_000_000u32;
+
+        let started = Instant::now();
+        for _ in 0..repetitions {
+            black_box(product.multiplicity(black_box(&channel)));
+        }
+        let shared_multiplicity = started.elapsed();
+
+        let started = Instant::now();
+        for _ in 0..repetitions {
+            black_box(
+                product
+                    .iter()
+                    .map(|(_, multiplicity)| multiplicity)
+                    .sum::<u32>(),
+            );
+        }
+        let shared_channels = started.elapsed();
+
+        let started = Instant::now();
+        for _ in 0..repetitions {
+            black_box(
+                shared_directproduct(black_box(&a), black_box(&b))
+                    .unwrap()
+                    .multiplicity(black_box(&channel)),
+            );
+        }
+        let cached_shared_multiplicity = started.elapsed();
+
+        let started = Instant::now();
+        for _ in 0..repetitions {
+            black_box(
+                shared_directproduct(black_box(&a), black_box(&b))
+                    .unwrap()
+                    .iter()
+                    .map(|(_, multiplicity)| multiplicity)
+                    .sum::<u32>(),
+            );
+        }
+        let cached_shared_channels = started.elapsed();
+
+        let started = Instant::now();
+        for _ in 0..repetitions {
+            let map = directproduct(black_box(&a), black_box(&b)).unwrap();
+            black_box(map.get(black_box(&channel)).copied().unwrap_or(0));
+        }
+        let public_multiplicity = started.elapsed();
+
+        let started = Instant::now();
+        for _ in 0..repetitions {
+            black_box(
+                directproduct(black_box(&a), black_box(&b))
+                    .unwrap()
+                    .into_keys()
+                    .collect::<Vec<_>>(),
+            );
+        }
+        let public_channels = started.elapsed();
+
+        let ns = |elapsed: std::time::Duration| elapsed.as_nanos() as f64 / repetitions as f64;
+        eprintln!(
+            "SUN_PRODUCT_PRIVATE_ACCESS case=su3_8x8 channels={} repetitions={} shared_value_multiplicity_ns={:.3} shared_value_channels_ns={:.3} cached_shared_multiplicity_ns={:.3} cached_shared_channels_ns={:.3} public_multiplicity_ns={:.3} public_channels_ns={:.3}",
+            product.0.len(),
+            repetitions,
+            ns(shared_multiplicity),
+            ns(shared_channels),
+            ns(cached_shared_multiplicity),
+            ns(cached_shared_channels),
+            ns(public_multiplicity),
+            ns(public_channels),
+        );
     }
 
     fn assert_dim_sum_rule(a: &Irrep, b: &Irrep) {
