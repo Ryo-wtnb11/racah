@@ -82,6 +82,18 @@ fn sun_product_cache_contract() {
     assert_eq!(warm.misses, misses, "warm call must not re-sweep");
     assert_eq!(warm.hits, hits + 1);
 
+    // Cheap one-channel products isolate the production entry bound: all 256
+    // retained entries together remain below the 128 KiB charge backstop.
+    cache::reset();
+    let trivial = Irrep::trivial(3).unwrap();
+    for label in 1..=257 {
+        let _ = directproduct(&trivial, &irr(&[label, 0])).unwrap();
+    }
+    let entry_bound = cache::generated_cache_stats().sun_product;
+    assert_eq!(entry_bound.entries, 256);
+    assert_eq!(entry_bound.evictions, 1);
+    assert!(entry_bound.bytes < (128 << 10), "byte bound fired first");
+
     // The dedicated allocation-free SU(2) decomposition remains independent
     // and uncached by this generated SU(N) tier.
     cache::reset();
