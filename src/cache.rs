@@ -985,7 +985,7 @@ mod tests {
         use crate::bcd::{Irrep as BcdIrrep, Series};
         use crate::sun::Irrep as SunIrrep;
 
-        let sun = |label| SunIrrep::from_dynkin(&vec![label; 12]).unwrap();
+        let sun = |label| SunIrrep::from_dynkin(&[label; 12]).unwrap();
         let first: CgcKey = (sun(1), sun(1), sun(1));
         let second: CgcKey = (sun(2), sun(2), sun(2));
         let one_entry_budget = entry_charge(&first, &1.0f64);
