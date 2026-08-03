@@ -864,6 +864,18 @@ mod tests {
     }
 
     #[test]
+    fn private_generate_does_not_reconstruct_public_product_maps() {
+        crate::sun::reset_public_directproduct_reconstructions();
+
+        let trivial = Irrep::trivial(3).unwrap();
+        let three = irr(&[1, 0]);
+        let c = generate(&trivial, &three, &three, None).unwrap();
+
+        assert_eq!(c.multiplicity(), 1);
+        assert_eq!(crate::sun::public_directproduct_reconstructions(), 0);
+    }
+
+    #[test]
     fn su3_adjoint_channel_generates_and_caches_equal() {
         let c = cgc(&irr(&[1, 0]), &irr(&[0, 1]), &irr(&[1, 1])).unwrap();
         assert_eq!(c.multiplicity(), 1);
