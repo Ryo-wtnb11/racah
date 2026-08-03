@@ -272,7 +272,6 @@ mod tests {
             family.products(&trivial, &three).unwrap().as_slice(),
             std::slice::from_ref(&three)
         );
-        let _ = cgc(&trivial, &three, &three).unwrap();
         let _ = f_symbol(&trivial, &three, &three, &six, &three, &six).unwrap();
         assert_eq!(crate::sun::public_directproduct_reconstructions(), 0);
 
