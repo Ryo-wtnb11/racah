@@ -259,6 +259,27 @@ mod tests {
         Irrep::from_dynkin(d).unwrap()
     }
 
+    #[test]
+    fn private_product_consumers_do_not_reconstruct_public_maps() {
+        crate::sun::reset_public_directproduct_reconstructions();
+
+        let trivial = Irrep::trivial(3).unwrap();
+        let three = irr(&[1, 0]);
+        let six = irr(&[2, 0]);
+        let mut family = SunFamily;
+        assert_eq!(family.mult(&trivial, &three, &three).unwrap(), 1);
+        assert_eq!(
+            family.products(&trivial, &three).unwrap().as_slice(),
+            std::slice::from_ref(&three)
+        );
+        let _ = cgc(&trivial, &three, &three).unwrap();
+        let _ = f_symbol(&trivial, &three, &three, &six, &three, &six).unwrap();
+        assert_eq!(crate::sun::public_directproduct_reconstructions(), 0);
+
+        let _ = crate::sun::directproduct(&trivial, &three).unwrap();
+        assert_eq!(crate::sun::public_directproduct_reconstructions(), 1);
+    }
+
     // ---- guard inventory: red-first ill-posed inputs ----
 
     #[test]

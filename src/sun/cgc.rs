@@ -68,7 +68,7 @@ pub struct CgcEntry {
 /// m-basis tensor with the outer multiplicity carried on a trailing axis.
 ///
 /// Shape is $[\dim(s_1), \dim(s_2), \dim(s_3), N]$ with $N = N^{s_3}_{s_1 s_2}$ the
-/// Layer 1 fusion multiplicity ([`directproduct`]). Only nonzero entries (after
+/// Layer 1 fusion multiplicity ([`crate::sun::directproduct`]). Only nonzero entries (after
 /// the `TOL_PURGE` cut) are stored, sorted by `(m1, m2, m3, mu)`.
 ///
 /// Coefficient values realize the SUNRepresentations.jl v0.4.0 gauge (see

@@ -632,7 +632,7 @@ mod sun_product_cache {
     // topology sequence retained 85 rank-separated pairs charging 54,504 bytes.
     // These bounds give 2.51x entry and 2.40x retained-charge headroom. The byte
     // bound is a retained-charge backstop, not a live-memory ceiling.
-    const SUN_PRODUCT_MAX_ENTRIES: usize = 256;
+    pub(super) const SUN_PRODUCT_MAX_ENTRIES: usize = 256;
     pub(super) const SUN_PRODUCT_MAX_BYTES: usize = 128 << 10;
 
     pub(crate) static CACHE_SUN_PRODUCT: LazyLock<FifoCache<SunProductKey, SunProduct>> =
@@ -1025,6 +1025,90 @@ mod tests {
         );
         let bcd_irrep_bytes = std::mem::size_of::<BcdIrrep>() + 12 * std::mem::size_of::<i64>();
         assert_eq!(bcd_key.key_bytes(), 6 * bcd_irrep_bytes);
+    }
+
+    #[cfg(feature = "cgc-gen")]
+    #[test]
+    fn sun_product_tier_caps_charge_and_oversize_eviction_are_exact() {
+        use super::sun_product_cache::{SUN_PRODUCT_MAX_BYTES, SUN_PRODUCT_MAX_ENTRIES};
+        use crate::sun::{Irrep as SunIrrep, SunProduct, SunProductKey};
+        use std::collections::BTreeMap;
+
+        assert_eq!(SUN_PRODUCT_MAX_ENTRIES, 256);
+        assert_eq!(SUN_PRODUCT_MAX_BYTES, 128 << 10);
+
+        let a = SunIrrep::from_dynkin(&[2, 1]).unwrap();
+        let b = SunIrrep::from_dynkin(&[1, 2]).unwrap();
+        let key = SunProductKey::new(&a, &b);
+        let key_bytes = 2 * std::mem::size_of::<SunIrrep>()
+            + (a.rank() + b.rank()) * std::mem::size_of::<i64>();
+        assert_eq!(key.key_bytes(), key_bytes);
+
+        let trivial = SunIrrep::trivial(3).unwrap();
+        let adjoint = SunIrrep::from_dynkin(&[1, 1]).unwrap();
+        let product =
+            SunProduct::from_map(BTreeMap::from([(trivial.clone(), 1), (adjoint.clone(), 2)]));
+        let value_bytes = std::mem::size_of::<SunProduct>()
+            + 2 * std::mem::size_of::<usize>()
+            + 2 * std::mem::size_of::<(SunIrrep, u32)>()
+            + (trivial.rank() + adjoint.rank()) * std::mem::size_of::<i64>();
+        assert_eq!(product.value_bytes(), value_bytes);
+
+        let charge = value_bytes + 2 * key_bytes;
+        assert_eq!(entry_charge(&key, &product), charge);
+        let cache: FifoCache<SunProductKey, SunProduct> = FifoCache::new(usize::MAX, charge - 1);
+        assert_eq!(
+            cache.get_or_compute(key, || product.clone()),
+            product,
+            "an oversize exact value is still returned"
+        );
+        assert_eq!(
+            cache.tier_stats(),
+            TierStats {
+                misses: 1,
+                evictions: 1,
+                ..TierStats::default()
+            }
+        );
+    }
+
+    #[cfg(feature = "cgc-gen")]
+    #[test]
+    fn concurrent_sun_product_misses_return_the_write_recheck_winner() {
+        use crate::sun::{Irrep as SunIrrep, SunProduct, SunProductKey};
+        use std::collections::BTreeMap;
+        use std::sync::{Arc, Barrier};
+
+        let a = SunIrrep::trivial(3).unwrap();
+        let b = SunIrrep::from_dynkin(&[1, 0]).unwrap();
+        let key = SunProductKey::new(&a, &b);
+        let channel = b.clone();
+        let cache = Arc::new(FifoCache::new(16, 1 << 20));
+        let all_computing = Arc::new(Barrier::new(8));
+        let products = (0..8)
+            .map(|_| {
+                let cache = Arc::clone(&cache);
+                let key = key.clone();
+                let channel = channel.clone();
+                let all_computing = Arc::clone(&all_computing);
+                std::thread::spawn(move || {
+                    cache.get_or_compute(key, || {
+                        let product = SunProduct::from_map(BTreeMap::from([(channel, 1)]));
+                        all_computing.wait();
+                        product
+                    })
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect::<Vec<_>>();
+
+        assert!(products[1..]
+            .iter()
+            .all(|product| products[0].ptr_eq(product)));
+        assert_eq!(cache.tier_stats().entries, 1);
+        assert_eq!(cache.tier_stats().misses, 8);
     }
 
     #[cfg(feature = "cgc-gen")]

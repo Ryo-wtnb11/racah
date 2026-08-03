@@ -230,7 +230,7 @@ pub(crate) struct SunProductKey {
 }
 
 impl SunProductKey {
-    fn new(a: &Irrep, b: &Irrep) -> Self {
+    pub(crate) fn new(a: &Irrep, b: &Irrep) -> Self {
         let (left, right) = if a <= b { (a, b) } else { (b, a) };
         Self {
             left: left.clone(),
@@ -250,7 +250,7 @@ impl crate::cache::CacheKeyCharge for SunProductKey {
 pub(crate) struct SunProduct(Arc<[(Irrep, u32)]>);
 
 impl SunProduct {
-    fn from_map(product: BTreeMap<Irrep, u32>) -> Self {
+    pub(crate) fn from_map(product: BTreeMap<Irrep, u32>) -> Self {
         Self(product.into_iter().collect())
     }
 
@@ -266,6 +266,26 @@ impl SunProduct {
             .map(|index| self.0[index].1)
             .unwrap_or(0)
     }
+
+    #[cfg(test)]
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static PUBLIC_DIRECTPRODUCT_RECONSTRUCTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_public_directproduct_reconstructions() {
+    PUBLIC_DIRECTPRODUCT_RECONSTRUCTIONS.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn public_directproduct_reconstructions() -> usize {
+    PUBLIC_DIRECTPRODUCT_RECONSTRUCTIONS.with(std::cell::Cell::get)
 }
 
 impl crate::cache::CacheCharge for SunProduct {
@@ -629,7 +649,10 @@ fn subrow_rec(j: usize, m: usize, toprow: &[i64], cur: &mut Vec<i64>, out: &mut 
 /// iterates the smaller-dimensional basis; we replicate the `dim` swap (the
 /// result is independent of it, but the port stays faithful).
 pub fn directproduct(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, SunError> {
-    Ok(shared_directproduct(a, b)?
+    let product = shared_directproduct(a, b)?;
+    #[cfg(test)]
+    PUBLIC_DIRECTPRODUCT_RECONSTRUCTIONS.with(|count| count.set(count.get() + 1));
+    Ok(product
         .iter()
         .map(|(irrep, multiplicity)| (irrep.clone(), multiplicity))
         .collect())
