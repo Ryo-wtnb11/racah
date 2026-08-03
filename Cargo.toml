@@ -76,6 +76,12 @@ name = "sun_fr"
 harness = false
 required-features = ["cgc-gen"]
 
+# SU(N) product working-set collector plus cold/warm decomposition timing.
+[[bench]]
+name = "sun_product"
+harness = false
+required-features = ["cgc-gen"]
+
 # B/C/D F-symbol generation cost (cold catalog+sweep+contraction + warm hit).
 [[bench]]
 name = "bcd_fr"
