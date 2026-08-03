@@ -111,9 +111,9 @@ impl Cgc {
     pub fn nnz(&self) -> usize {
         self.entries.len()
     }
-    /// Retained-storage bytes (used by the byte-accounted cache): the entry
-    /// vector plus the three irrep weight buffers. Over-counts rather than
-    /// under-counts so a cache byte bound stays a true ceiling.
+    /// Conservative retained charge used by the cache: the entry vector plus
+    /// the three irrep weight buffers and value shell. Container scaffolding,
+    /// allocator metadata/RSS, and external clones are outside this charge.
     pub(crate) fn storage_bytes(&self) -> usize {
         self.entries.len() * std::mem::size_of::<CgcEntry>()
             + std::mem::size_of::<Cgc>()

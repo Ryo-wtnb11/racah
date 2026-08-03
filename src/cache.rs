@@ -30,17 +30,20 @@
 //! # Base cache resource contract (static partition)
 //!
 //! The three base SU(2) tiers (3j, 6j, derived-F) are each bounded
-//! independently by a per-tier entry and byte cap; the documented aggregate
-//! ceiling [`BASE_CACHE_MAX_BYTES`] is simply their sum. This is a **static
+//! independently by a per-tier entry and retained-charge cap; the documented
+//! aggregate cap [`BASE_CACHE_MAX_BYTES`] is simply their sum. This is a **static
 //! partition, not a dynamic shared pool**: a shared budget would couple
 //! eviction across tiers whose entries differ wildly in size (big-rational
 //! exact symbols vs `f64` scalars) and whose hit patterns are unrelated, for no
 //! measured benefit — so it is deliberately rejected here and revisited only
-//! with measurements. Because each per-tier byte cap is a *true* ceiling (the
-//! `CacheCharge` accounting over-counts), the aggregate bound holds as a
-//! corollary rather than needing global enforcement. Per-tier and total
-//! statistics are exposed via [`base_cache_stats`]; reset ownership is on
-//! [`reset`]. (Design record: racah #43, PR-A.)
+//! with measurements. Because each per-tier charged-entry cap is enforced, the
+//! aggregate charged-entry bound
+//! holds as a corollary rather than needing global enforcement. The charge
+//! covers entries currently owned by the cache. It excludes `HashMap`/
+//! `VecDeque` retained capacity and scaffolding, allocator metadata and RSS,
+//! transient or external clones, and values returned through public APIs.
+//! Per-tier and total statistics are exposed via [`base_cache_stats`]; reset
+//! ownership is on [`reset`]. (Design record: racah #43, PR-A.)
 
 use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
@@ -56,16 +59,16 @@ const DEFAULT_MAX_ENTRIES: usize = 1 << 20;
 
 /// Default byte cap per kind. Conservative: at the ~O(1)-limb sizes typical of
 /// small-label TN work an entry charges well under a kilobyte, so 64 MiB holds
-/// a large working set while bounding worst-case retained memory.
+/// a large working set while bounding the conservative charge of retained
+/// entries.
 const DEFAULT_MAX_BYTES: usize = 64 << 20;
 
-/// Aggregate retained-byte ceiling for the three base SU(2) tiers (3j, 6j,
-/// derived-F), currently `192 MiB` = `3 × 64 MiB`.
+/// Aggregate conservative retained-charge cap for the three base SU(2) tiers
+/// (3j, 6j, derived-F), currently `192 MiB` = `3 × 64 MiB`.
 ///
 /// This is a **documented static partition**, not a shared budget: each tier is
-/// bounded independently by its own per-tier byte cap (`DEFAULT_MAX_BYTES`),
-/// which is a *true* ceiling (the `CacheCharge` byte accounting over-counts,
-/// never under-counts). The aggregate is therefore a provable corollary —
+/// bounded independently by its own per-tier charged-entry cap
+/// (`DEFAULT_MAX_BYTES`). The aggregate is therefore a provable corollary —
 /// `Σ tier bytes ≤ Σ tier caps = BASE_CACHE_MAX_BYTES` — rather than an
 /// enforced global limit. A dynamic shared pool (tiers competing for one
 /// budget) is deliberately rejected: it would couple eviction across tiers with
@@ -83,7 +86,7 @@ pub const BASE_CACHE_MAX_BYTES: usize = 192 << 20;
 // shared `DEFAULT_MAX_BYTES` they are all built from is the enforceable tie.)
 const _: () = assert!(BASE_CACHE_MAX_BYTES == 3 * DEFAULT_MAX_BYTES);
 
-/// Aggregate retained-byte ceiling for the four generated `cgc-gen` tiers
+/// Aggregate conservative retained-charge cap for the four generated `cgc-gen` tiers
 /// (SU(N) CGC, SU(N) F, B/C/D CGC, B/C/D F), currently `640 MiB` =
 /// `256 MiB + 64 MiB + 256 MiB + 64 MiB`.
 ///
@@ -93,23 +96,22 @@ const _: () = assert!(BASE_CACHE_MAX_BYTES == 3 * DEFAULT_MAX_BYTES);
 ///
 /// # Two-layer aggregate story (why there is no single crate-wide constant)
 ///
-/// Retained coefficient-cache memory is documented in two layers, not one
+/// Retained coefficient-cache entry charge is documented in two layers, not one
 /// number:
 ///
 /// - the base SU(2) tiers are bounded by [`BASE_CACHE_MAX_BYTES`] (a static
 ///   partition with a const-proved sum — see its docs);
 /// - the generated tiers are bounded by this constant.
 ///
-/// The whole-process coefficient-cache ceiling is the **documented sum**
+/// The whole-process coefficient-cache charged-entry cap is the **documented sum**
 /// `BASE_CACHE_MAX_BYTES + GENERATED_CACHE_MAX_BYTES`. There is deliberately no
 /// single cross-feature constant spanning both: this constant only exists under
-/// `cgc-gen`, so a "one number" whole-crate ceiling would *change value with the
-/// feature flag* and read as if the base ceiling shrank when `cgc-gen` is off —
+/// `cgc-gen`, so a "one number" whole-crate cap would *change value with the
+/// feature flag* and read as if the base cap shrank when `cgc-gen` is off —
 /// misleading. Two feature-honest layers instead (racah #47 design record 2,
-/// D4). Like the base ceiling this is a **static partition, not a shared pool**:
-/// each tier's per-tier byte cap is a true ceiling (the `CacheCharge` accounting
-/// over-counts), so `Σ tier bytes ≤ Σ tier caps = GENERATED_CACHE_MAX_BYTES`
-/// holds as a corollary without global enforcement.
+/// D4). Like the base cap this is a **static partition, not a shared pool**:
+/// `Σ tier charged bytes ≤ Σ tier caps = GENERATED_CACHE_MAX_BYTES` holds as a
+/// corollary without global enforcement.
 ///
 /// Per-tier and total statistics are exposed via [`generated_cache_stats`]. The
 /// `CanonicalCatalog` is *not* a value cache (generator state, its own byte
@@ -182,7 +184,7 @@ pub struct TierStats {
 /// filler can interleave between the tier reads, so the total is only
 /// eventually consistent. Racah does not take a global lock spanning the tiers —
 /// that would serialize otherwise-independent lookups for no correctness gain
-/// (the individual tier bounds are already true ceilings).
+/// (the individual tier charged-entry caps already hold independently).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct BaseCacheStats {
     /// The exact 3j tier.
@@ -218,8 +220,8 @@ impl BaseCacheStats {
 ///
 /// Reuses the base [`TierStats`] type (no new vocabulary). This covers **only**
 /// the generated SU(N)/B/C/D tiers — the base SU(2) surface is
-/// [`base_cache_stats`], and the aggregate [`stats`] sums both. Retained bytes
-/// are bounded by [`GENERATED_CACHE_MAX_BYTES`]
+/// [`base_cache_stats`], and the aggregate [`stats`] sums both. Conservative
+/// retained entry charge is capped by [`GENERATED_CACHE_MAX_BYTES`]
 /// (`total().bytes ≤ GENERATED_CACHE_MAX_BYTES`).
 ///
 /// # Snapshot consistency
@@ -230,7 +232,7 @@ impl BaseCacheStats {
 /// concurrent filler can interleave between the tier reads, so the total is only
 /// eventually consistent. Racah does not take a global lock spanning the tiers —
 /// that would serialize otherwise-independent lookups for no correctness gain
-/// (the individual tier bounds are already true ceilings). Same contract as
+/// (the individual tier charged-entry caps hold independently). Same contract as
 /// [`BaseCacheStats`].
 #[cfg(feature = "cgc-gen")]
 #[non_exhaustive]
@@ -271,17 +273,62 @@ impl GeneratedCacheStats {
     }
 }
 
-/// Conservative retained-byte charge for a stored *value*, implemented per
-/// value type so the FIFO byte bound stays a true ceiling whatever the tier
-/// stores.
+/// Conservative retained-byte charge for a stored value, implemented per value
+/// type as one component of the cache-owned entry charge.
 ///
 /// The exact tier stores a [`SignedSqrtRational`] whose size is data-dependent
 /// (big-integer limbs), so it must measure itself; the derived-f64 tier stores
-/// a fixed-size scalar. Keeping the charge on the value keeps [`entry_charge`]
-/// generic over both without a size query the FIFO machinery could get wrong.
+/// a fixed-size scalar. Keys use the sibling [`CacheKeyCharge`] contract so
+/// heap-backed generated labels cannot escape the same charged-entry cap.
 pub(crate) trait CacheCharge {
     /// Bytes charged for one stored value (over-counts, never under-counts).
     fn value_bytes(&self) -> usize;
+}
+
+/// Conservative retained-byte charge for one stored key.
+///
+/// A FIFO entry owns two key clones (the hash map key and insertion-order key),
+/// so heap-backed labels must report both their inline shell and owned backing.
+pub(crate) trait CacheKeyCharge {
+    /// Bytes retained by one key clone (over-counts, never under-counts).
+    fn key_bytes(&self) -> usize;
+}
+
+macro_rules! fixed_key_charge {
+    ($($ty:ty),+ $(,)?) => {
+        $(
+            impl CacheKeyCharge for $ty {
+                fn key_bytes(&self) -> usize {
+                    std::mem::size_of::<Self>()
+                }
+            }
+        )+
+    };
+}
+
+fixed_key_charge!(u32, Regge3j, Regge6j, FKey);
+
+#[cfg(feature = "cgc-gen")]
+impl<I: CacheKeyCharge> CacheKeyCharge for (I, I, I) {
+    fn key_bytes(&self) -> usize {
+        self.0
+            .key_bytes()
+            .saturating_add(self.1.key_bytes())
+            .saturating_add(self.2.key_bytes())
+    }
+}
+
+#[cfg(feature = "cgc-gen")]
+impl<I: CacheKeyCharge> CacheKeyCharge for (I, I, I, I, I, I) {
+    fn key_bytes(&self) -> usize {
+        self.0
+            .key_bytes()
+            .saturating_add(self.1.key_bytes())
+            .saturating_add(self.2.key_bytes())
+            .saturating_add(self.3.key_bytes())
+            .saturating_add(self.4.key_bytes())
+            .saturating_add(self.5.key_bytes())
+    }
 }
 
 impl CacheCharge for SignedSqrtRational {
@@ -303,11 +350,14 @@ impl CacheCharge for f64 {
 /// Conservative retained-byte charge for one stored entry keyed by `K`.
 ///
 /// Counts the value (via [`CacheCharge`]) plus the key stored twice (once in
-/// the map, once in the FIFO order queue). It over-counts rather than
-/// under-counts, so the byte bound is a true ceiling on live memory, never an
-/// underestimate that could let the map grow past it.
-fn entry_charge<K, V: CacheCharge>(v: &V) -> usize {
-    v.value_bytes() + 2 * std::mem::size_of::<K>()
+/// the map, once in the FIFO order queue). This is the conservative retained
+/// charge of entries currently owned by the cache; it excludes container
+/// retained capacity/scaffolding, allocator metadata/RSS, transient or external
+/// clones, and returned public values.
+fn entry_charge<K: CacheKeyCharge, V: CacheCharge>(key: &K, value: &V) -> usize {
+    value
+        .value_bytes()
+        .saturating_add(2usize.saturating_mul(key.key_bytes()))
 }
 
 struct Inner<K, V> {
@@ -341,7 +391,7 @@ pub(crate) struct FifoCache<K, V> {
     max_bytes: usize,
 }
 
-impl<K: Clone + Eq + Hash, V: Clone + CacheCharge> FifoCache<K, V> {
+impl<K: Clone + Eq + Hash + CacheKeyCharge, V: Clone + CacheCharge> FifoCache<K, V> {
     fn new(max_entries: usize, max_bytes: usize) -> Self {
         FifoCache {
             inner: RwLock::new(Inner {
@@ -378,7 +428,7 @@ impl<K: Clone + Eq + Hash, V: Clone + CacheCharge> FifoCache<K, V> {
         if let Some(v) = inner.map.get(&key) {
             return v.clone();
         }
-        let charge = entry_charge::<K, V>(&value);
+        let charge = entry_charge(&key, &value);
         inner.bytes += charge;
         inner.order.push_back(key.clone());
         inner.map.insert(key, value.clone());
@@ -397,7 +447,7 @@ impl<K: Clone + Eq + Hash, V: Clone + CacheCharge> FifoCache<K, V> {
                 break;
             };
             if let Some(v) = inner.map.remove(&old) {
-                inner.bytes = inner.bytes.saturating_sub(entry_charge::<K, V>(&v));
+                inner.bytes = inner.bytes.saturating_sub(entry_charge(&old, &v));
                 self.evictions.fetch_add(1, Ordering::Relaxed);
             }
         }
@@ -426,7 +476,7 @@ impl<K: Clone + Eq + Hash, V: Clone + CacheCharge> FifoCache<K, V> {
         if let Some(v) = inner.map.get(&key) {
             return v.clone();
         }
-        let charge = entry_charge::<K, V>(&value);
+        let charge = entry_charge(&key, &value);
         inner.bytes += charge;
         inner.order.push_back(key.clone());
         inner.map.insert(key, value.clone());
@@ -760,7 +810,7 @@ pub fn stats() -> CacheStats {
 ///
 /// Unlike the aggregate [`stats`] — which also sums the `cgc-gen` generated
 /// tiers when that feature is on — this reports only the base SU(2) surface,
-/// split per tier, and adds the eviction counter. Retained bytes are bounded by
+/// split per tier, and adds the eviction counter. Conservative retained entry charge is capped by
 /// [`BASE_CACHE_MAX_BYTES`] (`total().bytes ≤ BASE_CACHE_MAX_BYTES`). See
 /// [`BaseCacheStats`] for the snapshot-consistency contract of `total()`.
 pub fn base_cache_stats() -> BaseCacheStats {
@@ -778,7 +828,7 @@ pub fn base_cache_stats() -> BaseCacheStats {
 /// [`stats`] (which sums base *and* generated tiers into one flat
 /// [`CacheStats`]), this reports each generated tier separately, adds the
 /// eviction counter, and exposes a field-wise [`total`](GeneratedCacheStats::total).
-/// Retained bytes are bounded by [`GENERATED_CACHE_MAX_BYTES`]
+/// Conservative retained entry charge is capped by [`GENERATED_CACHE_MAX_BYTES`]
 /// (`total().bytes ≤ GENERATED_CACHE_MAX_BYTES`). See [`GeneratedCacheStats`]
 /// for the snapshot-consistency contract of `total()` and the stability caveat.
 #[cfg(feature = "cgc-gen")]
@@ -839,13 +889,16 @@ mod tests {
     #[test]
     fn byte_bound_evicts() {
         // Tiny byte budget: only a couple of entries fit at once.
-        let per = entry_charge::<u32, SignedSqrtRational>(&val(1));
+        let per = entry_charge(&0u32, &val(1));
         let c: FifoCache<u32, SignedSqrtRational> = FifoCache::new(1_000_000, per * 2 + per / 2);
         for k in 0..20u32 {
             c.get_or_compute(k, || val(k as i64 + 1));
         }
         let (_, _, _, bytes) = c.snapshot();
-        assert!(bytes <= per * 2 + per / 2, "byte bound violated: {bytes}");
+        assert!(
+            bytes <= per * 2 + per / 2,
+            "retained charge cap violated: {bytes}"
+        );
     }
 
     #[test]
@@ -889,6 +942,79 @@ mod tests {
         // is bounded by entry count in practice.
         assert_eq!((1.0f64).value_bytes(), std::mem::size_of::<f64>());
         assert_eq!((-3.5f64).value_bytes(), std::mem::size_of::<f64>());
+        assert_eq!(
+            entry_charge(&7u32, &1.0f64),
+            std::mem::size_of::<f64>() + 2 * std::mem::size_of::<u32>(),
+            "fixed-size key accounting must remain unchanged"
+        );
+    }
+
+    #[cfg(feature = "cgc-gen")]
+    #[test]
+    fn generated_keys_charge_owned_irrep_weights() {
+        use super::bcd_f_cache::BcdFKey;
+        use super::cgc_cache::CgcKey;
+        use crate::bcd::{Irrep as BcdIrrep, Series};
+        use crate::sun::Irrep as SunIrrep;
+
+        let sun = SunIrrep::from_dynkin(&[1; 12]).unwrap();
+        let sun_key: CgcKey = (sun.clone(), sun.clone(), sun);
+        let sun_irrep_bytes = std::mem::size_of::<SunIrrep>() + 13 * std::mem::size_of::<i64>();
+        assert_eq!(sun_key.key_bytes(), 3 * sun_irrep_bytes);
+
+        let bcd = BcdIrrep::from_dynkin(Series::C, &[1; 12]).unwrap();
+        let bcd_key: BcdFKey = (
+            bcd.clone(),
+            bcd.clone(),
+            bcd.clone(),
+            bcd.clone(),
+            bcd.clone(),
+            bcd,
+        );
+        let bcd_irrep_bytes = std::mem::size_of::<BcdIrrep>() + 12 * std::mem::size_of::<i64>();
+        assert_eq!(bcd_key.key_bytes(), 6 * bcd_irrep_bytes);
+    }
+
+    #[cfg(feature = "cgc-gen")]
+    #[test]
+    fn deep_key_bytes_drive_eviction_oversize_and_reset() {
+        use super::bcd_f_cache::BcdFKey;
+        use super::cgc_cache::CgcKey;
+        use crate::bcd::{Irrep as BcdIrrep, Series};
+        use crate::sun::Irrep as SunIrrep;
+
+        let sun = |label| SunIrrep::from_dynkin(&vec![label; 12]).unwrap();
+        let first: CgcKey = (sun(1), sun(1), sun(1));
+        let second: CgcKey = (sun(2), sun(2), sun(2));
+        let one_entry_budget = entry_charge(&first, &1.0f64);
+        let cache: FifoCache<CgcKey, f64> = FifoCache::new(usize::MAX, one_entry_budget);
+        cache.insert(first.clone(), 1.0);
+        cache.insert(second, 2.0);
+        assert_eq!(cache.tier_stats().entries, 1);
+        assert_eq!(cache.tier_stats().evictions, 1);
+        assert!(
+            cache.get(&first).is_none(),
+            "the oldest deep key is evicted"
+        );
+        cache.reset();
+        assert_eq!(cache.tier_stats(), TierStats::default());
+
+        let bcd = BcdIrrep::from_dynkin(Series::C, &[1; 12]).unwrap();
+        let bcd_key: BcdFKey = (
+            bcd.clone(),
+            bcd.clone(),
+            bcd.clone(),
+            bcd.clone(),
+            bcd.clone(),
+            bcd,
+        );
+        let shallow_only = std::mem::size_of::<f64>() + 2 * std::mem::size_of::<BcdFKey>();
+        assert!(entry_charge(&bcd_key, &1.0f64) > shallow_only);
+        let oversize: FifoCache<BcdFKey, f64> = FifoCache::new(usize::MAX, shallow_only);
+        oversize.insert(bcd_key, 1.0);
+        assert_eq!(oversize.tier_stats().entries, 0);
+        assert_eq!(oversize.tier_stats().bytes, 0);
+        assert_eq!(oversize.tier_stats().evictions, 1);
     }
 
     #[cfg(feature = "cgc-gen")]
@@ -906,18 +1032,20 @@ mod tests {
         assert!(a.value_bytes() >= a.storage_bytes());
         assert_eq!(a.value_bytes(), a.storage_bytes());
 
-        // A local CGC-typed cache with a budget that fits only one entry must
-        // evict the oldest when the second is inserted (byte bound is a true
-        // ceiling).
-        let budget = a.value_bytes().max(b.value_bytes()) + 2 * std::mem::size_of::<CgcKey>() + 8;
-        let c: FifoCache<CgcKey, Arc<Cgc>> = FifoCache::new(1_000_000, budget);
+        // A local CGC-typed cache with a retained-charge budget that fits only
+        // one entry must evict the oldest when the second is inserted.
         let ka = (irr(&[1, 0]), irr(&[0, 1]), irr(&[1, 1]));
         let kb = (irr(&[1, 1]), irr(&[1, 1]), irr(&[1, 1]));
+        let budget = a.value_bytes().max(b.value_bytes()) + 2 * ka.key_bytes() + 8;
+        let c: FifoCache<CgcKey, Arc<Cgc>> = FifoCache::new(1_000_000, budget);
         c.insert(ka.clone(), a);
         c.insert(kb, b);
         let (_, _, entries, bytes) = c.snapshot();
-        assert!(entries <= 1, "byte bound not enforced: {entries} entries");
-        assert!(bytes <= budget, "byte bound exceeded: {bytes} > {budget}");
+        assert!(entries <= 1, "retained-charge cap kept {entries} entries");
+        assert!(
+            bytes <= budget,
+            "retained charge exceeded cap: {bytes} > {budget}"
+        );
         // Oldest (ka) evicted.
         assert!(c.get(&ka).is_none());
     }
@@ -946,8 +1074,6 @@ mod tests {
         assert!(a.value_bytes() > b.value_bytes(), "2⁴ block > 1⁴ block");
 
         // Budget for one entry: inserting the second evicts the oldest.
-        let budget = a.value_bytes() + 2 * std::mem::size_of::<SunFKey>() + 8;
-        let c: FifoCache<SunFKey, Arc<FBlock>> = FifoCache::new(1_000_000, budget);
         let ka = (
             e8.clone(),
             e8.clone(),
@@ -964,11 +1090,16 @@ mod tests {
             three.clone(),
             six.clone(),
         );
+        let budget = a.value_bytes() + 2 * ka.key_bytes() + 8;
+        let c: FifoCache<SunFKey, Arc<FBlock>> = FifoCache::new(1_000_000, budget);
         c.insert(ka.clone(), a);
         c.insert(kb, b);
         let (_, _, entries, bytes) = c.snapshot();
-        assert!(entries <= 1, "byte bound not enforced: {entries} entries");
-        assert!(bytes <= budget, "byte bound exceeded: {bytes} > {budget}");
+        assert!(entries <= 1, "retained-charge cap kept {entries} entries");
+        assert!(
+            bytes <= budget,
+            "retained charge exceeded cap: {bytes} > {budget}"
+        );
         assert!(c.get(&ka).is_none(), "oldest not evicted");
     }
 
@@ -997,14 +1128,14 @@ mod tests {
     #[test]
     fn evictions_counted_on_byte_bound() {
         // Byte budget for ~2 entries: filling 20 forces many byte-driven evictions.
-        let per = entry_charge::<u32, SignedSqrtRational>(&val(1));
+        let per = entry_charge(&0u32, &val(1));
         let c: FifoCache<u32, SignedSqrtRational> = FifoCache::new(1_000_000, per * 2 + per / 2);
         for k in 0..20u32 {
             c.get_or_compute(k, || val(k as i64 + 1));
         }
         assert!(
             c.tier_stats().evictions > 0,
-            "byte bound must count evictions"
+            "retained-charge pressure must count evictions"
         );
     }
 

@@ -10,7 +10,7 @@
 //! the production caps are 64 MiB / 256 MiB per tier. The FIFO bound /
 //! byte-eviction / oversize-eviction machinery is covered deterministically on
 //! local caches in `src/cache.rs`; here we prove per-tier hit/miss accounting on
-//! deterministic accesses, the aggregate byte bound, the const/cap tie, `total()`
+//! deterministic accesses, the aggregate retained-charge cap, the const/cap tie, `total()`
 //! coherence, that the generated stats are a subset of the aggregate `stats()`,
 //! and reset zeroing of every field of every generated tier and of `total()`.
 
@@ -86,10 +86,10 @@ fn generated_cache_resource_contract() {
     let g = cache::generated_cache_stats();
     assert!(g.bcd_f.hits >= 1, "second F block hits the BCD F tier");
 
-    // ---- aggregate byte bound and total() coherence ----
+    // ---- aggregate retained-charge cap and total() coherence ----
     let g = cache::generated_cache_stats();
     let total = g.total();
-    // Each tier's own true ceiling, and the documented aggregate corollary.
+    // Each tier's conservative charged-entry cap and the aggregate corollary.
     assert!(
         g.sun_cgc.bytes <= (256 << 20) && g.bcd_cgc.bytes <= (256 << 20),
         "a CGC tier is over its 256 MiB cap"

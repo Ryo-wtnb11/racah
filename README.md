@@ -330,11 +330,15 @@ can never disagree.
 ### Cache resource contract
 
 The three base coefficient tiers (3j, 6j, derived-F) are each bounded
-independently by a per-tier entry and byte cap. The documented aggregate ceiling
+independently by a per-tier entry and conservative retained-charge cap. The documented aggregate cap
 `BASE_CACHE_MAX_BYTES` (192 MiB = 3 × 64 MiB) is their sum — a **static
-partition, not a dynamic shared pool** — and holds as a corollary of the true
-per-tier ceilings, tied to the per-tier cap by a `const` assertion so the two
+partition, not a dynamic shared pool** — and holds as a corollary of the
+per-tier charged-entry caps, tied to the per-tier cap by a `const` assertion so the two
 cannot drift.
+
+The charge covers entries currently owned by the cache. It excludes container
+retained capacity and scaffolding, allocator metadata and RSS, transient or
+external clones, and values returned through public APIs.
 
 `base_cache_stats() -> BaseCacheStats` exposes per-tier `TierStats` (`entries`,
 `bytes`, `hits`, `misses`, `evictions`) for `three_j`, `six_j`, `derived_f`,
