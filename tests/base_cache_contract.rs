@@ -10,7 +10,7 @@
 //! 64 MiB per tier, and reaching them needs millions of big-rational Wigner
 //! computations (measured: 1.2M `wigner_3j` calls collapse to ~35k distinct
 //! Regge classes). The eviction counter itself is covered deterministically on
-//! local caches in `src/cache.rs`; here we prove the aggregate byte bound, the
+//! local caches in `src/cache.rs`; here we prove the aggregate retained-charge cap, the
 //! per-tier/total statistic coherence, hit/miss accounting, and reset zeroing.
 
 use racah::cache::{self, BASE_CACHE_MAX_BYTES};
@@ -65,7 +65,7 @@ fn base_cache_resource_contract() {
 
     let s = cache::base_cache_stats();
 
-    // Per-tier byte bound (each tier's own true ceiling).
+    // Per-tier conservative retained-charge cap.
     assert!(
         s.three_j.bytes <= per_tier_cap,
         "3j over cap: {}",
@@ -82,7 +82,7 @@ fn base_cache_resource_contract() {
         s.derived_f.bytes
     );
 
-    // Aggregate bound — the documented corollary of the per-tier ceilings.
+    // Aggregate charged-entry cap — the documented per-tier corollary.
     let total = s.total();
     assert!(
         total.bytes <= BASE_CACHE_MAX_BYTES,

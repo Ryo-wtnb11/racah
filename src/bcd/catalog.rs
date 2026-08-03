@@ -623,8 +623,8 @@ impl CanonicalCatalog {
 
 /// Conservative retained-byte charge for one generator set: the `r` dense
 /// `D×D` raising operators plus the `r` length-`D` Cartan diagonals, over the
-/// `f64` coefficient buffers, plus a fixed shell. Over-counts (never under),
-/// so the budget stays a true ceiling.
+/// `f64` coefficient buffers, plus a fixed shell. This is a conservative charge
+/// of catalog-owned generator entries, not allocator RSS or map scaffolding.
 fn gen_bytes(g: &Generators) -> usize {
     let d = g.dim();
     let r = g.rank();

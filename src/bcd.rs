@@ -258,6 +258,12 @@ pub struct Irrep {
     weight: Box<[i64]>,
 }
 
+impl crate::cache::CacheKeyCharge for Irrep {
+    fn key_bytes(&self) -> usize {
+        std::mem::size_of::<Self>().saturating_add(std::mem::size_of_val(self.weight.as_ref()))
+    }
+}
+
 impl Irrep {
     /// Construct from the `r` integer Dynkin labels of `series` (`r =
     /// dynkin.len()`).

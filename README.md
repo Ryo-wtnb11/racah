@@ -330,11 +330,15 @@ can never disagree.
 ### Cache resource contract
 
 The three base coefficient tiers (3j, 6j, derived-F) are each bounded
-independently by a per-tier entry and byte cap. The documented aggregate ceiling
+independently by a per-tier entry and conservative retained-charge cap. The documented aggregate cap
 `BASE_CACHE_MAX_BYTES` (192 MiB = 3 × 64 MiB) is their sum — a **static
-partition, not a dynamic shared pool** — and holds as a corollary of the true
-per-tier ceilings, tied to the per-tier cap by a `const` assertion so the two
+partition, not a dynamic shared pool** — and holds as a corollary of the
+per-tier charged-entry caps, tied to the per-tier cap by a `const` assertion so the two
 cannot drift.
+
+The charge covers entries currently owned by the cache. It excludes container
+retained capacity and scaffolding, allocator metadata and RSS, transient or
+external clones, and values returned through public APIs.
 
 `base_cache_stats() -> BaseCacheStats` exposes per-tier `TierStats` (`entries`,
 `bytes`, `hits`, `misses`, `evictions`) for `three_j`, `six_j`, `derived_f`,
@@ -383,16 +387,21 @@ them.
 
 #### Generated cache aggregate
 
-The four generated value tiers (SU(N) CGC / F, B/C/D CGC / F) are each bounded by
-a per-tier entry and byte cap. `racah::cache::GENERATED_CACHE_MAX_BYTES`
-(640 MiB) is their documented sum, tied to the per-tier caps by a `const`
-assertion so the two cannot drift. The cache story is **two-layer**: base =
-`BASE_CACHE_MAX_BYTES`, generated = `GENERATED_CACHE_MAX_BYTES`, whole-process
-retention = the documented sum of the two. There is deliberately no single
-cross-feature constant — one number spanning feature-gated tiers would change
-meaning with the `cgc-gen` flag. `racah::cache::generated_cache_stats() ->
-GeneratedCacheStats` reports the four tiers per-tier plus a field-wise `total()`;
-`reset()` clears them alongside the base tiers.
+The four generated value tiers (SU(N) CGC / F, B/C/D CGC / F) are each bounded
+by a per-tier entry and conservative retained-charge cap.
+`racah::cache::GENERATED_CACHE_MAX_BYTES` (640 MiB) is their documented sum,
+tied to the per-tier caps by a `const` assertion so the two cannot drift. The
+cache story is **two-layer**: base = `BASE_CACHE_MAX_BYTES`, generated =
+`GENERATED_CACHE_MAX_BYTES`, and the documented whole-process retained-entry
+charge cap is their sum. Generated-tier `TierStats::bytes` uses the same charge
+and exclusions as the base tiers: it covers entries currently owned by the
+cache, not container retained capacity/scaffolding, allocator metadata or RSS,
+transient or external clones, or values returned through public APIs. There is
+deliberately no single cross-feature constant — one number spanning
+feature-gated tiers would change meaning with the `cgc-gen` flag.
+`racah::cache::generated_cache_stats() -> GeneratedCacheStats` reports the four
+tiers per-tier plus a field-wise `total()`; `reset()` clears them alongside the
+base tiers.
 
 The generated CGC value cache is keyed by the complete `(s1, s2, s3)` irrep
 labels and is independent of which caller-owned `CanonicalCatalog` instance
