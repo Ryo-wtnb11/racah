@@ -21,7 +21,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::linalg::{self, Mat};
-use super::{directproduct, GtPattern, Irrep, LadderEntry, SunError};
+use super::{shared_directproduct, GtPattern, Irrep, LadderEntry, SunError};
 
 /// Absolute singular-value tolerance for the highest-weight nullspace rank cut.
 /// Reference: `clebschgordan.jl:TOL_NULLSPACE = 1.0e-13`.
@@ -245,11 +245,10 @@ fn generate(
     let d1 = s1.patterns().len();
     let d2 = s2.patterns().len();
     let d3 = s3.patterns().len();
-    let expected = expected_override.unwrap_or_else(|| {
-        directproduct(s1, s2)
-            .map(|p| p.get(s3).copied().unwrap_or(0) as usize)
-            .unwrap_or(0)
-    });
+    let expected = match expected_override {
+        Some(expected) => expected,
+        None => shared_directproduct(s1, s2)?.multiplicity(s3) as usize,
+    };
 
     // Trivial couplings (clebschgordan.jl:trivial_CGC): 1 ⊗ s → s and s ⊗ 1 → s
     // are identity embeddings, no linear algebra.
