@@ -84,7 +84,7 @@ pub const BASE_CACHE_MAX_BYTES: usize = 192 << 20;
 const _: () = assert!(BASE_CACHE_MAX_BYTES == 3 * DEFAULT_MAX_BYTES);
 
 /// Aggregate retained-byte ceiling for the four generated `cgc-gen` tiers
-/// (SU(N) CGC, SU(N) F, B/C/D CGC, B/C/D F), currently `640 MiB` =
+/// (SU(N) product, SU(N) CGC, SU(N) F, B/C/D CGC, B/C/D F), currently `641 MiB` =
 /// `256 MiB + 64 MiB + 256 MiB + 64 MiB`.
 ///
 /// **Unstable: shape may change while the generated-provider contract is
@@ -116,7 +116,7 @@ const _: () = assert!(BASE_CACHE_MAX_BYTES == 3 * DEFAULT_MAX_BYTES);
 /// budget, `&mut` caller-owned lifecycle) and is intentionally excluded from
 /// this budget and from these stats.
 #[cfg(feature = "cgc-gen")]
-pub const GENERATED_CACHE_MAX_BYTES: usize = 640 << 20;
+pub const GENERATED_CACHE_MAX_BYTES: usize = 641 << 20;
 
 // Compile-time tie: if any generated-tier byte cap changes, this constant must
 // be reconciled in the same edit or the crate stops building (the same drift
@@ -124,7 +124,8 @@ pub const GENERATED_CACHE_MAX_BYTES: usize = 640 << 20;
 #[cfg(feature = "cgc-gen")]
 const _: () = assert!(
     GENERATED_CACHE_MAX_BYTES
-        == cgc_cache::CGC_MAX_BYTES
+        == sun_product_cache::MAX_BYTES
+            + cgc_cache::CGC_MAX_BYTES
             + sun_f_cache::SUN_F_MAX_BYTES
             + bcd_cgc_cache::BCD_CGC_MAX_BYTES
             + bcd_f_cache::BCD_F_MAX_BYTES
@@ -208,8 +209,7 @@ impl BaseCacheStats {
     }
 }
 
-/// Per-tier statistics for the four generated `cgc-gen` tiers (SU(N) CGC,
-/// SU(N) F, B/C/D CGC, B/C/D F).
+/// Per-tier statistics for the generated `cgc-gen` tiers.
 ///
 /// **Unstable: shape may change while the generated-provider contract is
 /// negotiated** (racah #47). The struct is `#[non_exhaustive]` — it is
@@ -236,6 +236,8 @@ impl BaseCacheStats {
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct GeneratedCacheStats {
+    /// Exact SU(N) direct-product decompositions.
+    pub sun_product: TierStats,
     /// The SU(N) CGC tier.
     pub sun_cgc: TierStats,
     /// The derived-f64 SU(N) F-symbol tier.
@@ -253,17 +255,28 @@ impl GeneratedCacheStats {
     /// whole-cache snapshot.
     pub fn total(&self) -> TierStats {
         TierStats {
-            entries: self.sun_cgc.entries
+            entries: self.sun_product.entries
+                + self.sun_cgc.entries
                 + self.sun_f.entries
                 + self.bcd_cgc.entries
                 + self.bcd_f.entries,
-            bytes: self.sun_cgc.bytes + self.sun_f.bytes + self.bcd_cgc.bytes + self.bcd_f.bytes,
-            hits: self.sun_cgc.hits + self.sun_f.hits + self.bcd_cgc.hits + self.bcd_f.hits,
-            misses: self.sun_cgc.misses
+            bytes: self.sun_product.bytes
+                + self.sun_cgc.bytes
+                + self.sun_f.bytes
+                + self.bcd_cgc.bytes
+                + self.bcd_f.bytes,
+            hits: self.sun_product.hits
+                + self.sun_cgc.hits
+                + self.sun_f.hits
+                + self.bcd_cgc.hits
+                + self.bcd_f.hits,
+            misses: self.sun_product.misses
+                + self.sun_cgc.misses
                 + self.sun_f.misses
                 + self.bcd_cgc.misses
                 + self.bcd_f.misses,
-            evictions: self.sun_cgc.evictions
+            evictions: self.sun_product.evictions
+                + self.sun_cgc.evictions
                 + self.sun_f.evictions
                 + self.bcd_cgc.evictions
                 + self.bcd_f.evictions,
@@ -297,6 +310,13 @@ impl CacheCharge for SignedSqrtRational {
 impl CacheCharge for f64 {
     fn value_bytes(&self) -> usize {
         std::mem::size_of::<f64>()
+    }
+}
+
+#[cfg(feature = "cgc-gen")]
+impl CacheCharge for std::sync::Arc<crate::sun::SunProduct> {
+    fn value_bytes(&self) -> usize {
+        self.charge
     }
 }
 
@@ -547,6 +567,28 @@ pub(crate) fn cache_cgc() -> &'static FifoCache<cgc_cache::CgcKey, std::sync::Ar
     &cgc_cache::CACHE_CGC
 }
 
+#[cfg(feature = "cgc-gen")]
+mod sun_product_cache {
+    use super::{FifoCache, LazyLock};
+    use crate::sun::{Irrep, SunProduct};
+    use std::sync::Arc;
+    // The independent SUNRepresentations fixture corpus has 200+ products; 512
+    // entries and 1 MiB retain more than twice that corpus while bounding a tier
+    // whose measured adjoint entries carry only hundreds of label bytes.
+    const MAX_ENTRIES: usize = 512;
+    pub(super) const MAX_BYTES: usize = 1 << 20;
+    pub(crate) static CACHE: LazyLock<FifoCache<(Irrep, Irrep), Arc<SunProduct>>> =
+        LazyLock::new(|| FifoCache::new(MAX_ENTRIES, MAX_BYTES));
+}
+
+#[cfg(feature = "cgc-gen")]
+pub(crate) fn cache_sun_product() -> &'static FifoCache<
+    (crate::sun::Irrep, crate::sun::Irrep),
+    std::sync::Arc<crate::sun::SunProduct>,
+> {
+    &sun_product_cache::CACHE
+}
+
 /// Bounded, byte-accounted derived-f64 SU(N) F-symbol cache (`cgc-gen`,
 /// Layer 3, issue #16).
 ///
@@ -720,6 +762,7 @@ pub fn reset() {
     #[cfg(feature = "cgc-gen")]
     {
         cgc_cache::CACHE_CGC.reset();
+        sun_product_cache::CACHE.reset();
         sun_f_cache::CACHE_SUN_F.reset();
         bcd_f_cache::CACHE_BCD_F.reset();
         bcd_cgc_cache::CACHE_BCD_CGC.reset();
@@ -734,15 +777,16 @@ pub fn stats() -> CacheStats {
     let (hf, mf, ef, bf) = CACHE_F.snapshot();
     #[cfg(feature = "cgc-gen")]
     let (hc, mc, ec, bc) = {
+        let (hp, mp, ep, bp) = sun_product_cache::CACHE.snapshot();
         let (h, m, e, b) = cgc_cache::CACHE_CGC.snapshot();
         let (h2, m2, e2, b2) = sun_f_cache::CACHE_SUN_F.snapshot();
         let (h3, m3, e3, b3) = bcd_f_cache::CACHE_BCD_F.snapshot();
         let (h4, m4, e4, b4) = bcd_cgc_cache::CACHE_BCD_CGC.snapshot();
         (
-            h + h2 + h3 + h4,
-            m + m2 + m3 + m4,
-            e + e2 + e3 + e4,
-            b + b2 + b3 + b4,
+            hp + h + h2 + h3 + h4,
+            mp + m + m2 + m3 + m4,
+            ep + e + e2 + e3 + e4,
+            bp + b + b2 + b3 + b4,
         )
     };
     #[cfg(not(feature = "cgc-gen"))]
@@ -771,8 +815,7 @@ pub fn base_cache_stats() -> BaseCacheStats {
     }
 }
 
-/// Per-tier and total statistics for the four generated `cgc-gen` tiers
-/// (SU(N) CGC, SU(N) F, B/C/D CGC, B/C/D F).
+/// Per-tier and total statistics for the five generated `cgc-gen` tiers.
 ///
 /// The generated-family analogue of [`base_cache_stats`]: unlike the aggregate
 /// [`stats`] (which sums base *and* generated tiers into one flat
@@ -784,6 +827,7 @@ pub fn base_cache_stats() -> BaseCacheStats {
 #[cfg(feature = "cgc-gen")]
 pub fn generated_cache_stats() -> GeneratedCacheStats {
     GeneratedCacheStats {
+        sun_product: sun_product_cache::CACHE.tier_stats(),
         sun_cgc: cgc_cache::CACHE_CGC.tier_stats(),
         sun_f: sun_f_cache::CACHE_SUN_F.tier_stats(),
         bcd_cgc: bcd_cgc_cache::CACHE_BCD_CGC.tier_stats(),

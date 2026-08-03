@@ -385,7 +385,7 @@ them.
 
 The four generated value tiers (SU(N) CGC / F, B/C/D CGC / F) are each bounded by
 a per-tier entry and byte cap. `racah::cache::GENERATED_CACHE_MAX_BYTES`
-(640 MiB) is their documented sum, tied to the per-tier caps by a `const`
+(641 MiB) is their documented sum, tied to the per-tier caps by a `const`
 assertion so the two cannot drift. The cache story is **two-layer**: base =
 `BASE_CACHE_MAX_BYTES`, generated = `GENERATED_CACHE_MAX_BYTES`, whole-process
 retention = the documented sum of the two. There is deliberately no single

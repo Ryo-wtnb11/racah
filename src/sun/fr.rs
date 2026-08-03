@@ -24,7 +24,7 @@
 
 use std::sync::Arc;
 
-use super::{cgc, directproduct, Irrep, SunError};
+use super::{cgc, directproduct_shared, Irrep, SunError};
 use crate::frcore::{
     self, f_block_raw, f_unitarity_residual, hexagon_residual, pentagon_residual, r_block_raw,
     Family, MEntry,
@@ -35,8 +35,8 @@ pub use crate::frcore::{FBlock, RBlock};
 /// The SU(N) binding of the generic F/R core: a stateless zero-sized provider.
 ///
 /// Its `&mut self` methods (required by [`Family`]) delegate to the free
-/// functions [`cgc`] / [`directproduct`], which are backed by the process-global
-/// CGC cache. The `&mut` is vacuous here — no interior mutability, no lock — so
+/// functions [`cgc`] / [`directproduct_shared`], which are backed by process-global
+/// caches. The `&mut` is vacuous here — no provider-local interior mutability — so
 /// the shared core's `&mut`-provider seam (needed by the `&mut CanonicalCatalog`
 /// B/C/D provider) costs SU(N) nothing.
 struct SunFamily;
@@ -64,7 +64,11 @@ impl Family for SunFamily {
     }
 
     fn products(&mut self, a: &Irrep, b: &Irrep) -> Result<Vec<Irrep>, SunError> {
-        Ok(directproduct(a, b)?.into_keys().collect())
+        Ok(directproduct_shared(a, b)?
+            .entries()
+            .iter()
+            .map(|(irrep, _)| irrep.clone())
+            .collect())
     }
 }
 
@@ -83,7 +87,7 @@ fn mult(a: &Irrep, b: &Irrep, c: &Irrep) -> Result<usize, SunError> {
             b: c.rank(),
         });
     }
-    Ok(directproduct(a, b)?.get(c).copied().unwrap_or(0) as usize)
+    Ok(directproduct_shared(a, b)?.multiplicity(c) as usize)
 }
 
 /// All labels of an F/R request share one rank, or [`SunError::RankMismatch`].

@@ -70,6 +70,11 @@ name = "sun_cgc"
 harness = false
 required-features = ["cgc-gen"]
 
+[[bench]]
+name = "sun_product"
+harness = false
+required-features = ["cgc-gen"]
+
 # SU(N) F-symbol generation cost (cold contraction + warm F-cache hit).
 [[bench]]
 name = "sun_fr"

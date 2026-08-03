@@ -21,7 +21,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::linalg::{self, Mat};
-use super::{directproduct, GtPattern, Irrep, LadderEntry, SunError};
+use super::{directproduct_shared, GtPattern, Irrep, LadderEntry, SunError};
 
 /// Absolute singular-value tolerance for the highest-weight nullspace rank cut.
 /// Reference: `clebschgordan.jl:TOL_NULLSPACE = 1.0e-13`.
@@ -246,8 +246,8 @@ fn generate(
     let d2 = s2.patterns().len();
     let d3 = s3.patterns().len();
     let expected = expected_override.unwrap_or_else(|| {
-        directproduct(s1, s2)
-            .map(|p| p.get(s3).copied().unwrap_or(0) as usize)
+        directproduct_shared(s1, s2)
+            .map(|p| p.multiplicity(s3) as usize)
             .unwrap_or(0)
     });
 

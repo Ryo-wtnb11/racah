@@ -54,6 +54,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
+use std::sync::Arc;
 
 use num_bigint::BigInt;
 use num_rational::Ratio;
@@ -219,6 +220,50 @@ impl std::error::Error for SunError {}
 pub struct Irrep {
     /// Normalized highest weight, length `N`, nonincreasing, last entry `0`.
     weight: Box<[i64]>,
+}
+
+/// Immutable exact decomposition retained by the process-global product cache.
+#[derive(Clone)]
+pub(crate) struct SunProduct {
+    entries: Box<[(Irrep, u32)]>,
+    /// Conservative dynamic charge; `FifoCache` adds both pair-key shells.
+    pub(crate) charge: usize,
+}
+
+impl SunProduct {
+    fn new(key: &(Irrep, Irrep), result: BTreeMap<Irrep, u32>) -> Self {
+        let key_bytes = (key.0.weight.len() + key.1.weight.len()) * std::mem::size_of::<i64>();
+        let entries: Box<[(Irrep, u32)]> = result.into_iter().collect();
+        let result_bytes = entries
+            .iter()
+            .map(|(irrep, _)| {
+                std::mem::size_of::<(Irrep, u32)>()
+                    + irrep.weight.len() * std::mem::size_of::<i64>()
+            })
+            .sum::<usize>();
+        // The FIFO accounts for the two `(Irrep, Irrep)` shells. This adds
+        // their two heap weights, the Arc control/value allocation, and every
+        // result entry shell plus its owned weight allocation.
+        Self {
+            charge: 2 * key_bytes
+                + std::mem::size_of::<Arc<Self>>()
+                + std::mem::size_of::<Self>()
+                + result_bytes,
+            entries,
+        }
+    }
+
+    pub(crate) fn multiplicity(&self, irrep: &Irrep) -> u32 {
+        self.entries
+            .binary_search_by(|(candidate, _)| candidate.cmp(irrep))
+            .ok()
+            .map(|index| self.entries[index].1)
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn entries(&self) -> &[(Irrep, u32)] {
+        &self.entries
+    }
 }
 
 impl Irrep {
@@ -561,7 +606,7 @@ fn subrow_rec(j: usize, m: usize, toprow: &[i64], cur: &mut Vec<i64>, out: &mut 
 /// zero-channel map — this signature is Layer 2's foundation. The reference
 /// iterates the smaller-dimensional basis; we replicate the `dim` swap (the
 /// result is independent of it, but the port stays faithful).
-pub fn directproduct(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, SunError> {
+fn directproduct_uncached(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, SunError> {
     if a.rank() != b.rank() {
         return Err(SunError::RankMismatch {
             a: a.rank(),
@@ -569,7 +614,7 @@ pub fn directproduct(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, SunEr
         });
     }
     if a.dim() > b.dim() {
-        return directproduct(b, a);
+        return directproduct_uncached(b, a);
     }
     let n = a.rank();
     let mut result: BTreeMap<Irrep, u32> = BTreeMap::new();
@@ -598,6 +643,42 @@ pub fn directproduct(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, SunEr
         }
     }
     Ok(result)
+}
+
+fn product_key(a: &Irrep, b: &Irrep) -> (Irrep, Irrep) {
+    if a <= b {
+        (a.clone(), b.clone())
+    } else {
+        (b.clone(), a.clone())
+    }
+}
+
+pub(crate) fn directproduct_shared(a: &Irrep, b: &Irrep) -> Result<Arc<SunProduct>, SunError> {
+    if a.rank() != b.rank() {
+        return Err(SunError::RankMismatch {
+            a: a.rank(),
+            b: b.rank(),
+        });
+    }
+    let key = product_key(a, b);
+    if let Some(hit) = crate::cache::cache_sun_product().get(&key) {
+        return Ok(hit);
+    }
+    let product = Arc::new(SunProduct::new(
+        &key,
+        directproduct_uncached(&key.0, &key.1)?,
+    ));
+    Ok(crate::cache::cache_sun_product().insert(key, product))
+}
+
+/// Exact Littlewood--Richardson product decomposition, returned as a fresh
+/// ordered map for compatibility with the original public API.
+pub fn directproduct(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, SunError> {
+    Ok(directproduct_shared(a, b)?
+        .entries()
+        .iter()
+        .cloned()
+        .collect())
 }
 
 /// `sign(coef) * sqrt(|coef|)` as an exact [`SignedSqrtRational`], matching

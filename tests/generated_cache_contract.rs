@@ -1,7 +1,7 @@
 //! Generated-tier coefficient-cache resource contract (issue #47, leaf L1).
 //!
-//! The `cgc-gen` analogue of `tests/base_cache_contract.rs`: the four generated
-//! tiers (SU(N) CGC, SU(N) F, B/C/D CGC, B/C/D F) are process-global and
+//! The `cgc-gen` analogue of `tests/base_cache_contract.rs`: the five generated
+//! tiers (SU(N) product, CGC, F, B/C/D CGC, B/C/D F) are process-global and
 //! `cache::reset()`/`generated_cache_stats()` act on shared state, so this is
 //! kept in one `#[test]` (splitting into parallel tests would race the shared
 //! counters — same reasoning as `tests/sun_cgc_cache.rs`).
@@ -30,13 +30,13 @@ fn bcd_irr(s: Series, d: &[i64]) -> bcd::Irrep {
 
 #[test]
 fn generated_cache_resource_contract() {
-    // ---- the const is the documented sum of the four tier caps ----
+    // ---- the const is the documented sum of the five tier caps ----
     // (The compile-time assertion in src/cache.rs is the real drift guard; this
     // pins the human-facing value.)
     assert_eq!(
         GENERATED_CACHE_MAX_BYTES,
-        (256 + 64 + 256 + 64) << 20,
-        "640 MiB = SU(N) CGC + SU(N) F + BCD CGC + BCD F"
+        (1 + 256 + 64 + 256 + 64) << 20,
+        "641 MiB = SU(N) product + CGC + F + BCD CGC + F"
     );
 
     // ---- per-tier hit/miss accounting on deterministic accesses ----
@@ -104,14 +104,18 @@ fn generated_cache_resource_contract() {
         total.bytes,
         GENERATED_CACHE_MAX_BYTES
     );
-    // total() is the field-wise sum of the four tiers.
+    // total() is the field-wise sum of the five tiers.
     assert_eq!(
         total.entries,
-        g.sun_cgc.entries + g.sun_f.entries + g.bcd_cgc.entries + g.bcd_f.entries
+        g.sun_product.entries
+            + g.sun_cgc.entries
+            + g.sun_f.entries
+            + g.bcd_cgc.entries
+            + g.bcd_f.entries
     );
     assert_eq!(
         total.bytes,
-        g.sun_cgc.bytes + g.sun_f.bytes + g.bcd_cgc.bytes + g.bcd_f.bytes
+        g.sun_product.bytes + g.sun_cgc.bytes + g.sun_f.bytes + g.bcd_cgc.bytes + g.bcd_f.bytes
     );
     assert!(total.entries > 0, "the accesses retained entries");
 
@@ -125,6 +129,7 @@ fn generated_cache_resource_contract() {
     let g = cache::generated_cache_stats();
     let zero = racah::cache::TierStats::default();
     assert_eq!(g.sun_cgc, zero, "sun_cgc not cleared");
+    assert_eq!(g.sun_product, zero, "sun_product not cleared");
     assert_eq!(g.sun_f, zero, "sun_f not cleared");
     assert_eq!(g.bcd_cgc, zero, "bcd_cgc not cleared");
     assert_eq!(g.bcd_f, zero, "bcd_f not cleared");

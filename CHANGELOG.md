@@ -18,7 +18,7 @@ labels plus issue #47 are the ledger.
 - **Generated-tier cache stats** (`cgc-gen`): `generated_cache_stats() ->
   GeneratedCacheStats` (`#[non_exhaustive]`, reusing `TierStats`) reports the
   four generated value tiers (SU(N) CGC / F, B/C/D CGC / F) per-tier plus a
-  field-wise `total()`. `GENERATED_CACHE_MAX_BYTES` (640 MiB) is the documented
+  field-wise `total()`. `GENERATED_CACHE_MAX_BYTES` (641 MiB) is the documented
   aggregate ceiling, tied to the per-tier caps by a `const` assertion. Two-layer
   cache story: base = `BASE_CACHE_MAX_BYTES`, generated =
   `GENERATED_CACHE_MAX_BYTES`, whole = the documented sum; no cross-feature
