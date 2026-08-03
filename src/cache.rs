@@ -54,13 +54,14 @@ use crate::exact::SignedSqrtRational;
 use crate::su2::{FKey, Regge3j, Regge6j};
 
 /// Default entry cap per kind (3j and 6j each). Matches the reference order of
-/// magnitude (WignerSymbols.jl uses `10^6`); the byte cap is the real backstop.
+/// magnitude (WignerSymbols.jl uses `10^6`); the retained-charge cap is the real
+/// backstop.
 const DEFAULT_MAX_ENTRIES: usize = 1 << 20;
 
-/// Default byte cap per kind. Conservative: at the ~O(1)-limb sizes typical of
+/// Default retained-charge cap per kind. At the ~O(1)-limb sizes typical of
 /// small-label TN work an entry charges well under a kilobyte, so 64 MiB holds
-/// a large working set while bounding the conservative charge of retained
-/// entries.
+/// a large working set while bounding the conservative charge of cache-owned
+/// entries, not allocator-live memory or RSS.
 const DEFAULT_MAX_BYTES: usize = 64 << 20;
 
 /// Aggregate conservative retained-charge cap for the three base SU(2) tiers
@@ -80,7 +81,7 @@ const DEFAULT_MAX_BYTES: usize = 64 << 20;
 /// `CACHE_F`) are constructed with the same `DEFAULT_MAX_BYTES`.
 pub const BASE_CACHE_MAX_BYTES: usize = 192 << 20;
 
-// Compile-time tie: if the per-tier byte cap changes, BASE_CACHE_MAX_BYTES must
+// Compile-time tie: if the per-tier retained-charge cap changes, BASE_CACHE_MAX_BYTES must
 // be reconciled in the same edit or the crate stops building. (There is no
 // compile-time way to read the tiers' runtime `max_bytes`; anchoring to the
 // shared `DEFAULT_MAX_BYTES` they are all built from is the enforceable tie.)
@@ -120,7 +121,7 @@ const _: () = assert!(BASE_CACHE_MAX_BYTES == 3 * DEFAULT_MAX_BYTES);
 #[cfg(feature = "cgc-gen")]
 pub const GENERATED_CACHE_MAX_BYTES: usize = 640 << 20;
 
-// Compile-time tie: if any generated-tier byte cap changes, this constant must
+// Compile-time tie: if any generated-tier retained-charge cap changes, this constant must
 // be reconciled in the same edit or the crate stops building (the same drift
 // guard the base tiers use). Each cap is `pub(super)` in its tier module.
 #[cfg(feature = "cgc-gen")]
@@ -165,7 +166,7 @@ pub struct TierStats {
     /// so `misses` can slightly exceed the number of stored entries.
     pub misses: u64,
     /// Entries removed from this tier by eviction over its lifetime, including
-    /// an entry larger than the byte cap that is admitted then immediately
+    /// an entry larger than the retained-charge cap that is admitted then immediately
     /// evicted back out (it never fit, but it was charged, so it counts).
     pub evictions: u64,
 }
@@ -578,10 +579,10 @@ mod cgc_cache {
         }
     }
 
-    /// Entry cap for the CGC tier. The byte cap is the real backstop.
+    /// Entry cap for the CGC tier. The retained-charge cap is the real backstop.
     const CGC_MAX_ENTRIES: usize = 1 << 16;
-    /// Byte cap for the CGC tier (256 MiB): CGC tensors are far larger than a
-    /// scalar exact symbol, so this tier gets its own generous budget.
+    /// Retained-charge cap for the CGC tier (256 MiB): CGC tensors are far larger
+    /// than a scalar exact symbol, so this tier gets its own generous budget.
     ///
     /// `pub(super)` so the parent module can tie [`super::GENERATED_CACHE_MAX_BYTES`]
     /// to it in a compile-time assertion (the same drift guard the base tiers use).
@@ -628,10 +629,10 @@ mod sun_f_cache {
         }
     }
 
-    /// Entry cap; the byte cap is the real backstop.
+    /// Entry cap; the retained-charge cap is the real backstop.
     const SUN_F_MAX_ENTRIES: usize = 1 << 16;
-    /// Byte cap (64 MiB): F blocks are tiny (a few multiplicity indices), so
-    /// this holds a very large working set. `pub(super)` for the
+    /// Retained-charge cap (64 MiB): F blocks are tiny (a few multiplicity
+    /// indices), so this holds a very large working set. `pub(super)` for the
     /// [`super::GENERATED_CACHE_MAX_BYTES`] drift assertion.
     pub(super) const SUN_F_MAX_BYTES: usize = 64 << 20;
 
@@ -668,9 +669,9 @@ mod bcd_f_cache {
     /// Canonical cache key: the six B/C/D irrep labels `(a, b, c, d, e, f)`.
     pub(crate) type BcdFKey = (Irrep, Irrep, Irrep, Irrep, Irrep, Irrep);
 
-    /// Entry cap; the byte cap is the real backstop.
+    /// Entry cap; the retained-charge cap is the real backstop.
     const BCD_F_MAX_ENTRIES: usize = 1 << 16;
-    /// Byte cap (64 MiB): F blocks are tiny (a few multiplicity indices).
+    /// Retained-charge cap (64 MiB): F blocks are tiny (a few multiplicity indices).
     /// `pub(super)` for the [`super::GENERATED_CACHE_MAX_BYTES`] drift assertion.
     pub(super) const BCD_F_MAX_BYTES: usize = 64 << 20;
 
@@ -734,10 +735,11 @@ mod bcd_cgc_cache {
         }
     }
 
-    /// Entry cap; the byte cap is the real backstop.
+    /// Entry cap; the retained-charge cap is the real backstop.
     const BCD_CGC_MAX_ENTRIES: usize = 1 << 16;
-    /// Byte cap (256 MiB): dense product isometries are far larger than an F
-    /// block, so this tier gets its own generous budget (as the SU(N) CGC tier).
+    /// Retained-charge cap (256 MiB): dense product isometries are far larger
+    /// than an F block, so this tier gets its own generous budget (as the SU(N)
+    /// CGC tier).
     /// `pub(super)` for the [`super::GENERATED_CACHE_MAX_BYTES`] drift assertion.
     pub(super) const BCD_CGC_MAX_BYTES: usize = 256 << 20;
 
@@ -1141,9 +1143,9 @@ mod tests {
 
     #[test]
     fn oversize_entry_counts_as_eviction() {
-        // Byte cap smaller than any single entry: the entry is admitted (charged,
-        // pushed) then immediately evicted back out. Documented decision: it
-        // counts as an eviction, and nothing is retained.
+        // Retained-charge cap smaller than any single entry: the entry is
+        // admitted (charged, pushed) then immediately evicted back out.
+        // Documented decision: it counts as an eviction, and nothing is retained.
         let c: FifoCache<u32, SignedSqrtRational> = FifoCache::new(1_000_000, 1);
         c.get_or_compute(7, || val(7));
         let ts = c.tier_stats();

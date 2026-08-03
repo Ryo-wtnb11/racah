@@ -387,16 +387,21 @@ them.
 
 #### Generated cache aggregate
 
-The four generated value tiers (SU(N) CGC / F, B/C/D CGC / F) are each bounded by
-a per-tier entry and byte cap. `racah::cache::GENERATED_CACHE_MAX_BYTES`
-(640 MiB) is their documented sum, tied to the per-tier caps by a `const`
-assertion so the two cannot drift. The cache story is **two-layer**: base =
-`BASE_CACHE_MAX_BYTES`, generated = `GENERATED_CACHE_MAX_BYTES`, whole-process
-retention = the documented sum of the two. There is deliberately no single
-cross-feature constant — one number spanning feature-gated tiers would change
-meaning with the `cgc-gen` flag. `racah::cache::generated_cache_stats() ->
-GeneratedCacheStats` reports the four tiers per-tier plus a field-wise `total()`;
-`reset()` clears them alongside the base tiers.
+The four generated value tiers (SU(N) CGC / F, B/C/D CGC / F) are each bounded
+by a per-tier entry and conservative retained-charge cap.
+`racah::cache::GENERATED_CACHE_MAX_BYTES` (640 MiB) is their documented sum,
+tied to the per-tier caps by a `const` assertion so the two cannot drift. The
+cache story is **two-layer**: base = `BASE_CACHE_MAX_BYTES`, generated =
+`GENERATED_CACHE_MAX_BYTES`, and the documented whole-process retained-entry
+charge cap is their sum. Generated-tier `TierStats::bytes` uses the same charge
+and exclusions as the base tiers: it covers entries currently owned by the
+cache, not container retained capacity/scaffolding, allocator metadata or RSS,
+transient or external clones, or values returned through public APIs. There is
+deliberately no single cross-feature constant — one number spanning
+feature-gated tiers would change meaning with the `cgc-gen` flag.
+`racah::cache::generated_cache_stats() -> GeneratedCacheStats` reports the four
+tiers per-tier plus a field-wise `total()`; `reset()` clears them alongside the
+base tiers.
 
 The generated CGC value cache is keyed by the complete `(s1, s2, s3)` irrep
 labels and is independent of which caller-owned `CanonicalCatalog` instance

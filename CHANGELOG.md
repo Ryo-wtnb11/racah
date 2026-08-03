@@ -18,9 +18,12 @@ labels plus issue #47 are the ledger.
 - **Generated-tier cache stats** (`cgc-gen`): `generated_cache_stats() ->
   GeneratedCacheStats` (`#[non_exhaustive]`, reusing `TierStats`) reports the
   four generated value tiers (SU(N) CGC / F, B/C/D CGC / F) per-tier plus a
-  field-wise `total()`. `GENERATED_CACHE_MAX_BYTES` (640 MiB) is the documented
-  aggregate retained-charge cap, tied to the per-tier caps by a `const` assertion. Two-layer
-  cache story: base = `BASE_CACHE_MAX_BYTES`, generated =
+  field-wise `total()`. `GeneratedCacheStats` `bytes` fields are conservative
+  retained charges of cache-owned entries, with container scaffolding,
+  allocator/RSS costs, external clones, and returned values excluded.
+  `GENERATED_CACHE_MAX_BYTES` (640 MiB) is the documented aggregate
+  retained-charge cap, tied to the per-tier caps by a `const` assertion.
+  Two-layer cache story: base = `BASE_CACHE_MAX_BYTES`, generated =
   `GENERATED_CACHE_MAX_BYTES`, whole = the documented sum; no cross-feature
   constant. `reset()` clears the generated tiers alongside the base ones.
 - **Generated authority fingerprints** (`cgc-gen`):
