@@ -247,20 +247,22 @@ impl crate::cache::CacheKeyCharge for SunProductKey {
 
 /// Shared, sorted channels of one SU(N) tensor-product decomposition.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct SunProduct(Arc<[(Irrep, u32)]>);
+pub struct SunProduct(Arc<[(Irrep, u32)]>);
 
 impl SunProduct {
     pub(crate) fn from_map(product: BTreeMap<Irrep, u32>) -> Self {
         Self(product.into_iter().collect())
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (&Irrep, u32)> {
+    /// Iterates over channels in irrep order with their multiplicities.
+    pub fn iter(&self) -> impl Iterator<Item = (&Irrep, u32)> {
         self.0
             .iter()
             .map(|(irrep, multiplicity)| (irrep, *multiplicity))
     }
 
-    pub(crate) fn multiplicity(&self, irrep: &Irrep) -> u32 {
+    /// Returns the channel multiplicity, or zero when `irrep` is absent.
+    pub fn multiplicity(&self, irrep: &Irrep) -> u32 {
         self.0
             .binary_search_by(|(candidate, _)| candidate.cmp(irrep))
             .map(|index| self.0[index].1)
@@ -658,7 +660,8 @@ pub fn directproduct(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, SunEr
         .collect())
 }
 
-pub(crate) fn shared_directproduct(a: &Irrep, b: &Irrep) -> Result<SunProduct, SunError> {
+/// Returns the cached, read-only tensor-product decomposition of `a ⊗ b`.
+pub fn shared_directproduct(a: &Irrep, b: &Irrep) -> Result<SunProduct, SunError> {
     if a.rank() != b.rank() {
         return Err(SunError::RankMismatch {
             a: a.rank(),
