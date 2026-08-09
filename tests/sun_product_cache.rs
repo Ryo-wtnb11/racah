@@ -1,4 +1,4 @@
-//! SU(N) product-cache API and concurrency contract (issue #59).
+//! SU(N) product-cache API and concurrency contract (issues #59 and #62).
 //!
 //! One sequential test owns the process-global reset policy for this binary.
 
@@ -7,7 +7,7 @@
 use std::sync::{Arc, Barrier};
 
 use racah::cache::{self, TierStats};
-use racah::sun::{directproduct, Irrep, SunError};
+use racah::sun::{directproduct, shared_directproduct, Irrep, SunError};
 use racah::Su2Irrep;
 
 fn irr(dynkin: &[i64]) -> Irrep {
@@ -24,6 +24,10 @@ fn sun_product_cache_contract() {
     let su4 = irr(&[1, 0, 0]);
     assert_eq!(
         directproduct(&su3, &su4),
+        Err(SunError::RankMismatch { a: 3, b: 4 })
+    );
+    assert_eq!(
+        shared_directproduct(&su3, &su4),
         Err(SunError::RankMismatch { a: 3, b: 4 })
     );
     assert_eq!(
@@ -48,6 +52,19 @@ fn sun_product_cache_contract() {
     assert_eq!(after_warm.hits, 1);
     assert_eq!(after_warm.misses, 1, "warm public map must not re-sweep");
     assert_eq!(after_warm.entries, 1);
+
+    let shared = shared_directproduct(&a, &b).unwrap();
+    assert!(shared.iter().eq(cold
+        .iter()
+        .map(|(irrep, &multiplicity)| (irrep, multiplicity))));
+    let channel = cold.keys().next().unwrap();
+    assert_eq!(shared.multiplicity(channel), cold[channel]);
+    assert_eq!(shared.multiplicity(&irr(&[99, 0])), 0);
+    assert_eq!(shared_directproduct(&b, &a).unwrap(), shared);
+    let after_shared = cache::generated_cache_stats().sun_product;
+    assert_eq!(after_shared.hits, 3);
+    assert_eq!(after_shared.misses, 1);
+    assert_eq!(after_shared.entries, 1);
 
     // Compute-outside-lock permits concurrent duplicate misses, but the write
     // recheck publishes exactly one identical entry.
