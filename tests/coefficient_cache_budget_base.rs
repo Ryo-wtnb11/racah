@@ -2,30 +2,23 @@
 
 use racah::cache::{
     base_cache_stats, cache_budgets, configure_cache_budgets, CacheBudgetError,
-    CoefficientCacheBudgets,
+    CoefficientCacheBudgets, CoefficientCacheTier,
 };
 use racah::wigner_6j;
 
 #[test]
 fn zero_budget_is_retryable_then_compute_without_retention() {
-    let invalid = CoefficientCacheBudgets {
-        three_j_bytes: usize::MAX,
-        ..Default::default()
-    };
+    let invalid =
+        CoefficientCacheBudgets::default().with_limit(CoefficientCacheTier::ThreeJ, usize::MAX);
     assert!(matches!(
         configure_cache_budgets(invalid),
         Err(CacheBudgetError::ExceedsMaximum {
-            tier: "three_j",
+            tier: CoefficientCacheTier::ThreeJ,
             ..
         })
     ));
 
-    let budgets = CoefficientCacheBudgets {
-        three_j_bytes: 0,
-        six_j_bytes: 0,
-        derived_f_bytes: 0,
-        ..Default::default()
-    };
+    let budgets = CoefficientCacheBudgets::disabled();
     configure_cache_budgets(budgets).unwrap();
     assert_eq!(cache_budgets(), budgets);
     let value = wigner_6j(2, 2, 2, 2, 2, 2);

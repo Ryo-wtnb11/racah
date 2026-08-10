@@ -70,29 +70,127 @@ const DEFAULT_MAX_BYTES: usize = 64 << 20;
 /// operation or cache-policy observation. Zero keeps computing values but
 /// retains none for that tier. [`Default`] is the compiled policy and also the
 /// maximum accepted policy; budgets can only shrink it.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CoefficientCacheBudgets {
     /// Exact Wigner 3j retained-charge cap.
-    pub three_j_bytes: usize,
+    three_j_bytes: usize,
     /// Exact Wigner 6j retained-charge cap.
-    pub six_j_bytes: usize,
+    six_j_bytes: usize,
     /// Derived SU(2) F-symbol retained-charge cap.
-    pub derived_f_bytes: usize,
+    derived_f_bytes: usize,
     #[cfg(feature = "cgc-gen")]
     /// SU(N) product retained-charge cap.
-    pub sun_product_bytes: usize,
+    sun_product_bytes: usize,
     #[cfg(feature = "cgc-gen")]
     /// SU(N) CGC retained-charge cap.
-    pub sun_cgc_bytes: usize,
+    sun_cgc_bytes: usize,
     #[cfg(feature = "cgc-gen")]
     /// SU(N) F-symbol retained-charge cap.
-    pub sun_f_bytes: usize,
+    sun_f_bytes: usize,
     #[cfg(feature = "cgc-gen")]
     /// B/C/D CGC retained-charge cap.
-    pub bcd_cgc_bytes: usize,
+    bcd_cgc_bytes: usize,
     #[cfg(feature = "cgc-gen")]
     /// B/C/D F-symbol retained-charge cap.
-    pub bcd_f_bytes: usize,
+    bcd_f_bytes: usize,
+}
+
+/// One existing coefficient-cache tier.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CoefficientCacheTier {
+    /// Exact Wigner 3j tier.
+    ThreeJ,
+    /// Exact Wigner 6j tier.
+    SixJ,
+    /// Derived SU(2) F-symbol tier.
+    DerivedF,
+    #[cfg(feature = "cgc-gen")]
+    /// SU(N) product tier.
+    SunProduct,
+    #[cfg(feature = "cgc-gen")]
+    /// SU(N) CGC tier.
+    SunCgc,
+    #[cfg(feature = "cgc-gen")]
+    /// SU(N) F-symbol tier.
+    SunF,
+    #[cfg(feature = "cgc-gen")]
+    /// B/C/D CGC tier.
+    BcdCgc,
+    #[cfg(feature = "cgc-gen")]
+    /// B/C/D F-symbol tier.
+    BcdF,
+}
+
+impl std::fmt::Display for CoefficientCacheTier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl CoefficientCacheBudgets {
+    /// Disable retention in every compiled tier while preserving evaluation.
+    pub fn disabled() -> Self {
+        let mut budgets = Self::default();
+        for tier in [
+            CoefficientCacheTier::ThreeJ,
+            CoefficientCacheTier::SixJ,
+            CoefficientCacheTier::DerivedF,
+        ] {
+            budgets = budgets.with_limit(tier, 0);
+        }
+        #[cfg(feature = "cgc-gen")]
+        for tier in [
+            CoefficientCacheTier::SunProduct,
+            CoefficientCacheTier::SunCgc,
+            CoefficientCacheTier::SunF,
+            CoefficientCacheTier::BcdCgc,
+            CoefficientCacheTier::BcdF,
+        ] {
+            budgets = budgets.with_limit(tier, 0);
+        }
+        budgets
+    }
+
+    /// Return this policy with one tier's retained-charge cap replaced.
+    pub fn with_limit(mut self, tier: CoefficientCacheTier, bytes: usize) -> Self {
+        match tier {
+            CoefficientCacheTier::ThreeJ => self.three_j_bytes = bytes,
+            CoefficientCacheTier::SixJ => self.six_j_bytes = bytes,
+            CoefficientCacheTier::DerivedF => self.derived_f_bytes = bytes,
+            #[cfg(feature = "cgc-gen")]
+            CoefficientCacheTier::SunProduct => self.sun_product_bytes = bytes,
+            #[cfg(feature = "cgc-gen")]
+            CoefficientCacheTier::SunCgc => self.sun_cgc_bytes = bytes,
+            #[cfg(feature = "cgc-gen")]
+            CoefficientCacheTier::SunF => self.sun_f_bytes = bytes,
+            #[cfg(feature = "cgc-gen")]
+            CoefficientCacheTier::BcdCgc => self.bcd_cgc_bytes = bytes,
+            #[cfg(feature = "cgc-gen")]
+            CoefficientCacheTier::BcdF => self.bcd_f_bytes = bytes,
+        }
+        self
+    }
+
+    /// Return one tier's retained-charge cap.
+    pub fn limit(&self, tier: CoefficientCacheTier) -> usize {
+        match tier {
+            CoefficientCacheTier::ThreeJ => self.three_j_bytes,
+            CoefficientCacheTier::SixJ => self.six_j_bytes,
+            CoefficientCacheTier::DerivedF => self.derived_f_bytes,
+            #[cfg(feature = "cgc-gen")]
+            CoefficientCacheTier::SunProduct => self.sun_product_bytes,
+            #[cfg(feature = "cgc-gen")]
+            CoefficientCacheTier::SunCgc => self.sun_cgc_bytes,
+            #[cfg(feature = "cgc-gen")]
+            CoefficientCacheTier::SunF => self.sun_f_bytes,
+            #[cfg(feature = "cgc-gen")]
+            CoefficientCacheTier::BcdCgc => self.bcd_cgc_bytes,
+            #[cfg(feature = "cgc-gen")]
+            CoefficientCacheTier::BcdF => self.bcd_f_bytes,
+        }
+    }
 }
 
 impl Default for CoefficientCacheBudgets {
@@ -123,7 +221,7 @@ pub enum CacheBudgetError {
     /// A requested tier limit exceeds its compiled maximum.
     ExceedsMaximum {
         /// Stable tier name for diagnostics.
-        tier: &'static str,
+        tier: CoefficientCacheTier,
         /// Rejected requested cap.
         requested: usize,
         /// Compiled maximum cap.
@@ -132,6 +230,13 @@ pub enum CacheBudgetError {
     /// Summing validated tier limits overflowed `usize`.
     AggregateOverflow,
 }
+
+impl std::fmt::Display for CacheBudgetError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+impl std::error::Error for CacheBudgetError {}
 
 static CACHE_BUDGETS: OnceLock<CoefficientCacheBudgets> = OnceLock::new();
 
@@ -155,23 +260,51 @@ pub fn cache_budgets() -> CoefficientCacheBudgets {
 fn validate_budgets(b: CoefficientCacheBudgets) -> Result<(), CacheBudgetError> {
     let maximum = CoefficientCacheBudgets::default();
     let fields = [
-        ("three_j", b.three_j_bytes, maximum.three_j_bytes),
-        ("six_j", b.six_j_bytes, maximum.six_j_bytes),
-        ("derived_f", b.derived_f_bytes, maximum.derived_f_bytes),
+        (
+            CoefficientCacheTier::ThreeJ,
+            b.three_j_bytes,
+            maximum.three_j_bytes,
+        ),
+        (
+            CoefficientCacheTier::SixJ,
+            b.six_j_bytes,
+            maximum.six_j_bytes,
+        ),
+        (
+            CoefficientCacheTier::DerivedF,
+            b.derived_f_bytes,
+            maximum.derived_f_bytes,
+        ),
         #[cfg(feature = "cgc-gen")]
         (
-            "sun_product",
+            CoefficientCacheTier::SunProduct,
             b.sun_product_bytes,
             maximum.sun_product_bytes,
         ),
         #[cfg(feature = "cgc-gen")]
-        ("sun_cgc", b.sun_cgc_bytes, maximum.sun_cgc_bytes),
+        (
+            CoefficientCacheTier::SunCgc,
+            b.sun_cgc_bytes,
+            maximum.sun_cgc_bytes,
+        ),
         #[cfg(feature = "cgc-gen")]
-        ("sun_f", b.sun_f_bytes, maximum.sun_f_bytes),
+        (
+            CoefficientCacheTier::SunF,
+            b.sun_f_bytes,
+            maximum.sun_f_bytes,
+        ),
         #[cfg(feature = "cgc-gen")]
-        ("bcd_cgc", b.bcd_cgc_bytes, maximum.bcd_cgc_bytes),
+        (
+            CoefficientCacheTier::BcdCgc,
+            b.bcd_cgc_bytes,
+            maximum.bcd_cgc_bytes,
+        ),
         #[cfg(feature = "cgc-gen")]
-        ("bcd_f", b.bcd_f_bytes, maximum.bcd_f_bytes),
+        (
+            CoefficientCacheTier::BcdF,
+            b.bcd_f_bytes,
+            maximum.bcd_f_bytes,
+        ),
     ];
     let mut total = 0usize;
     for (tier, requested, limit) in fields {
@@ -569,32 +702,36 @@ impl<K: Clone + Eq + Hash + CacheKeyCharge, V: Clone + CacheCharge> FifoCache<K,
             return v.clone();
         }
         let charge = entry_charge(&key, &value);
-        if charge > self.max_bytes {
-            self.evictions.fetch_add(1, Ordering::Relaxed);
+        if !self.make_room(&mut inner, charge) {
             return value;
         }
-        inner.bytes = inner.bytes.saturating_add(charge);
+        inner.bytes = inner
+            .bytes
+            .checked_add(charge)
+            .expect("bounded cache charge");
         inner.order.push_back(key.clone());
         inner.map.insert(key, value.clone());
-        self.evict(&mut inner);
         value
     }
 
-    /// Evict from the front (oldest) until both bounds hold. A single entry
-    /// larger than `max_bytes` is evicted back out (returned to the caller but
-    /// not retained) rather than pinning the map over budget.
-    fn evict(&self, inner: &mut Inner<K, V>) {
-        while (inner.map.len() > self.max_entries || inner.bytes > self.max_bytes)
-            && !inner.order.is_empty()
-        {
+    /// Rejecting a new oversize/zero-cap entry does not discard older entries.
+    fn make_room(&self, inner: &mut Inner<K, V>, charge: usize) -> bool {
+        if self.max_entries == 0 || charge > self.max_bytes {
+            self.evictions.fetch_add(1, Ordering::Relaxed);
+            return false;
+        }
+        let bytes_before = self.max_bytes - charge;
+        while inner.map.len() >= self.max_entries || inner.bytes > bytes_before {
             let Some(old) = inner.order.pop_front() else {
                 break;
             };
-            if let Some(v) = inner.map.remove(&old) {
-                inner.bytes = inner.bytes.saturating_sub(entry_charge(&old, &v));
+            if let Some(value) = inner.map.remove(&old) {
+                inner.bytes = inner.bytes.saturating_sub(entry_charge(&old, &value));
                 self.evictions.fetch_add(1, Ordering::Relaxed);
             }
         }
+        debug_assert!(inner.bytes <= bytes_before);
+        true
     }
 
     /// Read-fast-path lookup: return a clone of the stored value on a hit
@@ -621,14 +758,15 @@ impl<K: Clone + Eq + Hash + CacheKeyCharge, V: Clone + CacheCharge> FifoCache<K,
             return v.clone();
         }
         let charge = entry_charge(&key, &value);
-        if charge > self.max_bytes {
-            self.evictions.fetch_add(1, Ordering::Relaxed);
+        if !self.make_room(&mut inner, charge) {
             return value;
         }
-        inner.bytes = inner.bytes.saturating_add(charge);
+        inner.bytes = inner
+            .bytes
+            .checked_add(charge)
+            .expect("bounded cache charge");
         inner.order.push_back(key.clone());
         inner.map.insert(key, value.clone());
-        self.evict(&mut inner);
         value
     }
 
