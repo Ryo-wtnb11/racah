@@ -97,23 +97,24 @@ fn timed(work: impl FnOnce()) -> Measurement {
 }
 
 fn clone_slope<T>(label: &str, make: impl Fn() -> T) {
-    let before = crate::audit_alloc::snapshot().0;
+    let before = crate::audit_alloc::allocation_totals();
     let one = make();
     black_box(&one);
-    let one_live = crate::audit_alloc::snapshot().0;
+    let one_totals = crate::audit_alloc::allocation_totals();
     let mut eight = Vec::with_capacity(8);
     for _ in 0..8 {
         eight.push(make());
     }
     black_box(&eight);
-    let eight_live = crate::audit_alloc::snapshot().0;
+    let nine_totals = crate::audit_alloc::allocation_totals();
     drop(eight);
     drop(one);
     eprintln!(
-        "ISSUE65_AUDIT {{\"kind\":\"clone\",\"label\":\"{label}\",\"one_live_delta_bytes\":{},\"nine_live_delta_bytes\":{},\"after_drop_live_delta_bytes\":{}}}",
-        one_live.saturating_sub(before),
-        eight_live.saturating_sub(before),
-        crate::audit_alloc::snapshot().0.saturating_sub(before),
+        "ISSUE65_AUDIT {{\"kind\":\"clone\",\"label\":\"{label}\",\"one_successful_alloc_calls\":{},\"one_requested_alloc_bytes\":{},\"nine_successful_alloc_calls\":{},\"nine_requested_alloc_bytes\":{}}}",
+        one_totals.0.saturating_sub(before.0),
+        one_totals.1.saturating_sub(before.1),
+        nine_totals.0.saturating_sub(before.0),
+        nine_totals.1.saturating_sub(before.1),
     );
 }
 
@@ -137,7 +138,8 @@ fn su3() {
     let three_bar = irr(&[0, 1]);
     let eight = irr(&[1, 1]);
     let _ = shared_directproduct(&three, &three_bar).unwrap();
-    let _ = cgc(&three, &three_bar, &eight).unwrap();
+    let warmed_cgc = cgc(&three, &three_bar, &eight).unwrap();
+    assert!(!warmed_cgc.entries().is_empty());
     let _ = f_symbol(&three, &three_bar, &three, &three, &eight, &eight).unwrap();
 }
 

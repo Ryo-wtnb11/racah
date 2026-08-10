@@ -74,6 +74,8 @@ mod audit_alloc {
 
     static LIVE: AtomicUsize = AtomicUsize::new(0);
     static PEAK: AtomicUsize = AtomicUsize::new(0);
+    static ALLOC_CALLS: AtomicUsize = AtomicUsize::new(0);
+    static ALLOC_BYTES: AtomicUsize = AtomicUsize::new(0);
 
     pub(crate) struct TrackingAllocator;
 
@@ -81,6 +83,19 @@ mod audit_alloc {
         unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
             let ptr = unsafe { System.alloc(layout) };
             if !ptr.is_null() {
+                ALLOC_CALLS.fetch_add(1, Ordering::Relaxed);
+                ALLOC_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
+                let live = LIVE.fetch_add(layout.size(), Ordering::Relaxed) + layout.size();
+                PEAK.fetch_max(live, Ordering::Relaxed);
+            }
+            ptr
+        }
+
+        unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+            let ptr = unsafe { System.alloc_zeroed(layout) };
+            if !ptr.is_null() {
+                ALLOC_CALLS.fetch_add(1, Ordering::Relaxed);
+                ALLOC_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
                 let live = LIVE.fetch_add(layout.size(), Ordering::Relaxed) + layout.size();
                 PEAK.fetch_max(live, Ordering::Relaxed);
             }
@@ -97,6 +112,8 @@ mod audit_alloc {
             if !new.is_null() {
                 if size >= layout.size() {
                     let delta = size - layout.size();
+                    ALLOC_CALLS.fetch_add(1, Ordering::Relaxed);
+                    ALLOC_BYTES.fetch_add(delta, Ordering::Relaxed);
                     let live = LIVE.fetch_add(delta, Ordering::Relaxed) + delta;
                     PEAK.fetch_max(live, Ordering::Relaxed);
                 } else {
@@ -113,6 +130,15 @@ mod audit_alloc {
 
     pub(crate) fn reset_peak_to_live() {
         PEAK.store(LIVE.load(Ordering::Relaxed), Ordering::Relaxed);
+    }
+
+    /// Cumulative successful allocation requests. `realloc` contributes only
+    /// its growth delta; deallocations never subtract from these counters.
+    pub(crate) fn allocation_totals() -> (usize, usize) {
+        (
+            ALLOC_CALLS.load(Ordering::Relaxed),
+            ALLOC_BYTES.load(Ordering::Relaxed),
+        )
     }
 }
 
