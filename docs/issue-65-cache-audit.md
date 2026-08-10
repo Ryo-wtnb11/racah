@@ -8,7 +8,7 @@ Run:
 RACAH_AUDIT_REVISION=65f923657c28f0e6fbc91658313927520527f43b cargo test --release --features cgc-gen --lib cache_audit::issue_65_cache_audit -- --ignored --nocapture
 ```
 
-The harness uses the existing representative SU(2), SU(3), and SU(4) Wigner/CGC/F/product cases. It records every base and generated tier as `[entries, charged bytes, hits, misses, evictions]`; raw rows are in [issue-65-cache-audit.jsonl](issue-65-cache-audit.jsonl). `cold` is an empty-cache phase, `warm` reruns it, and `reset_before_each_query` is the production-faithful no-reuse control. It is not called “cache disabled”: reset has the normal production semantics.
+The audit adapts the repeated exact-symbol regime in `benches/wigner.rs::bench_repeated_labels`, the SU(N) channel selections in `benches/sun_cgc.rs::cases` and `benches/sun_fr.rs::cases`, and product collection in `benches/sun_product.rs::run_racah_generation_workload`. The concrete reduced audit generators are `src/cache_audit.rs::{su2,su3,su4}`, driven by `src/cache_audit.rs::issue_65_cache_audit`; they use one representative admissible SU(2), SU(3), and SU(4) case rather than reproducing each benchmark's complete case list. It records every base and generated tier as `[entries, charged bytes, hits, misses, evictions]`; raw rows are in [issue-65-cache-audit.jsonl](issue-65-cache-audit.jsonl). `cold` is an empty-cache phase, `warm` reruns it, and `reset_before_each_query` is the production-faithful no-reuse control. It is not called “cache disabled”: reset has the normal production semantics.
 
 | phase | cold ns, median ± MAD | warm ns, median ± MAD | reset-before-each ns, median ± MAD |
 | --- | ---: | ---: | ---: |
@@ -19,6 +19,8 @@ The harness uses the existing representative SU(2), SU(3), and SU(4) Wigner/CGC/
 The forward and reverse fresh-reset sequential traces end at the same occupancy: SU(2) `3j/6j/F = 1/2/1` entries and `182/357/56` charged bytes; SU(N) product/CGC/F = `4/8/2` and `1352/6688/1184` bytes. All evictions were zero. The SU-only leaf intentionally does not exercise B/C/D CGC/F: their rows remain zero and are not a measurement of those tiers. The exact prime/factorial support tables grow to 122 rows, 30 primes, and 13240 conservative retained-capacity bytes.
 
 `charged bytes` are cache-entry charge only. The System wrapper records requested live bytes routed through Rust `GlobalAlloc`, not allocator-live memory: it excludes C/library allocations and allocator metadata. Each timed phase resets its peak to its starting requested-live value; this is an approximate observed requested-live peak under backend concurrency. `transient_requested_live_lower_bound` is `peak - max(start, end)`, so retained cache/output growth is excluded. macOS samples current RSS with `ps -o rss= -p PID` outside timed sections; the representative trace records the samples.
+
+Linux parses `VmRSS:` from `/proc/self/status` (KiB to bytes), avoiding a fixed page-size assumption. This post-measurement portability change does not affect the audited macOS `ps` path, so the report retains the measured macOS revision above.
 
 Five fresh test processes produced the median/MAD table above; their raw values are in [issue-65-cache-audit-timings.jsonl](issue-65-cache-audit-timings.jsonl). The checked-in JSONL is one complete representative trace (metadata, every phase, sequential intermediate, clone, and retention records), not an aggregate.
 

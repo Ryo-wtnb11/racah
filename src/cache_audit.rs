@@ -15,9 +15,15 @@ fn irr(dynkin: &[i64]) -> Irrep {
 fn rss_bytes() -> Option<usize> {
     #[cfg(target_os = "linux")]
     {
-        let statm = std::fs::read_to_string("/proc/self/statm").ok()?;
-        let pages = statm.split_whitespace().nth(1)?.parse::<usize>().ok()?;
-        return Some(pages.saturating_mul(4096));
+        return std::fs::read_to_string("/proc/self/status")
+            .ok()?
+            .lines()
+            .find_map(|line| line.strip_prefix("VmRSS:"))?
+            .split_whitespace()
+            .next()?
+            .parse::<usize>()
+            .ok()
+            .map(|kib| kib.saturating_mul(1024));
     }
     #[cfg(target_os = "macos")]
     {
