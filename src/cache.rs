@@ -48,7 +48,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{LazyLock, RwLock};
+use std::sync::{LazyLock, OnceLock, RwLock};
 
 use crate::exact::SignedSqrtRational;
 use crate::su2::{FKey, Regge3j, Regge6j};
@@ -63,6 +63,131 @@ const DEFAULT_MAX_ENTRIES: usize = 1 << 20;
 /// a large working set while bounding the conservative charge of cache-owned
 /// entries, not allocator-live memory or RSS.
 const DEFAULT_MAX_BYTES: usize = 64 << 20;
+
+/// Process-local retained-charge limits for coefficient-cache tiers.
+///
+/// [`configure_cache_budgets`] accepts this value once, before the first cache
+/// operation or cache-policy observation. Zero keeps computing values but
+/// retains none for that tier. [`Default`] is the compiled policy and also the
+/// maximum accepted policy; budgets can only shrink it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CoefficientCacheBudgets {
+    /// Exact Wigner 3j retained-charge cap.
+    pub three_j_bytes: usize,
+    /// Exact Wigner 6j retained-charge cap.
+    pub six_j_bytes: usize,
+    /// Derived SU(2) F-symbol retained-charge cap.
+    pub derived_f_bytes: usize,
+    #[cfg(feature = "cgc-gen")]
+    /// SU(N) product retained-charge cap.
+    pub sun_product_bytes: usize,
+    #[cfg(feature = "cgc-gen")]
+    /// SU(N) CGC retained-charge cap.
+    pub sun_cgc_bytes: usize,
+    #[cfg(feature = "cgc-gen")]
+    /// SU(N) F-symbol retained-charge cap.
+    pub sun_f_bytes: usize,
+    #[cfg(feature = "cgc-gen")]
+    /// B/C/D CGC retained-charge cap.
+    pub bcd_cgc_bytes: usize,
+    #[cfg(feature = "cgc-gen")]
+    /// B/C/D F-symbol retained-charge cap.
+    pub bcd_f_bytes: usize,
+}
+
+impl Default for CoefficientCacheBudgets {
+    fn default() -> Self {
+        Self {
+            three_j_bytes: DEFAULT_MAX_BYTES,
+            six_j_bytes: DEFAULT_MAX_BYTES,
+            derived_f_bytes: DEFAULT_MAX_BYTES,
+            #[cfg(feature = "cgc-gen")]
+            sun_product_bytes: sun_product_cache::SUN_PRODUCT_MAX_BYTES,
+            #[cfg(feature = "cgc-gen")]
+            sun_cgc_bytes: cgc_cache::CGC_MAX_BYTES,
+            #[cfg(feature = "cgc-gen")]
+            sun_f_bytes: sun_f_cache::SUN_F_MAX_BYTES,
+            #[cfg(feature = "cgc-gen")]
+            bcd_cgc_bytes: bcd_cgc_cache::BCD_CGC_MAX_BYTES,
+            #[cfg(feature = "cgc-gen")]
+            bcd_f_bytes: bcd_f_cache::BCD_F_MAX_BYTES,
+        }
+    }
+}
+
+/// Failed coefficient-cache policy initialization.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CacheBudgetError {
+    /// A cache operation or policy observation already fixed this process's policy.
+    AlreadyInitialized,
+    /// A requested tier limit exceeds its compiled maximum.
+    ExceedsMaximum {
+        /// Stable tier name for diagnostics.
+        tier: &'static str,
+        /// Rejected requested cap.
+        requested: usize,
+        /// Compiled maximum cap.
+        maximum: usize,
+    },
+    /// Summing validated tier limits overflowed `usize`.
+    AggregateOverflow,
+}
+
+static CACHE_BUDGETS: OnceLock<CoefficientCacheBudgets> = OnceLock::new();
+
+fn effective_budgets() -> &'static CoefficientCacheBudgets {
+    CACHE_BUDGETS.get_or_init(CoefficientCacheBudgets::default)
+}
+
+/// Configure one shrink-only coefficient-cache policy for this process.
+pub fn configure_cache_budgets(budgets: CoefficientCacheBudgets) -> Result<(), CacheBudgetError> {
+    validate_budgets(budgets)?;
+    CACHE_BUDGETS
+        .set(budgets)
+        .map_err(|_| CacheBudgetError::AlreadyInitialized)
+}
+
+/// Return the effective policy, fixing the default if it was not configured.
+pub fn cache_budgets() -> CoefficientCacheBudgets {
+    *effective_budgets()
+}
+
+fn validate_budgets(b: CoefficientCacheBudgets) -> Result<(), CacheBudgetError> {
+    let maximum = CoefficientCacheBudgets::default();
+    let fields = [
+        ("three_j", b.three_j_bytes, maximum.three_j_bytes),
+        ("six_j", b.six_j_bytes, maximum.six_j_bytes),
+        ("derived_f", b.derived_f_bytes, maximum.derived_f_bytes),
+        #[cfg(feature = "cgc-gen")]
+        (
+            "sun_product",
+            b.sun_product_bytes,
+            maximum.sun_product_bytes,
+        ),
+        #[cfg(feature = "cgc-gen")]
+        ("sun_cgc", b.sun_cgc_bytes, maximum.sun_cgc_bytes),
+        #[cfg(feature = "cgc-gen")]
+        ("sun_f", b.sun_f_bytes, maximum.sun_f_bytes),
+        #[cfg(feature = "cgc-gen")]
+        ("bcd_cgc", b.bcd_cgc_bytes, maximum.bcd_cgc_bytes),
+        #[cfg(feature = "cgc-gen")]
+        ("bcd_f", b.bcd_f_bytes, maximum.bcd_f_bytes),
+    ];
+    let mut total = 0usize;
+    for (tier, requested, limit) in fields {
+        if requested > limit {
+            return Err(CacheBudgetError::ExceedsMaximum {
+                tier,
+                requested,
+                maximum: limit,
+            });
+        }
+        total = total
+            .checked_add(requested)
+            .ok_or(CacheBudgetError::AggregateOverflow)?;
+    }
+    Ok(())
+}
 
 /// Aggregate conservative retained-charge cap for the three base SU(2) tiers
 /// (3j, 6j, derived-F), currently `192 MiB` = `3 × 64 MiB`.
@@ -444,7 +569,11 @@ impl<K: Clone + Eq + Hash + CacheKeyCharge, V: Clone + CacheCharge> FifoCache<K,
             return v.clone();
         }
         let charge = entry_charge(&key, &value);
-        inner.bytes += charge;
+        if charge > self.max_bytes {
+            self.evictions.fetch_add(1, Ordering::Relaxed);
+            return value;
+        }
+        inner.bytes = inner.bytes.saturating_add(charge);
         inner.order.push_back(key.clone());
         inner.map.insert(key, value.clone());
         self.evict(&mut inner);
@@ -492,7 +621,11 @@ impl<K: Clone + Eq + Hash + CacheKeyCharge, V: Clone + CacheCharge> FifoCache<K,
             return v.clone();
         }
         let charge = entry_charge(&key, &value);
-        inner.bytes += charge;
+        if charge > self.max_bytes {
+            self.evictions.fetch_add(1, Ordering::Relaxed);
+            return value;
+        }
+        inner.bytes = inner.bytes.saturating_add(charge);
         inner.order.push_back(key.clone());
         inner.map.insert(key, value.clone());
         self.evict(&mut inner);
@@ -537,9 +670,9 @@ impl<K: Clone + Eq + Hash + CacheKeyCharge, V: Clone + CacheCharge> FifoCache<K,
 }
 
 static CACHE_3J: LazyLock<FifoCache<Regge3j, SignedSqrtRational>> =
-    LazyLock::new(|| FifoCache::new(DEFAULT_MAX_ENTRIES, DEFAULT_MAX_BYTES));
+    LazyLock::new(|| FifoCache::new(DEFAULT_MAX_ENTRIES, effective_budgets().three_j_bytes));
 static CACHE_6J: LazyLock<FifoCache<Regge6j, SignedSqrtRational>> =
-    LazyLock::new(|| FifoCache::new(DEFAULT_MAX_ENTRIES, DEFAULT_MAX_BYTES));
+    LazyLock::new(|| FifoCache::new(DEFAULT_MAX_ENTRIES, effective_budgets().six_j_bytes));
 
 pub(crate) fn cache_3j() -> &'static FifoCache<Regge3j, SignedSqrtRational> {
     &CACHE_3J
@@ -555,7 +688,7 @@ pub(crate) fn cache_6j() -> &'static FifoCache<Regge6j, SignedSqrtRational> {
 /// 6j tier (the value authority), never an independent value source: its `f64`
 /// is always derived from the exact value, so the two cannot disagree.
 static CACHE_F: LazyLock<FifoCache<FKey, f64>> =
-    LazyLock::new(|| FifoCache::new(DEFAULT_MAX_ENTRIES, DEFAULT_MAX_BYTES));
+    LazyLock::new(|| FifoCache::new(DEFAULT_MAX_ENTRIES, effective_budgets().derived_f_bytes));
 
 pub(crate) fn cache_f() -> &'static FifoCache<FKey, f64> {
     &CACHE_F
@@ -603,7 +736,7 @@ mod cgc_cache {
     pub(super) const CGC_MAX_BYTES: usize = 256 << 20;
 
     pub(crate) static CACHE_CGC: LazyLock<FifoCache<CgcKey, Arc<Cgc>>> =
-        LazyLock::new(|| FifoCache::new(CGC_MAX_ENTRIES, CGC_MAX_BYTES));
+        LazyLock::new(|| FifoCache::new(CGC_MAX_ENTRIES, super::effective_budgets().sun_cgc_bytes));
 }
 
 #[cfg(feature = "cgc-gen")]
@@ -636,7 +769,12 @@ mod sun_product_cache {
     pub(super) const SUN_PRODUCT_MAX_BYTES: usize = 128 << 10;
 
     pub(crate) static CACHE_SUN_PRODUCT: LazyLock<FifoCache<SunProductKey, SunProduct>> =
-        LazyLock::new(|| FifoCache::new(SUN_PRODUCT_MAX_ENTRIES, SUN_PRODUCT_MAX_BYTES));
+        LazyLock::new(|| {
+            FifoCache::new(
+                SUN_PRODUCT_MAX_ENTRIES,
+                super::effective_budgets().sun_product_bytes,
+            )
+        });
 }
 
 #[cfg(feature = "cgc-gen")]
@@ -684,7 +822,7 @@ mod sun_f_cache {
     pub(super) const SUN_F_MAX_BYTES: usize = 64 << 20;
 
     pub(crate) static CACHE_SUN_F: LazyLock<FifoCache<SunFKey, Arc<FBlock>>> =
-        LazyLock::new(|| FifoCache::new(SUN_F_MAX_ENTRIES, SUN_F_MAX_BYTES));
+        LazyLock::new(|| FifoCache::new(SUN_F_MAX_ENTRIES, super::effective_budgets().sun_f_bytes));
 }
 
 #[cfg(feature = "cgc-gen")]
@@ -723,7 +861,7 @@ mod bcd_f_cache {
     pub(super) const BCD_F_MAX_BYTES: usize = 64 << 20;
 
     pub(crate) static CACHE_BCD_F: LazyLock<FifoCache<BcdFKey, Arc<FBlock>>> =
-        LazyLock::new(|| FifoCache::new(BCD_F_MAX_ENTRIES, BCD_F_MAX_BYTES));
+        LazyLock::new(|| FifoCache::new(BCD_F_MAX_ENTRIES, super::effective_budgets().bcd_f_bytes));
 }
 
 #[cfg(feature = "cgc-gen")]
@@ -791,7 +929,12 @@ mod bcd_cgc_cache {
     pub(super) const BCD_CGC_MAX_BYTES: usize = 256 << 20;
 
     pub(crate) static CACHE_BCD_CGC: LazyLock<FifoCache<BcdCgcKey, Arc<CatalogCgc>>> =
-        LazyLock::new(|| FifoCache::new(BCD_CGC_MAX_ENTRIES, BCD_CGC_MAX_BYTES));
+        LazyLock::new(|| {
+            FifoCache::new(
+                BCD_CGC_MAX_ENTRIES,
+                super::effective_budgets().bcd_cgc_bytes,
+            )
+        });
 }
 
 #[cfg(feature = "cgc-gen")]
