@@ -42,7 +42,7 @@ fn workload() {
     }
 }
 
-fn run(mode: &str, budgets: CoefficientCacheBudgets, require_eviction: bool) {
+fn run(mode: &str, budgets: CoefficientCacheBudgets, require_eviction: bool, partial: bool) {
     cache::configure_cache_budgets(budgets).unwrap();
     cache::reset();
     crate::audit_alloc::reset_peak_to_live();
@@ -55,8 +55,22 @@ fn run(mode: &str, budgets: CoefficientCacheBudgets, require_eviction: bool) {
     let generated = cache::generated_cache_stats();
     let evictions = base.total().evictions + generated.total().evictions;
     assert_eq!(evictions > 0, require_eviction);
+    let active = [base.three_j, base.six_j, generated.sun_product];
+    if partial {
+        for (stats, tier) in active.into_iter().zip([
+            CoefficientCacheTier::ThreeJ,
+            CoefficientCacheTier::SixJ,
+            CoefficientCacheTier::SunProduct,
+        ]) {
+            assert!(stats.bytes > 0 && stats.bytes <= budgets.limit(tier));
+            assert!(stats.evictions > 0);
+        }
+    }
+    let sample = std::env::var("COEFFICIENT_CACHE_BUDGET_SAMPLE").unwrap_or_else(|_| "0".into());
+    let revision = option_env!("RACAH_BUDGET_REVISION").unwrap_or("not-embedded");
     eprintln!(
-        "COEFFICIENT_CACHE_BUDGET_PRESSURE {{\"mode\":\"{mode}\",\"elapsed_ns\":{elapsed_ns},\"base\":[[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}]],\"generated\":[[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}]],\"requested_live_start_bytes\":{start_live},\"requested_live_end_bytes\":{end_live},\"requested_live_peak_bytes\":{peak_live},\"rss_bytes\":{} }}",
+        "COEFFICIENT_CACHE_BUDGET_PRESSURE {{\"schema\":1,\"revision\":\"{revision}\",\"mode\":\"{mode}\",\"sample\":{sample},\"budgets\":[{},{},{}],\"elapsed_ns\":{elapsed_ns},\"base\":[[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}]],\"generated\":[[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}]],\"requested_live_start_bytes\":{start_live},\"requested_live_end_bytes\":{end_live},\"requested_live_peak_bytes\":{peak_live},\"rss_bytes\":{} }}",
+        budgets.limit(CoefficientCacheTier::ThreeJ), budgets.limit(CoefficientCacheTier::SixJ), budgets.limit(CoefficientCacheTier::SunProduct),
         base.three_j.entries, base.three_j.bytes, base.three_j.hits, base.three_j.misses, base.three_j.evictions,
         base.six_j.entries, base.six_j.bytes, base.six_j.hits, base.six_j.misses, base.six_j.evictions,
         base.derived_f.entries, base.derived_f.bytes, base.derived_f.hits, base.derived_f.misses, base.derived_f.evictions,
@@ -72,21 +86,21 @@ fn run(mode: &str, budgets: CoefficientCacheBudgets, require_eviction: bool) {
 #[test]
 #[ignore = "manual release-only coefficient-cache budget pressure measurement"]
 fn coefficient_cache_budget_pressure_default() {
-    run("default", CoefficientCacheBudgets::default(), false);
+    run("default", CoefficientCacheBudgets::default(), false, false);
 }
 
 #[test]
 #[ignore = "manual release-only coefficient-cache budget pressure measurement"]
 fn coefficient_cache_budget_pressure_constrained() {
     let budgets = CoefficientCacheBudgets::default()
-        .with_limit(CoefficientCacheTier::ThreeJ, 1)
-        .with_limit(CoefficientCacheTier::SixJ, 1)
-        .with_limit(CoefficientCacheTier::SunProduct, 1);
-    run("constrained", budgets, true);
+        .with_limit(CoefficientCacheTier::ThreeJ, 400)
+        .with_limit(CoefficientCacheTier::SixJ, 400)
+        .with_limit(CoefficientCacheTier::SunProduct, 400);
+    run("constrained", budgets, true, true);
 }
 
 #[test]
 #[ignore = "manual release-only coefficient-cache budget pressure measurement"]
 fn coefficient_cache_budget_pressure_disabled() {
-    run("disabled", CoefficientCacheBudgets::disabled(), true);
+    run("disabled", CoefficientCacheBudgets::disabled(), true, false);
 }

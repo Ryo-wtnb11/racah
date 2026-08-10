@@ -125,7 +125,21 @@ pub enum CoefficientCacheTier {
 
 impl std::fmt::Display for CoefficientCacheTier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        f.write_str(match self {
+            Self::ThreeJ => "three_j",
+            Self::SixJ => "six_j",
+            Self::DerivedF => "derived_f",
+            #[cfg(feature = "cgc-gen")]
+            Self::SunProduct => "sun_product",
+            #[cfg(feature = "cgc-gen")]
+            Self::SunCgc => "sun_cgc",
+            #[cfg(feature = "cgc-gen")]
+            Self::SunF => "sun_f",
+            #[cfg(feature = "cgc-gen")]
+            Self::BcdCgc => "bcd_cgc",
+            #[cfg(feature = "cgc-gen")]
+            Self::BcdF => "bcd_f",
+        })
     }
 }
 
@@ -214,6 +228,7 @@ impl Default for CoefficientCacheBudgets {
 }
 
 /// Failed coefficient-cache policy initialization.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CacheBudgetError {
     /// A cache operation or policy observation already fixed this process's policy.
@@ -233,7 +248,22 @@ pub enum CacheBudgetError {
 
 impl std::fmt::Display for CacheBudgetError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
+        match self {
+            Self::AlreadyInitialized => {
+                f.write_str("coefficient-cache policy is already initialized")
+            }
+            Self::ExceedsMaximum {
+                tier,
+                requested,
+                maximum,
+            } => write!(
+                f,
+                "{tier} budget {requested} exceeds compiled maximum {maximum}"
+            ),
+            Self::AggregateOverflow => {
+                f.write_str("coefficient-cache budget aggregate overflowed usize")
+            }
+        }
     }
 }
 impl std::error::Error for CacheBudgetError {}
@@ -736,7 +766,10 @@ impl<K: Clone + Eq + Hash + CacheKeyCharge, V: Clone + CacheCharge> FifoCache<K,
                 break;
             };
             if let Some(value) = inner.map.remove(&old) {
-                inner.bytes = inner.bytes.saturating_sub(entry_charge(&old, &value));
+                inner.bytes = inner
+                    .bytes
+                    .checked_sub(entry_charge(&old, &value))
+                    .expect("cache charge accounting invariant");
                 self.evictions.fetch_add(1, Ordering::Relaxed);
             }
         }
