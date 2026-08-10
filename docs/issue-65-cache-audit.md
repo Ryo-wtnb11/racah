@@ -1,24 +1,24 @@
 # Cache audit: issue #65
 
-Revision `48bad0af875b4e045b4dd1b6d92a578c411d5d5a`; `cgc-gen`; crate-internal workload, so consumer revision is N/A. Measured with `rustc 1.96.0 (ac68faa2)`, macOS/aarch64, release test binary, and the test-only wrapper around `System`.
+Revision `723c1b32c9dd07229d28c9387b680e5469acac5d`; `cgc-gen`; crate-internal workload, so consumer revision is N/A. Measured with `rustc 1.96.0 (ac68faa2)`, macOS/aarch64, release test binary, and the test-only wrapper around `System`.
 
 Run:
 
 ```text
-RACAH_AUDIT_REVISION=48bad0af875b4e045b4dd1b6d92a578c411d5d5a cargo test --release --features cgc-gen --lib cache_audit::issue_65_cache_audit -- --ignored --nocapture
+RACAH_AUDIT_REVISION=723c1b32c9dd07229d28c9387b680e5469acac5d cargo test --release --features cgc-gen --lib cache_audit::issue_65_cache_audit -- --ignored --nocapture
 ```
 
 The harness uses the existing representative SU(2), SU(3), and SU(4) Wigner/CGC/F/product cases. It records every base and generated tier as `[entries, charged bytes, hits, misses, evictions]`; raw rows are in [issue-65-cache-audit.jsonl](issue-65-cache-audit.jsonl). `cold` is an empty-cache phase, `warm` reruns it, and `reset_before_each_query` is the production-faithful no-reuse control. It is not called “cache disabled”: reset has the normal production semantics.
 
 | phase | cold ns, median ± MAD | warm ns, median ± MAD | reset-before-each ns, median ± MAD |
 | --- | ---: | ---: | ---: |
-| SU(2) | 128834 ± 11834 | 875 ± 125 | 46250 ± 5917 |
-| SU(3) | 15378291 ± 96750 | 2917 ± 626 | 17900042 ± 100208 |
-| SU(4) | 22406083 ± 216292 | 3042 ± 792 | 30254917 ± 29583 |
+| SU(2) | 116000 ± 2292 | 708 ± 125 | 43041 ± 916 |
+| SU(3) | 15262500 ± 291333 | 2375 ± 250 | 17835542 ± 30333 |
+| SU(4) | 22222167 ± 119792 | 2875 ± 167 | 30205042 ± 233375 |
 
 The forward and reverse fresh-reset sequential traces end at the same occupancy: SU(2) `3j/6j/F = 1/2/1` entries and `182/357/56` charged bytes; SU(N) product/CGC/F = `4/8/2` and `1352/6688/1184` bytes. All evictions were zero. The SU-only leaf intentionally does not exercise B/C/D CGC/F: their rows remain zero and are not a measurement of those tiers. The exact prime/factorial support tables grow to 122 rows, 30 primes, and 13240 conservative retained-capacity bytes.
 
-`charged bytes` are cache-entry charge only. The System wrapper records requested live bytes routed through Rust `GlobalAlloc`, not allocator-live memory: it excludes C/library allocations and allocator metadata. Each timed phase resets its peak to its starting requested-live value; `transient_requested_live_lower_bound` is `peak - max(start, end)`, so retained cache/output growth is excluded. macOS samples current RSS with `ps -o rss= -p PID` outside timed sections; the representative trace records the samples. `/usr/bin/time -l` is recorded as external process provenance only, not a cache-only bound.
+`charged bytes` are cache-entry charge only. The System wrapper records requested live bytes routed through Rust `GlobalAlloc`, not allocator-live memory: it excludes C/library allocations and allocator metadata. Each timed phase resets its peak to its starting requested-live value; `transient_requested_live_lower_bound` is `peak - max(start, end)`, so retained cache/output growth is excluded. macOS samples current RSS with `ps -o rss= -p PID` outside timed sections; the representative trace records the samples.
 
 Five fresh test processes produced the median/MAD table above; their raw values are in [issue-65-cache-audit-timings.jsonl](issue-65-cache-audit-timings.jsonl). The checked-in JSONL is one complete representative trace (metadata, every phase, sequential intermediate, clone, and retention records), not an aggregate.
 
@@ -32,4 +32,4 @@ Public exact SU(2), owned `directproduct`, CGC, and F returns were each retained
 4. Internal shared `Arc<Cgc>` / `Arc<FBlock>` consumption where ownership permits: **defer**; public clone slopes motivate investigation, while any consumer-visible shared accessor remains a separate ownership/API decision.
 5. Prime/factorial table policy: **recommend** retaining the new private observation; defer any bound/reset policy until workloads above the observed 122-row support table are measured.
 
-No persistent layer, R cache, cache tier, production instrumentation, policy/budget, or public API was added. Admission bypasses are not separately observable: generated admission either never reaches a tier (fallible input/generation) or is a normal insert followed by the existing immediate oversized eviction, already counted in `misses`/`evictions`.
+No persistent layer, R cache, cache tier, production instrumentation, policy/budget, or public API was added. Admission bypasses are not separately observable: SU(2) invalid/overflow requests bypass a tier before lookup; generated fallible input/generation also may not reach a tier; an oversized admitted entry follows the existing immediate-eviction path already counted in `misses`/`evictions`.
