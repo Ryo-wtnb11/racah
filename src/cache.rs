@@ -143,6 +143,29 @@ impl std::fmt::Display for CoefficientCacheTier {
     }
 }
 
+/// Snapshot returned by [`trim_to`] for one coefficient-cache tier.
+///
+/// The report is taken while the selected tier's write lock is held: its
+/// `removed_*` and `remaining_*` fields describe that trim's linearization
+/// point. Concurrent lookups or an in-flight miss that computed outside the
+/// lock can change occupancy after [`trim_to`] returns. The charged bytes cover
+/// cache-owned entries only; they do not imply release of external `Arc`s,
+/// container capacity, allocator metadata, workspaces, or RSS.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CacheTrimReport {
+    /// Tier trimmed by this operation.
+    pub tier: CoefficientCacheTier,
+    /// Number of oldest FIFO entries removed.
+    pub removed_entries: usize,
+    /// Conservative charged bytes removed with those entries.
+    pub removed_charged_bytes: usize,
+    /// Entries retained at the trim linearization point.
+    pub remaining_entries: usize,
+    /// Conservative charged bytes retained at the trim linearization point.
+    pub remaining_charged_bytes: usize,
+}
+
 impl CoefficientCacheBudgets {
     /// Disable retention in every compiled tier while preserving evaluation.
     pub fn disabled() -> Self {
@@ -822,6 +845,35 @@ impl<K: Clone + Eq + Hash + CacheKeyCharge, V: Clone + CacheCharge> FifoCache<K,
         self.evictions.store(0, Ordering::Relaxed);
     }
 
+    /// Drop the oldest FIFO prefix until this tier is at `target_bytes`.
+    ///
+    /// A zero target removes every entry, including a theoretical zero-charge
+    /// entry. This deliberately does not shrink containers: charged-entry
+    /// accounting is the cache contract, not a promise about allocator memory.
+    fn trim_to(&self, target_bytes: usize) -> (usize, usize, usize, usize) {
+        let mut inner = self.inner.write().unwrap();
+        let mut removed_entries = 0usize;
+        let mut removed_bytes = 0usize;
+        while !inner.map.is_empty() && (target_bytes == 0 || inner.bytes > target_bytes) {
+            let old = inner.order.pop_front().expect("cache FIFO invariant");
+            let value = inner.map.remove(&old).expect("cache FIFO invariant");
+            let charge = entry_charge(&old, &value);
+            inner.bytes = inner
+                .bytes
+                .checked_sub(charge)
+                .expect("cache charge accounting invariant");
+            removed_entries = removed_entries
+                .checked_add(1)
+                .expect("cache entry count invariant");
+            removed_bytes = removed_bytes
+                .checked_add(charge)
+                .expect("cache charge accounting invariant");
+        }
+        self.evictions
+            .fetch_add(removed_entries as u64, Ordering::Relaxed);
+        (removed_entries, removed_bytes, inner.map.len(), inner.bytes)
+    }
+
     /// Per-tier snapshot including the eviction counter. Entries/bytes are read
     /// under the tier read lock so they agree with each other; the atomic
     /// counters are `Relaxed` reads taken alongside. This snapshot is internally
@@ -1149,6 +1201,55 @@ pub fn reset() {
     }
 }
 
+/// Release retained entries from one tier down to a per-tier charged-byte target.
+///
+/// The selected tier removes its oldest FIFO entries until its charged bytes are
+/// at most `target_charged_bytes`; the newest suffix remains. Entries are
+/// indivisible, so the retained charge can be below the target. A zero target
+/// clears that tier's entries only. Hits and misses are preserved; each removed
+/// entry increments the tier's eviction count. This does not alter the
+/// process's one-shot [`CoefficientCacheBudgets`] policy, so a later lookup may
+/// refill the tier under the same cap.
+///
+/// Like [`reset`], trimming is a process-global lifecycle operation with one
+/// application owner. A library must not trim a shared coefficient cache behind
+/// its caller's back. A trim is also a cache-policy observation: if no policy
+/// was configured first, accessing the selected cache fixes the default policy.
+///
+/// A hit that acquired its read lock before trimming can still return its clone;
+/// trimming first makes a later lookup miss. A miss computes outside the lock
+/// and can publish after this function returns. See [`CacheTrimReport`] for the
+/// report's linearization-point and memory-accounting boundaries.
+pub fn trim_to(tier: CoefficientCacheTier, target_charged_bytes: usize) -> CacheTrimReport {
+    let (removed_entries, removed_charged_bytes, remaining_entries, remaining_charged_bytes) =
+        match tier {
+            CoefficientCacheTier::ThreeJ => CACHE_3J.trim_to(target_charged_bytes),
+            CoefficientCacheTier::SixJ => CACHE_6J.trim_to(target_charged_bytes),
+            CoefficientCacheTier::DerivedF => CACHE_F.trim_to(target_charged_bytes),
+            #[cfg(feature = "cgc-gen")]
+            CoefficientCacheTier::SunProduct => {
+                sun_product_cache::CACHE_SUN_PRODUCT.trim_to(target_charged_bytes)
+            }
+            #[cfg(feature = "cgc-gen")]
+            CoefficientCacheTier::SunCgc => cgc_cache::CACHE_CGC.trim_to(target_charged_bytes),
+            #[cfg(feature = "cgc-gen")]
+            CoefficientCacheTier::SunF => sun_f_cache::CACHE_SUN_F.trim_to(target_charged_bytes),
+            #[cfg(feature = "cgc-gen")]
+            CoefficientCacheTier::BcdCgc => {
+                bcd_cgc_cache::CACHE_BCD_CGC.trim_to(target_charged_bytes)
+            }
+            #[cfg(feature = "cgc-gen")]
+            CoefficientCacheTier::BcdF => bcd_f_cache::CACHE_BCD_F.trim_to(target_charged_bytes),
+        };
+    CacheTrimReport {
+        tier,
+        removed_entries,
+        removed_charged_bytes,
+        remaining_entries,
+        remaining_charged_bytes,
+    }
+}
+
 /// Aggregate hit/miss/entry/byte statistics across the 3j, 6j, and derived-f64
 /// F-symbol caches.
 pub fn stats() -> CacheStats {
@@ -1274,6 +1375,92 @@ mod tests {
             bytes <= per * 2 + per / 2,
             "retained charge cap violated: {bytes}"
         );
+    }
+
+    #[test]
+    fn trim_removes_fifo_prefix_with_exact_accounting() {
+        let c: FifoCache<u32, SignedSqrtRational> = FifoCache::new(16, 1 << 20);
+        for key in 1..=3 {
+            c.get_or_compute(key, || val(key as i64));
+        }
+        let charges = (1..=3)
+            .map(|key| entry_charge(&key, &val(key as i64)))
+            .collect::<Vec<_>>();
+        let (_, _, before_entries, before_bytes) = c.snapshot();
+        let (removed_entries, removed_bytes, remaining_entries, remaining_bytes) =
+            c.trim_to(charges[1] + charges[2]);
+        assert_eq!((before_entries, before_bytes), (3, charges.iter().sum()));
+        assert_eq!((removed_entries, removed_bytes), (1, charges[0]));
+        assert_eq!(
+            (remaining_entries, remaining_bytes),
+            (2, charges[1] + charges[2])
+        );
+        assert!(!c.inner.read().unwrap().map.contains_key(&1));
+        assert!(c.inner.read().unwrap().map.contains_key(&2));
+        assert!(c.inner.read().unwrap().map.contains_key(&3));
+        assert_eq!(c.tier_stats().evictions, 1);
+
+        let smaller = c.trim_to(charges[2]);
+        assert_eq!(smaller, (1, charges[1], 1, charges[2]));
+        assert_eq!(c.trim_to(charges[2]), (0, 0, 1, charges[2]));
+        assert_eq!(c.trim_to(0), (1, charges[2], 0, 0));
+        assert_eq!(c.tier_stats().evictions, 3);
+    }
+
+    #[test]
+    fn in_flight_miss_can_publish_after_trim() {
+        use std::sync::mpsc;
+
+        let cache = Arc::new(FifoCache::<u32, SignedSqrtRational>::new(16, 1 << 20));
+        let (started_tx, started_rx) = mpsc::channel();
+        let (resume_tx, resume_rx) = mpsc::channel();
+        let worker_cache = Arc::clone(&cache);
+        let worker = std::thread::spawn(move || {
+            worker_cache.get_or_compute(9, || {
+                started_tx.send(()).unwrap();
+                resume_rx.recv().unwrap();
+                val(9)
+            })
+        });
+        started_rx.recv().unwrap();
+        assert_eq!(cache.trim_to(0), (0, 0, 0, 0));
+        resume_tx.send(()).unwrap();
+        assert_eq!(worker.join().unwrap(), val(9));
+        assert_eq!(cache.tier_stats().entries, 1);
+    }
+
+    #[test]
+    fn trim_dispatches_every_compiled_tier() {
+        reset();
+        #[cfg(not(feature = "cgc-gen"))]
+        let tiers = vec![
+            CoefficientCacheTier::ThreeJ,
+            CoefficientCacheTier::SixJ,
+            CoefficientCacheTier::DerivedF,
+        ];
+        #[cfg(feature = "cgc-gen")]
+        let tiers = vec![
+            CoefficientCacheTier::ThreeJ,
+            CoefficientCacheTier::SixJ,
+            CoefficientCacheTier::DerivedF,
+            CoefficientCacheTier::SunProduct,
+            CoefficientCacheTier::SunCgc,
+            CoefficientCacheTier::SunF,
+            CoefficientCacheTier::BcdCgc,
+            CoefficientCacheTier::BcdF,
+        ];
+        for tier in tiers {
+            assert_eq!(
+                trim_to(tier, 0),
+                CacheTrimReport {
+                    tier,
+                    removed_entries: 0,
+                    removed_charged_bytes: 0,
+                    remaining_entries: 0,
+                    remaining_charged_bytes: 0,
+                }
+            );
+        }
     }
 
     #[test]
@@ -1432,6 +1619,30 @@ mod tests {
             .all(|product| products[0].ptr_eq(product)));
         assert_eq!(cache.tier_stats().entries, 1);
         assert_eq!(cache.tier_stats().misses, 8);
+    }
+
+    #[cfg(feature = "cgc-gen")]
+    #[test]
+    fn trimming_sun_product_releases_only_cache_owned_arc() {
+        use crate::sun::{shared_directproduct, Irrep as SunIrrep};
+
+        reset();
+        let three = SunIrrep::from_dynkin(&[1, 0]).unwrap();
+        let three_bar = SunIrrep::from_dynkin(&[0, 1]).unwrap();
+        let external = shared_directproduct(&three, &three_bar).unwrap();
+        assert_eq!(
+            external.strong_count(),
+            2,
+            "cache and caller each own one Arc"
+        );
+        let report = trim_to(CoefficientCacheTier::SunProduct, 0);
+        assert_eq!(report.removed_entries, 1);
+        assert_eq!(
+            external.strong_count(),
+            1,
+            "trim keeps the caller Arc valid"
+        );
+        assert_eq!(external.iter().count(), 2);
     }
 
     #[cfg(feature = "cgc-gen")]

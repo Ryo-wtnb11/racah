@@ -364,6 +364,17 @@ and fixes the default if configuration did not win the first-use race. `reset()`
 clears entries and counters without changing this policy. There are no presets,
 environment variables, shared LRU, or runtime reconfiguration.
 
+#### Per-tier cache trim
+
+`trim_to(CoefficientCacheTier::SixJ, target_charged_bytes)` is the
+single-owner, process-global lifecycle operation for releasing one tier's
+oldest FIFO entries. It returns `CacheTrimReport` with the removed and remaining
+cache-owned charged entries at its tier-lock linearization point; a concurrent
+miss may publish after the call. Zero removes that tier's entries, while hits
+and misses remain and evictions increase by the entries removed. Trimming never
+changes the one-shot budget and never promises to release external `Arc`s,
+container capacity, allocator metadata, or RSS.
+
 ### Generated families (cgc-gen)
 
 The `cgc-gen` generated SU(N) and SO(N)/Sp(2N) providers add a parallel surface
