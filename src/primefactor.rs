@@ -201,7 +201,7 @@ fn trim(powers: &mut Vec<u32>) {
 static PRIMES: RwLock<Vec<u64>> = RwLock::new(Vec::new());
 static FACT: RwLock<Vec<Vec<u32>>> = RwLock::new(Vec::new());
 
-#[cfg(test)]
+#[cfg(all(test, feature = "cgc-gen"))]
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct TableStats {
     pub(crate) factorial_rows: usize,
@@ -209,7 +209,7 @@ pub(crate) struct TableStats {
     pub(crate) retained_capacity_bytes: usize,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "cgc-gen"))]
 pub(crate) fn table_stats() -> TableStats {
     let table = FACT.read().unwrap();
     let factorial_bytes = table

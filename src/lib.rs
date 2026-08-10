@@ -63,11 +63,11 @@
 // The audit harness measures only allocations routed through Rust's System
 // allocator. Keeping it test-only avoids changing the library allocator
 // contract or attributing C/backend allocations to Racah.
-#[cfg(test)]
+#[cfg(all(test, feature = "cgc-gen"))]
 #[global_allocator]
 static TEST_ALLOCATOR: audit_alloc::TrackingAllocator = audit_alloc::TrackingAllocator;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "cgc-gen"))]
 mod audit_alloc {
     use std::alloc::{GlobalAlloc, Layout, System};
     use std::sync::atomic::{AtomicUsize, Ordering};
