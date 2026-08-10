@@ -1,5 +1,6 @@
 //! Ignored local evidence collector for racah #65; not a production benchmark.
 
+use std::hint::black_box;
 use std::time::{Duration, Instant};
 
 use crate::cache;
@@ -50,7 +51,7 @@ fn emit(phase: &str, measurement: Option<Measurement>) {
     let table = primefactor::table_stats();
     let (live, peak) = crate::audit_alloc::snapshot();
     let (elapsed, start_live, end_live, peak_live) = measurement
-        .map_or((0, live, live, peak), |m| {
+        .map_or((0, live, live, live), |m| {
             (m.elapsed.as_nanos(), m.start_live, m.end_live, m.peak_live)
         });
     eprintln!(
@@ -98,11 +99,13 @@ fn timed(work: impl FnOnce()) -> Measurement {
 fn clone_slope<T>(label: &str, make: impl Fn() -> T) {
     let before = crate::audit_alloc::snapshot().0;
     let one = make();
+    black_box(&one);
     let one_live = crate::audit_alloc::snapshot().0;
     let mut eight = Vec::with_capacity(8);
     for _ in 0..8 {
         eight.push(make());
     }
+    black_box(&eight);
     let eight_live = crate::audit_alloc::snapshot().0;
     drop(eight);
     drop(one);
