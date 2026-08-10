@@ -72,7 +72,10 @@ fn emit(phase: &str, measurement: Option<Measurement>) {
         generated.bcd_cgc.entries, generated.bcd_cgc.bytes, generated.bcd_cgc.hits, generated.bcd_cgc.misses, generated.bcd_cgc.evictions,
         generated.bcd_f.entries, generated.bcd_f.bytes, generated.bcd_f.hits, generated.bcd_f.misses, generated.bcd_f.evictions,
         table.factorial_rows, table.primes, table.retained_capacity_bytes,
-        start_live, end_live, peak_live, peak_live.saturating_sub(start_live),
+        start_live,
+        end_live,
+        peak_live,
+        peak_live.saturating_sub(start_live.max(end_live)),
         rss_bytes().map_or_else(|| "null".to_owned(), |n| n.to_string()),
     );
 }
