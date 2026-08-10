@@ -694,11 +694,10 @@ pub(crate) struct FifoCache<K, V> {
     inner: RwLock<Inner<K, V>>,
     hits: AtomicU64,
     misses: AtomicU64,
-    /// Entries removed by [`Self::evict`] over the cache's lifetime. Counts the
-    /// oversize-entry immediate-eviction path (`src/cache.rs` `evict`) too: such
-    /// an entry is admitted (charged, pushed) and then evicted back out on the
-    /// same insert, so counting it keeps the byte-bound story honest — every
-    /// admission that later leaves the map is one eviction.
+    /// Entries rejected from retention or removed by FIFO eviction over the
+    /// cache's lifetime. A successful computation in a zero-cap or oversize
+    /// tier is returned without retention and counts here; that rejection does
+    /// not displace already retained entries.
     evictions: AtomicU64,
     max_entries: usize,
     max_bytes: usize,
