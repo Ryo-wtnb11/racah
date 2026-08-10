@@ -30,7 +30,7 @@ fn rss_bytes() -> Option<usize> {
             .trim()
             .parse::<usize>()
             .ok()?;
-        return Some(kib.saturating_mul(1024));
+        Some(kib.saturating_mul(1024))
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
