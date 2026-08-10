@@ -352,6 +352,18 @@ zero. It acts on process-global `static` state, so reset ownership is
 **single-owner**: exactly one component in a consuming process owns reset policy;
 a library must not call it.
 
+#### Process-local budget policy
+
+Before any coefficient-cache operation or policy observation, an application
+may call `configure_cache_budgets(CoefficientCacheBudgets::default()
+.with_limit(CoefficientCacheTier::SixJ, 1 << 20))`. The policy is one-shot and
+shrink-only: the compiled defaults are also the maximum accepted caps. A zero
+tier cap evaluates normally but retains no entry; `CoefficientCacheBudgets::disabled()`
+sets every compiled tier to zero. `cache_budgets()` reports the effective policy
+and fixes the default if configuration did not win the first-use race. `reset()`
+clears entries and counters without changing this policy. There are no presets,
+environment variables, shared LRU, or runtime reconfiguration.
+
 ### Generated families (cgc-gen)
 
 The `cgc-gen` generated SU(N) and SO(N)/Sp(2N) providers add a parallel surface

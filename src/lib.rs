@@ -148,6 +148,8 @@ mod primefactor;
 
 #[cfg(all(test, feature = "cgc-gen"))]
 mod cache_audit;
+#[cfg(all(test, feature = "cgc-gen"))]
+mod cache_budget_pressure;
 
 /// Exact SU(2) recoupling: doubled-spin labels, the infallible closed-form
 /// Wigner 3j/6j, Clebsch–Gordan, F/R/Frobenius–Schur functions (zero

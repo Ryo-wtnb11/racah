@@ -15,6 +15,11 @@ labels plus issue #47 are the ledger.
 
 ### Added
 
+- **One-shot coefficient-cache budgets**: `CoefficientCacheBudgets`,
+  `CoefficientCacheTier`, `configure_cache_budgets`, and `cache_budgets` let
+  applications shrink independent process-local tier caps before first use.
+  Zero retains no entry; reset preserves the selected policy.
+
 - **Shared SU(N) product tier** (`cgc-gen`, issue #59): exact
   `directproduct` decompositions are retained once as sorted shared channels
   under an order-normalized irrep pair. The unchanged public API reconstructs
