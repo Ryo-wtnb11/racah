@@ -4,11 +4,27 @@
 
 use racah::cache::{
     cache_budgets, configure_cache_budgets, generated_cache_stats, CoefficientCacheBudgets,
+    CoefficientCacheTier,
 };
 use racah::sun::{directproduct, Irrep};
 
 #[test]
 fn disabled_policy_preserves_sun_product_value_without_retention() {
+    for tier in [
+        CoefficientCacheTier::SunProduct,
+        CoefficientCacheTier::SunCgc,
+        CoefficientCacheTier::SunF,
+        CoefficientCacheTier::BcdCgc,
+        CoefficientCacheTier::BcdF,
+    ] {
+        assert_eq!(CoefficientCacheBudgets::disabled().limit(tier), 0);
+        assert_eq!(
+            CoefficientCacheBudgets::default()
+                .with_limit(tier, 7)
+                .limit(tier),
+            7
+        );
+    }
     let budgets = CoefficientCacheBudgets::disabled();
     configure_cache_budgets(budgets).unwrap();
     let three = Irrep::from_dynkin(&[1, 0]).unwrap();

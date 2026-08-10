@@ -1,7 +1,7 @@
 //! Base-only one-shot coefficient-cache budget contract.
 
 use racah::cache::{
-    base_cache_stats, cache_budgets, configure_cache_budgets, CacheBudgetError,
+    base_cache_stats, cache_budgets, configure_cache_budgets, reset, CacheBudgetError,
     CoefficientCacheBudgets, CoefficientCacheTier,
 };
 use racah::wigner_6j;
@@ -27,6 +27,8 @@ fn zero_budget_is_retryable_then_compute_without_retention() {
     assert_eq!(stats.six_j.entries, 0);
     assert_eq!(stats.six_j.bytes, 0);
     assert_eq!(stats.six_j.evictions, 1);
+    reset();
+    assert_eq!(cache_budgets(), budgets, "reset must preserve the policy");
     assert_eq!(
         configure_cache_budgets(CoefficientCacheBudgets::default()),
         Err(CacheBudgetError::AlreadyInitialized)

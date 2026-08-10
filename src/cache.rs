@@ -464,9 +464,9 @@ pub struct TierStats {
     /// concurrent-miss race the losing thread counts a miss without inserting,
     /// so `misses` can slightly exceed the number of stored entries.
     pub misses: u64,
-    /// Entries removed from this tier by eviction over its lifetime, including
-    /// an entry larger than the retained-charge cap that is admitted then immediately
-    /// evicted back out (it never fit, but it was charged, so it counts).
+    /// Entries rejected from retention or removed from this tier by eviction
+    /// over its lifetime. An entry larger than the retained-charge cap and an
+    /// entry in a zero-budget tier both count as rejected evictions.
     pub evictions: u64,
 }
 
@@ -1601,15 +1601,14 @@ mod tests {
 
     #[test]
     fn oversize_entry_counts_as_eviction() {
-        // Retained-charge cap smaller than any single entry: the entry is
-        // admitted (charged, pushed) then immediately evicted back out.
-        // Documented decision: it counts as an eviction, and nothing is retained.
+        // Retained-charge cap smaller than any single entry: reject the entry
+        // without displacing an older retained value; count the rejection.
         let c: FifoCache<u32, SignedSqrtRational> = FifoCache::new(1_000_000, 1);
         c.get_or_compute(7, || val(7));
         let ts = c.tier_stats();
         assert_eq!(ts.entries, 0, "oversize entry is not retained");
         assert_eq!(ts.bytes, 0);
-        assert_eq!(ts.evictions, 1, "an admitted-then-evicted entry counts");
+        assert_eq!(ts.evictions, 1, "a rejected oversize entry counts");
     }
 
     #[test]
