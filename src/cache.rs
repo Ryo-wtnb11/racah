@@ -241,14 +241,24 @@ impl std::error::Error for CacheBudgetError {}
 static CACHE_BUDGETS: OnceLock<CoefficientCacheBudgets> = OnceLock::new();
 
 fn effective_budgets() -> &'static CoefficientCacheBudgets {
-    CACHE_BUDGETS.get_or_init(CoefficientCacheBudgets::default)
+    effective_budgets_in(&CACHE_BUDGETS)
+}
+
+fn effective_budgets_in(cell: &OnceLock<CoefficientCacheBudgets>) -> &CoefficientCacheBudgets {
+    cell.get_or_init(CoefficientCacheBudgets::default)
 }
 
 /// Configure one shrink-only coefficient-cache policy for this process.
 pub fn configure_cache_budgets(budgets: CoefficientCacheBudgets) -> Result<(), CacheBudgetError> {
     validate_budgets(budgets)?;
-    CACHE_BUDGETS
-        .set(budgets)
+    configure_budgets_in(&CACHE_BUDGETS, budgets)
+}
+
+fn configure_budgets_in(
+    cell: &OnceLock<CoefficientCacheBudgets>,
+    budgets: CoefficientCacheBudgets,
+) -> Result<(), CacheBudgetError> {
+    cell.set(budgets)
         .map_err(|_| CacheBudgetError::AlreadyInitialized)
 }
 
@@ -1609,6 +1619,29 @@ mod tests {
             for (k, got) in h.join().unwrap() {
                 assert_eq!(got, seq[k as usize], "thread value diverged at key {k}");
             }
+        }
+    }
+
+    #[test]
+    fn policy_observation_races_configuration_once() {
+        let cell = Arc::new(OnceLock::new());
+        let configured = CoefficientCacheBudgets::disabled();
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let observer_cell = Arc::clone(&cell);
+        let observer_barrier = Arc::clone(&barrier);
+        let observer = std::thread::spawn(move || {
+            observer_barrier.wait();
+            *effective_budgets_in(&observer_cell)
+        });
+        barrier.wait();
+        let configured_result = configure_budgets_in(&cell, configured);
+        let observed = observer.join().unwrap();
+        match configured_result {
+            Ok(()) => assert_eq!(observed, configured),
+            Err(CacheBudgetError::AlreadyInitialized) => {
+                assert_eq!(observed, CoefficientCacheBudgets::default())
+            }
+            Err(error) => panic!("unexpected configuration result: {error}"),
         }
     }
 }
