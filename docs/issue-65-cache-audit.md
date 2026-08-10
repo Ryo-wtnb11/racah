@@ -12,9 +12,9 @@ The harness uses the existing representative SU(2), SU(3), and SU(4) Wigner/CGC/
 
 | phase | cold ns, median ± MAD | warm ns, median ± MAD | reset-before-each ns, median ± MAD |
 | --- | ---: | ---: | ---: |
-| SU(2) | 116000 ± 2292 | 708 ± 125 | 43041 ± 916 |
-| SU(3) | 15262500 ± 291333 | 2375 ± 250 | 17835542 ± 30333 |
-| SU(4) | 22222167 ± 119792 | 2875 ± 167 | 30205042 ± 233375 |
+| SU(2) | 122750 ± 4334 | 750 ± 42 | 43541 ± 1499 |
+| SU(3) | 15306750 ± 226167 | 2958 ± 1 | 17897167 ± 56250 |
+| SU(4) | 22424666 ± 206584 | 2708 ± 83 | 30360291 ± 160251 |
 
 The forward and reverse fresh-reset sequential traces end at the same occupancy: SU(2) `3j/6j/F = 1/2/1` entries and `182/357/56` charged bytes; SU(N) product/CGC/F = `4/8/2` and `1352/6688/1184` bytes. All evictions were zero. The SU-only leaf intentionally does not exercise B/C/D CGC/F: their rows remain zero and are not a measurement of those tiers. The exact prime/factorial support tables grow to 122 rows, 30 primes, and 13240 conservative retained-capacity bytes.
 
