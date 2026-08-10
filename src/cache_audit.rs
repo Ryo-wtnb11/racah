@@ -15,7 +15,7 @@ fn irr(dynkin: &[i64]) -> Irrep {
 fn rss_bytes() -> Option<usize> {
     #[cfg(target_os = "linux")]
     {
-        return std::fs::read_to_string("/proc/self/status")
+        std::fs::read_to_string("/proc/self/status")
             .ok()?
             .lines()
             .find_map(|line| line.strip_prefix("VmRSS:"))?
@@ -62,7 +62,7 @@ fn emit(phase: &str, measurement: Option<Measurement>) {
         });
     eprintln!(
         concat!(
-            "ISSUE65_AUDIT {{\"kind\":\"phase\",\"phase\":\"{}\",\"elapsed_ns\":{},",
+            "COEFFICIENT_CACHE_AUDIT {{\"kind\":\"phase\",\"phase\":\"{}\",\"elapsed_ns\":{},",
             "\"base\":[[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}]],",
             "\"generated\":[[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}]],",
             "\"factorial_rows\":{},\"primes\":{},\"table_capacity_bytes\":{},",
@@ -116,7 +116,7 @@ fn clone_slope<T>(label: &str, make: impl Fn() -> T) {
     drop(eight);
     drop(one);
     eprintln!(
-        "ISSUE65_AUDIT {{\"kind\":\"clone\",\"label\":\"{label}\",\"one_successful_alloc_calls\":{},\"one_requested_alloc_bytes\":{},\"nine_successful_alloc_calls\":{},\"nine_requested_alloc_bytes\":{}}}",
+        "COEFFICIENT_CACHE_AUDIT {{\"kind\":\"clone\",\"label\":\"{label}\",\"one_successful_alloc_calls\":{},\"one_requested_alloc_bytes\":{},\"nine_successful_alloc_calls\":{},\"nine_requested_alloc_bytes\":{}}}",
         one_totals.0.saturating_sub(before.0),
         one_totals.1.saturating_sub(before.1),
         nine_totals.0.saturating_sub(before.0),
@@ -203,9 +203,9 @@ fn sequential_trace(label: &str, work: &[(&str, fn())]) {
 
 #[test]
 #[ignore = "manual release-only cache measurement; run --release --features cgc-gen -- --ignored --nocapture"]
-fn issue_65_cache_audit() {
+fn coefficient_cache_audit() {
     eprintln!(
-        "ISSUE65_AUDIT {{\"kind\":\"metadata\",\"revision\":\"{}\",\"features\":\"cgc-gen\",\"consumer_revision\":\"N/A\",\"allocator\":\"System tracking test wrapper\",\"platform\":\"{}/{}\",\"rustc\":\"recorded by command\"}}",
+        "COEFFICIENT_CACHE_AUDIT {{\"kind\":\"metadata\",\"revision\":\"{}\",\"features\":\"cgc-gen\",\"consumer_revision\":\"N/A\",\"allocator\":\"System tracking test wrapper\",\"platform\":\"{}/{}\",\"rustc\":\"recorded by command\"}}",
         option_env!("RACAH_AUDIT_REVISION").unwrap_or("not-embedded; record git rev-parse HEAD with command"),
         std::env::consts::OS,
         std::env::consts::ARCH,
@@ -255,7 +255,7 @@ fn issue_65_cache_audit() {
     drop(retained);
     let after_drop = crate::audit_alloc::snapshot().0;
     eprintln!(
-        "ISSUE65_AUDIT {{\"kind\":\"retention\",\"owners_with_two_public_handles\":{},\"owners_before_reset\":{},\"freed_bytes_after_final_drop\":{}}}",
+        "COEFFICIENT_CACHE_AUDIT {{\"kind\":\"retention\",\"owners_with_two_public_handles\":{},\"owners_before_reset\":{},\"freed_bytes_after_final_drop\":{}}}",
         owners_with_two_public_handles,
         owners_before_reset,
         before_drop.saturating_sub(after_drop),

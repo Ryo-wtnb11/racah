@@ -1,14 +1,14 @@
-# Cache audit: issue #65
+# Coefficient-cache audit
 
 Revision `65f923657c28f0e6fbc91658313927520527f43b`; `cgc-gen`; crate-internal workload, so consumer revision is N/A. Measured with `rustc 1.96.0 (ac68faa2)`, macOS/aarch64, release test binary, and the test-only wrapper around `System`.
 
 Run:
 
 ```text
-RACAH_AUDIT_REVISION=65f923657c28f0e6fbc91658313927520527f43b cargo test --release --features cgc-gen --lib cache_audit::issue_65_cache_audit -- --ignored --nocapture
+RACAH_AUDIT_REVISION=65f923657c28f0e6fbc91658313927520527f43b cargo test --release --features cgc-gen --lib cache_audit::coefficient_cache_audit -- --ignored --nocapture
 ```
 
-The audit adapts the repeated exact-symbol regime in `benches/wigner.rs::bench_repeated_labels`, the SU(N) channel selections in `benches/sun_cgc.rs::cases` and `benches/sun_fr.rs::cases`, and product collection in `benches/sun_product.rs::run_racah_generation_workload`. The concrete reduced audit generators are `src/cache_audit.rs::{su2,su3,su4}`, driven by `src/cache_audit.rs::issue_65_cache_audit`; they use one representative admissible SU(2), SU(3), and SU(4) case rather than reproducing each benchmark's complete case list. It records every base and generated tier as `[entries, charged bytes, hits, misses, evictions]`; raw rows are in [issue-65-cache-audit.jsonl](issue-65-cache-audit.jsonl). `cold` is an empty-cache phase, `warm` reruns it, and `reset_before_each_query` is the production-faithful no-reuse control. It is not called “cache disabled”: reset has the normal production semantics.
+The audit adapts the repeated exact-symbol regime in `benches/wigner.rs::bench_repeated_labels`, the SU(N) channel selections in `benches/sun_cgc.rs::cases` and `benches/sun_fr.rs::cases`, and product collection in `benches/sun_product.rs::run_racah_generation_workload`. The concrete reduced audit generators are `src/cache_audit.rs::{su2,su3,su4}`, driven by `src/cache_audit.rs::coefficient_cache_audit`; they use one representative admissible SU(2), SU(3), and SU(4) case rather than reproducing each benchmark's complete case list. It records every base and generated tier as `[entries, charged bytes, hits, misses, evictions]`; raw rows are in [coefficient-cache-audit-trace.jsonl](coefficient-cache-audit-trace.jsonl). `cold` is an empty-cache phase, `warm` reruns it, and `reset_before_each_query` is the production-faithful no-reuse control. It is not called “cache disabled”: reset has the normal production semantics.
 
 | phase | cold ns, median ± MAD | warm ns, median ± MAD | reset-before-each ns, median ± MAD |
 | --- | ---: | ---: | ---: |
@@ -22,7 +22,7 @@ The forward and reverse fresh-reset sequential traces end at the same occupancy:
 
 Linux parses `VmRSS:` from `/proc/self/status` (KiB to bytes), avoiding a fixed page-size assumption. This post-measurement portability change does not affect the audited macOS `ps` path, so the report retains the measured macOS revision above.
 
-Five fresh test processes produced the median/MAD table above; their raw values are in [issue-65-cache-audit-timings.jsonl](issue-65-cache-audit-timings.jsonl). The checked-in JSONL is one complete representative trace (metadata, every phase, sequential intermediate, clone, and retention records), not an aggregate.
+Five fresh test processes produced the median/MAD table above; their raw values are in [coefficient-cache-audit-timings.jsonl](coefficient-cache-audit-timings.jsonl). The checked-in JSONL is one complete representative trace (metadata, every phase, sequential intermediate, clone, and retention records), not an aggregate.
 
 Public return allocation is measured by monotonic successful allocation requests, not noisy live deltas. The representative 1/9 retained calls request respectively exact SU(2) `48/1008` B, owned `directproduct` `376/3576` B, public CGC `408/4504` B, and public F `344/3544` B; these include public-call overhead, not payload-only attribution. The selected warm CGC is asserted nonempty. The harness also proves the one public shared-product `Arc` survives cache reset: cache reset reduces its strong count by exactly one and the returned channels remain readable. CGC and F public APIs return deep clones, so they cannot externally retain their internal cache `Arc`.
 
