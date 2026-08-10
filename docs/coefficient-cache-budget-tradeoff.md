@@ -5,8 +5,14 @@ This release-only, fresh-process pressure trace measures revision
 1.96.0. Five fresh processes were recorded per mode:
 
 ```text
-for mode in default constrained disabled; do for sample in 1 2 3 4 5; do COEFFICIENT_CACHE_BUDGET_SAMPLE=$sample RACAH_BUDGET_REVISION=965faf6b cargo test --release --features cgc-gen --lib cache_budget_pressure_$mode -- --ignored --nocapture; done; done
+for mode in default constrained disabled; do for sample in 1 2 3 4 5; do COEFFICIENT_CACHE_BUDGET_SAMPLE=$sample RACAH_BUDGET_REVISION=52d3732b1263e40b7bd095c08e0bfa214c5d127f CARGO_TARGET_DIR=/private/tmp/racah-budget-pressure-52d3732 cargo test --release --features cgc-gen --lib cache_budget_pressure_$mode -- --ignored --nocapture; done; done
 ```
+
+`RACAH_BUDGET_REVISION` is embedded by `option_env!` at compilation, not read
+by the test binary at runtime. The distinct target directory above therefore
+prevents a direct reuse of a release binary compiled with a different revision;
+when changing that variable in an existing target directory, rebuild first
+(for example, `cargo clean -p racah`) rather than invoking an old binary.
 
 The workload in `src/cache_budget_pressure.rs::workload` evaluates three SU(2)
 3j/6j labels and SU(3) fundamental/adjoint plus SU(4) fundamental products.
