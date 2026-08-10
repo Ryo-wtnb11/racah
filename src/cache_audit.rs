@@ -1,0 +1,215 @@
+//! Ignored local evidence collector for racah #65; not a production benchmark.
+
+use std::time::{Duration, Instant};
+
+use crate::cache;
+use crate::primefactor;
+use crate::sun::{cgc, directproduct, f_symbol, shared_directproduct, Irrep};
+use crate::{su2_f_symbol, wigner_3j, wigner_6j};
+
+fn irr(dynkin: &[i64]) -> Irrep {
+    Irrep::from_dynkin(dynkin).unwrap()
+}
+
+fn rss_bytes() -> Option<usize> {
+    #[cfg(target_os = "linux")]
+    {
+        let statm = std::fs::read_to_string("/proc/self/statm").ok()?;
+        let pages = statm.split_whitespace().nth(1)?.parse::<usize>().ok()?;
+        return Some(pages.saturating_mul(4096));
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
+}
+
+fn emit(phase: &str, elapsed: Option<Duration>) {
+    let base = cache::base_cache_stats();
+    let generated = cache::generated_cache_stats();
+    let table = primefactor::table_stats();
+    let (allocator_live, allocator_peak) = crate::audit_alloc::snapshot();
+    eprintln!(
+        concat!(
+            "ISSUE65_AUDIT {{\"phase\":\"{}\",\"elapsed_ns\":{},",
+            "\"base\":[[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}]],",
+            "\"generated\":[[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}]],",
+            "\"factorial_rows\":{},\"primes\":{},\"table_capacity_bytes\":{},",
+            "\"allocator_live_bytes\":{},\"allocator_peak_bytes\":{},\"rss_bytes\":{} }}"
+        ),
+        phase,
+        elapsed.map_or(0, |d| d.as_nanos()),
+        base.three_j.entries, base.three_j.bytes, base.three_j.hits, base.three_j.misses, base.three_j.evictions,
+        base.six_j.entries, base.six_j.bytes, base.six_j.hits, base.six_j.misses, base.six_j.evictions,
+        base.derived_f.entries, base.derived_f.bytes, base.derived_f.hits, base.derived_f.misses, base.derived_f.evictions,
+        generated.sun_product.entries, generated.sun_product.bytes, generated.sun_product.hits, generated.sun_product.misses, generated.sun_product.evictions,
+        generated.sun_cgc.entries, generated.sun_cgc.bytes, generated.sun_cgc.hits, generated.sun_cgc.misses, generated.sun_cgc.evictions,
+        generated.sun_f.entries, generated.sun_f.bytes, generated.sun_f.hits, generated.sun_f.misses, generated.sun_f.evictions,
+        generated.bcd_cgc.entries, generated.bcd_cgc.bytes, generated.bcd_cgc.hits, generated.bcd_cgc.misses, generated.bcd_cgc.evictions,
+        generated.bcd_f.entries, generated.bcd_f.bytes, generated.bcd_f.hits, generated.bcd_f.misses, generated.bcd_f.evictions,
+        table.factorial_rows, table.primes, table.retained_capacity_bytes,
+        allocator_live, allocator_peak,
+        rss_bytes().map_or_else(|| "null".to_owned(), |n| n.to_string()),
+    );
+}
+
+fn timed(work: impl FnOnce()) -> Duration {
+    let start = Instant::now();
+    work();
+    start.elapsed()
+}
+
+fn clone_slope<T>(label: &str, make: impl Fn() -> T) {
+    let before = crate::audit_alloc::snapshot().0;
+    let one = make();
+    let one_live = crate::audit_alloc::snapshot().0;
+    let mut eight = Vec::with_capacity(8);
+    for _ in 0..8 {
+        eight.push(make());
+    }
+    let eight_live = crate::audit_alloc::snapshot().0;
+    drop(eight);
+    drop(one);
+    eprintln!(
+        "ISSUE65_CLONE {label} one_live_delta={} nine_live_delta={} after_drop_delta={}",
+        one_live.saturating_sub(before),
+        eight_live.saturating_sub(before),
+        crate::audit_alloc::snapshot().0.saturating_sub(before),
+    );
+}
+
+fn su2() {
+    let _ = wigner_3j(20, 20, 20, 0, 0, 0);
+    let _ = wigner_6j(60, 60, 60, 60, 60, 60);
+    let _ = su2_f_symbol(2, 2, 2, 2, 2, 2);
+}
+
+fn su2_no_reuse() {
+    cache::reset();
+    let _ = wigner_3j(20, 20, 20, 0, 0, 0);
+    cache::reset();
+    let _ = wigner_6j(60, 60, 60, 60, 60, 60);
+    cache::reset();
+    let _ = su2_f_symbol(2, 2, 2, 2, 2, 2);
+}
+
+fn su3() {
+    let three = irr(&[1, 0]);
+    let three_bar = irr(&[0, 1]);
+    let eight = irr(&[1, 1]);
+    let _ = shared_directproduct(&three, &three_bar).unwrap();
+    let _ = cgc(&three, &three_bar, &eight).unwrap();
+    let _ = f_symbol(&three, &three_bar, &three, &three, &eight, &eight).unwrap();
+}
+
+fn su3_no_reuse() {
+    let three = irr(&[1, 0]);
+    let three_bar = irr(&[0, 1]);
+    let eight = irr(&[1, 1]);
+    cache::reset();
+    let _ = shared_directproduct(&three, &three_bar).unwrap();
+    cache::reset();
+    let _ = cgc(&three, &three_bar, &eight).unwrap();
+    cache::reset();
+    let _ = f_symbol(&three, &three_bar, &three, &three, &eight, &eight).unwrap();
+}
+
+fn su4() {
+    let four = irr(&[1, 0, 0]);
+    let four_bar = irr(&[0, 0, 1]);
+    let fifteen = irr(&[1, 0, 1]);
+    let _ = shared_directproduct(&four, &four_bar).unwrap();
+    let _ = cgc(&four, &four_bar, &fifteen).unwrap();
+    let _ = f_symbol(&four, &four_bar, &four, &four, &fifteen, &fifteen).unwrap();
+}
+
+fn su4_no_reuse() {
+    let four = irr(&[1, 0, 0]);
+    let four_bar = irr(&[0, 0, 1]);
+    let fifteen = irr(&[1, 0, 1]);
+    cache::reset();
+    let _ = shared_directproduct(&four, &four_bar).unwrap();
+    cache::reset();
+    let _ = cgc(&four, &four_bar, &fifteen).unwrap();
+    cache::reset();
+    let _ = f_symbol(&four, &four_bar, &four, &four, &fifteen, &fifteen).unwrap();
+}
+
+fn run(label: &str, work: fn(), no_reuse: fn()) {
+    cache::reset();
+    emit(&format!("{label}:reset"), None);
+    emit(&format!("{label}:cold"), Some(timed(work)));
+    emit(&format!("{label}:warm"), Some(timed(work)));
+    emit(
+        &format!("{label}:reset_before_each_query"),
+        Some(timed(no_reuse)),
+    );
+}
+
+fn sequential_trace(label: &str, work: &[(&str, fn())]) {
+    cache::reset();
+    emit(&format!("{label}:reset"), None);
+    for (family, run) in work {
+        emit(&format!("{label}:after_{family}"), Some(timed(*run)));
+    }
+}
+
+#[test]
+#[ignore = "manual release-only cache measurement; run --release --features cgc-gen -- --ignored --nocapture"]
+fn issue_65_cache_audit() {
+    eprintln!(
+        "ISSUE65_METADATA revision={} features=cgc-gen consumer_revision=N/A allocator=System-tracking-test-wrapper platform={}/{} rustc=recorded-by-command",
+        option_env!("RACAH_AUDIT_REVISION").unwrap_or("not-embedded; record git rev-parse HEAD with command"),
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+    );
+    run("su2", su2, su2_no_reuse);
+    run("su3", su3, su3_no_reuse);
+    run("su4", su4, su4_no_reuse);
+    sequential_trace(
+        "sequential_su2_su3_su4",
+        &[("su2", su2), ("su3", su3), ("su4", su4)],
+    );
+    sequential_trace(
+        "sequential_su4_su3_su2",
+        &[("su4", su4), ("su3", su3), ("su2", su2)],
+    );
+
+    cache::reset();
+    su2();
+    clone_slope("exact_su2_6j", || wigner_6j(60, 60, 60, 60, 60, 60));
+    let three = irr(&[1, 0]);
+    let three_bar = irr(&[0, 1]);
+    let eight = irr(&[1, 1]);
+    let _ = shared_directproduct(&three, &three_bar).unwrap();
+    clone_slope("owned_sun_product", || {
+        directproduct(&three, &three_bar).unwrap()
+    });
+    let _ = cgc(&three, &three_bar, &eight).unwrap();
+    clone_slope("public_cgc", || cgc(&three, &three_bar, &eight).unwrap());
+    let _ = f_symbol(&three, &three_bar, &three, &three, &eight, &eight).unwrap();
+    clone_slope("public_f", || {
+        f_symbol(&three, &three_bar, &three, &three, &eight, &eight).unwrap()
+    });
+
+    cache::reset();
+    let a = irr(&[1, 0]);
+    let b = irr(&[0, 1]);
+    let retained = shared_directproduct(&a, &b).unwrap();
+    let cache_shared = shared_directproduct(&a, &b).unwrap();
+    assert!(retained.ptr_eq(&cache_shared));
+    let owners_with_two_public_handles = retained.strong_count();
+    drop(cache_shared);
+    let owners_before_reset = retained.strong_count();
+    cache::reset();
+    assert_eq!(retained.strong_count() + 1, owners_before_reset);
+    assert!(!retained.iter().collect::<Vec<_>>().is_empty());
+    let before_drop = crate::audit_alloc::snapshot().0;
+    drop(retained);
+    eprintln!(
+        "ISSUE65_RETAINED_PRODUCT owners_before_reset={} live_delta_after_final_drop={}",
+        owners_with_two_public_handles,
+        crate::audit_alloc::snapshot().0.saturating_sub(before_drop),
+    );
+    emit("public_sun_product_retained_after_reset", None);
+}

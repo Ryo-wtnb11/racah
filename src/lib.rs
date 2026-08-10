@@ -60,9 +60,64 @@
 //! [`docs/gauge_soN.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/gauge_soN.md
 #![warn(missing_docs)]
 
+// The audit harness measures only allocations routed through Rust's System
+// allocator. Keeping it test-only avoids changing the library allocator
+// contract or attributing C/backend allocations to Racah.
+#[cfg(test)]
+#[global_allocator]
+static TEST_ALLOCATOR: audit_alloc::TrackingAllocator = audit_alloc::TrackingAllocator;
+
+#[cfg(test)]
+mod audit_alloc {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static LIVE: AtomicUsize = AtomicUsize::new(0);
+    static PEAK: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) struct TrackingAllocator;
+
+    unsafe impl GlobalAlloc for TrackingAllocator {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            let ptr = unsafe { System.alloc(layout) };
+            if !ptr.is_null() {
+                let live = LIVE.fetch_add(layout.size(), Ordering::Relaxed) + layout.size();
+                PEAK.fetch_max(live, Ordering::Relaxed);
+            }
+            ptr
+        }
+
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            unsafe { System.dealloc(ptr, layout) };
+            LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
+        }
+
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, size: usize) -> *mut u8 {
+            let new = unsafe { System.realloc(ptr, layout, size) };
+            if !new.is_null() {
+                if size >= layout.size() {
+                    let delta = size - layout.size();
+                    let live = LIVE.fetch_add(delta, Ordering::Relaxed) + delta;
+                    PEAK.fetch_max(live, Ordering::Relaxed);
+                } else {
+                    LIVE.fetch_sub(layout.size() - size, Ordering::Relaxed);
+                }
+            }
+            new
+        }
+    }
+
+    pub(crate) fn snapshot() -> (usize, usize) {
+        (LIVE.load(Ordering::Relaxed), PEAK.load(Ordering::Relaxed))
+    }
+}
+
 pub mod cache;
 mod exact;
 mod primefactor;
+
+#[cfg(all(test, feature = "cgc-gen"))]
+mod cache_audit;
 
 /// Exact SU(2) recoupling: doubled-spin labels, the infallible closed-form
 /// Wigner 3j/6j, Clebsch–Gordan, F/R/Frobenius–Schur functions (zero
