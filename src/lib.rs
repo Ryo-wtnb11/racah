@@ -110,6 +110,10 @@ mod audit_alloc {
     pub(crate) fn snapshot() -> (usize, usize) {
         (LIVE.load(Ordering::Relaxed), PEAK.load(Ordering::Relaxed))
     }
+
+    pub(crate) fn reset_peak_to_live() {
+        PEAK.store(LIVE.load(Ordering::Relaxed), Ordering::Relaxed);
+    }
 }
 
 pub mod cache;

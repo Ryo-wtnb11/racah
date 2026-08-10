@@ -18,27 +18,51 @@ fn rss_bytes() -> Option<usize> {
         let pages = statm.split_whitespace().nth(1)?.parse::<usize>().ok()?;
         return Some(pages.saturating_mul(4096));
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("ps")
+            .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+            .output()
+            .ok()?;
+        let kib = std::str::from_utf8(&output.stdout)
+            .ok()?
+            .trim()
+            .parse::<usize>()
+            .ok()?;
+        return Some(kib.saturating_mul(1024));
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         None
     }
 }
 
-fn emit(phase: &str, elapsed: Option<Duration>) {
+struct Measurement {
+    elapsed: Duration,
+    start_live: usize,
+    end_live: usize,
+    peak_live: usize,
+}
+
+fn emit(phase: &str, measurement: Option<Measurement>) {
     let base = cache::base_cache_stats();
     let generated = cache::generated_cache_stats();
     let table = primefactor::table_stats();
-    let (allocator_live, allocator_peak) = crate::audit_alloc::snapshot();
+    let (live, peak) = crate::audit_alloc::snapshot();
+    let (elapsed, start_live, end_live, peak_live) = measurement
+        .map_or((0, live, live, peak), |m| {
+            (m.elapsed.as_nanos(), m.start_live, m.end_live, m.peak_live)
+        });
     eprintln!(
         concat!(
-            "ISSUE65_AUDIT {{\"phase\":\"{}\",\"elapsed_ns\":{},",
+            "ISSUE65_AUDIT {{\"kind\":\"phase\",\"phase\":\"{}\",\"elapsed_ns\":{},",
             "\"base\":[[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}]],",
             "\"generated\":[[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}]],",
             "\"factorial_rows\":{},\"primes\":{},\"table_capacity_bytes\":{},",
-            "\"allocator_live_bytes\":{},\"allocator_peak_bytes\":{},\"rss_bytes\":{} }}"
+            "\"system_requested_live_start_bytes\":{},\"system_requested_live_end_bytes\":{},\"system_requested_live_peak_bytes\":{},\"system_requested_live_transient_lower_bound_bytes\":{},\"rss_bytes\":{} }}"
         ),
         phase,
-        elapsed.map_or(0, |d| d.as_nanos()),
+        elapsed,
         base.three_j.entries, base.three_j.bytes, base.three_j.hits, base.three_j.misses, base.three_j.evictions,
         base.six_j.entries, base.six_j.bytes, base.six_j.hits, base.six_j.misses, base.six_j.evictions,
         base.derived_f.entries, base.derived_f.bytes, base.derived_f.hits, base.derived_f.misses, base.derived_f.evictions,
@@ -48,15 +72,24 @@ fn emit(phase: &str, elapsed: Option<Duration>) {
         generated.bcd_cgc.entries, generated.bcd_cgc.bytes, generated.bcd_cgc.hits, generated.bcd_cgc.misses, generated.bcd_cgc.evictions,
         generated.bcd_f.entries, generated.bcd_f.bytes, generated.bcd_f.hits, generated.bcd_f.misses, generated.bcd_f.evictions,
         table.factorial_rows, table.primes, table.retained_capacity_bytes,
-        allocator_live, allocator_peak,
+        start_live, end_live, peak_live, peak_live.saturating_sub(start_live),
         rss_bytes().map_or_else(|| "null".to_owned(), |n| n.to_string()),
     );
 }
 
-fn timed(work: impl FnOnce()) -> Duration {
+fn timed(work: impl FnOnce()) -> Measurement {
+    crate::audit_alloc::reset_peak_to_live();
+    let start_live = crate::audit_alloc::snapshot().0;
     let start = Instant::now();
     work();
-    start.elapsed()
+    let elapsed = start.elapsed();
+    let (end_live, peak_live) = crate::audit_alloc::snapshot();
+    Measurement {
+        elapsed,
+        start_live,
+        end_live,
+        peak_live,
+    }
 }
 
 fn clone_slope<T>(label: &str, make: impl Fn() -> T) {
@@ -71,7 +104,7 @@ fn clone_slope<T>(label: &str, make: impl Fn() -> T) {
     drop(eight);
     drop(one);
     eprintln!(
-        "ISSUE65_CLONE {label} one_live_delta={} nine_live_delta={} after_drop_delta={}",
+        "ISSUE65_AUDIT {{\"kind\":\"clone\",\"label\":\"{label}\",\"one_live_delta_bytes\":{},\"nine_live_delta_bytes\":{},\"after_drop_live_delta_bytes\":{}}}",
         one_live.saturating_sub(before),
         eight_live.saturating_sub(before),
         crate::audit_alloc::snapshot().0.saturating_sub(before),
@@ -158,7 +191,7 @@ fn sequential_trace(label: &str, work: &[(&str, fn())]) {
 #[ignore = "manual release-only cache measurement; run --release --features cgc-gen -- --ignored --nocapture"]
 fn issue_65_cache_audit() {
     eprintln!(
-        "ISSUE65_METADATA revision={} features=cgc-gen consumer_revision=N/A allocator=System-tracking-test-wrapper platform={}/{} rustc=recorded-by-command",
+        "ISSUE65_AUDIT {{\"kind\":\"metadata\",\"revision\":\"{}\",\"features\":\"cgc-gen\",\"consumer_revision\":\"N/A\",\"allocator\":\"System tracking test wrapper\",\"platform\":\"{}/{}\",\"rustc\":\"recorded by command\"}}",
         option_env!("RACAH_AUDIT_REVISION").unwrap_or("not-embedded; record git rev-parse HEAD with command"),
         std::env::consts::OS,
         std::env::consts::ARCH,
@@ -206,10 +239,12 @@ fn issue_65_cache_audit() {
     assert!(!retained.iter().collect::<Vec<_>>().is_empty());
     let before_drop = crate::audit_alloc::snapshot().0;
     drop(retained);
+    let after_drop = crate::audit_alloc::snapshot().0;
     eprintln!(
-        "ISSUE65_RETAINED_PRODUCT owners_before_reset={} live_delta_after_final_drop={}",
+        "ISSUE65_AUDIT {{\"kind\":\"retention\",\"owners_with_two_public_handles\":{},\"owners_before_reset\":{},\"freed_bytes_after_final_drop\":{}}}",
         owners_with_two_public_handles,
-        crate::audit_alloc::snapshot().0.saturating_sub(before_drop),
+        owners_before_reset,
+        before_drop.saturating_sub(after_drop),
     );
     emit("public_sun_product_retained_after_reset", None);
 }
