@@ -49,7 +49,7 @@ fn emit(phase: &str, measurement: Option<Measurement>) {
     let base = cache::base_cache_stats();
     let generated = cache::generated_cache_stats();
     let table = primefactor::table_stats();
-    let (live, peak) = crate::audit_alloc::snapshot();
+    let (live, _) = crate::audit_alloc::snapshot();
     let (elapsed, start_live, end_live, peak_live) = measurement
         .map_or((0, live, live, live), |m| {
             (m.elapsed.as_nanos(), m.start_live, m.end_live, m.peak_live)
