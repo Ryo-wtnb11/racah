@@ -1,4 +1,4 @@
-//! Ignored local evidence collector for racah #65; not a production benchmark.
+//! Ignored local coefficient-cache evidence collector; not a production benchmark.
 
 use std::hint::black_box;
 use std::time::{Duration, Instant};
