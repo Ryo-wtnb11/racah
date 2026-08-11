@@ -70,6 +70,14 @@ fn run(mode: &str) {
         cache::trim_to(CoefficientCacheTier::SixJ, targets[1]),
         cache::trim_to(CoefficientCacheTier::SunProduct, targets[2]),
     ];
+    match mode {
+        "retained" => assert!(reports.iter().all(|report| report.removed_entries == 0)),
+        "partial" => assert!(reports
+            .iter()
+            .all(|report| report.removed_entries > 0 && report.remaining_entries > 0)),
+        "zero" => assert!(reports.iter().all(|report| report.remaining_entries == 0)),
+        _ => unreachable!(),
+    }
     crate::audit_alloc::reset_peak_to_live();
     let start_live = crate::audit_alloc::snapshot().0;
     let start = Instant::now();
@@ -78,6 +86,9 @@ fn run(mode: &str) {
     let (end_live, peak_live) = crate::audit_alloc::snapshot();
     let after = cache::base_cache_stats();
     let after_product = cache::generated_cache_stats().sun_product;
+    assert!(after.three_j.bytes <= cache::cache_budgets().limit(CoefficientCacheTier::ThreeJ));
+    assert!(after.six_j.bytes <= cache::cache_budgets().limit(CoefficientCacheTier::SixJ));
+    assert!(after_product.bytes <= cache::cache_budgets().limit(CoefficientCacheTier::SunProduct));
     let sample = std::env::var("COEFFICIENT_CACHE_TRIM_SAMPLE").unwrap_or_else(|_| "0".into());
     let revision = option_env!("RACAH_TRIM_REVISION").unwrap_or("not-embedded");
     eprintln!(
@@ -86,9 +97,9 @@ fn run(mode: &str) {
         reports[0].removed_entries, reports[0].removed_charged_bytes, reports[0].remaining_entries, reports[0].remaining_charged_bytes,
         reports[1].removed_entries, reports[1].removed_charged_bytes, reports[1].remaining_entries, reports[1].remaining_charged_bytes,
         reports[2].removed_entries, reports[2].removed_charged_bytes, reports[2].remaining_entries, reports[2].remaining_charged_bytes,
-        after.three_j.entries, after.three_j.bytes, after.three_j.hits, after.three_j.misses,
-        after.six_j.entries, after.six_j.bytes, after.six_j.hits, after.six_j.misses,
-        after_product.entries, after_product.bytes, after_product.hits, after_product.misses,
+        after.three_j.entries, after.three_j.bytes, after.three_j.hits, after.three_j.misses, after.three_j.evictions,
+        after.six_j.entries, after.six_j.bytes, after.six_j.hits, after.six_j.misses, after.six_j.evictions,
+        after_product.entries, after_product.bytes, after_product.hits, after_product.misses, after_product.evictions,
         rss_bytes().map_or_else(|| "null".to_owned(), |n| n.to_string()),
     );
 }
