@@ -1400,8 +1400,12 @@ mod tests {
         let (removed_entries, removed_bytes, remaining_entries, remaining_bytes) =
             c.trim_to(charges[1] + charges[2] - 1);
         assert_eq!((before_entries, before_bytes), (3, charges.iter().sum()));
-        assert_eq!((removed_entries, removed_bytes), (1, charges[0]));
+        assert_eq!(
+            (removed_entries, removed_bytes),
+            (2, charges[0] + charges[1])
+        );
         assert_eq!((remaining_entries, remaining_bytes), (1, charges[2]));
+        assert!(remaining_bytes < charges[1] + charges[2] - 1);
         assert!(!c.inner.read().unwrap().map.contains_key(&1));
         assert!(!c.inner.read().unwrap().map.contains_key(&2));
         assert!(c.inner.read().unwrap().map.contains_key(&3));
@@ -1592,6 +1596,31 @@ mod tests {
             .all(|product| products[0].ptr_eq(product)));
         assert_eq!(cache.tier_stats().entries, 1);
         assert_eq!(cache.tier_stats().misses, 8);
+    }
+
+    #[cfg(feature = "cgc-gen")]
+    #[test]
+    fn local_trim_releases_one_sun_product_arc_owner() {
+        use crate::sun::{Irrep as SunIrrep, SunProduct, SunProductKey};
+        use std::collections::BTreeMap;
+
+        let three = SunIrrep::from_dynkin(&[1, 0]).unwrap();
+        let three_bar = SunIrrep::from_dynkin(&[0, 1]).unwrap();
+        let key = SunProductKey::new(&three, &three_bar);
+        let external = SunProduct::from_map(BTreeMap::from([
+            (SunIrrep::trivial(3).unwrap(), 1),
+            (SunIrrep::from_dynkin(&[1, 1]).unwrap(), 1),
+        ]));
+        let local = FifoCache::new(16, 1 << 20);
+        local.insert(key, external.clone());
+        let before = external.strong_count();
+        assert!(
+            before >= 2,
+            "caller and local cache own the shared channels"
+        );
+        assert_eq!(local.trim_to(0).0, 1);
+        assert_eq!(external.strong_count(), before - 1);
+        assert_eq!(external.iter().count(), 2);
     }
 
     #[cfg(feature = "cgc-gen")]
