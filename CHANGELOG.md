@@ -15,6 +15,12 @@ labels plus issue #47 are the ledger.
 
 ### Added
 
+- **Per-tier coefficient-cache trim**: `trim_to(CoefficientCacheTier, bytes)`
+  releases the oldest FIFO prefix of exactly one tier and reports its
+  linearization-point charged-entry accounting in `CacheTrimReport`. It is a
+  process-global single-owner lifecycle operation; it preserves the one-shot
+  cache budget and makes no allocator/RSS release claim.
+
 - **One-shot coefficient-cache budgets**: `CoefficientCacheBudgets`,
   `CoefficientCacheTier`, `configure_cache_budgets`, and `cache_budgets` let
   applications shrink independent process-local tier caps before first use.
