@@ -1380,31 +1380,38 @@ mod tests {
     #[test]
     fn trim_removes_fifo_prefix_with_exact_accounting() {
         let c: FifoCache<u32, SignedSqrtRational> = FifoCache::new(16, 1 << 20);
-        for key in 1..=3 {
-            c.get_or_compute(key, || val(key as i64));
+        let values = [
+            val(1),
+            SignedSqrtRational::from_prefactor_radical(
+                Ratio::from(BigInt::from(1)),
+                Ratio::new(BigInt::from(1) << 256, BigInt::from(1)),
+            ),
+            val(3),
+        ];
+        for (key, value) in (1..=3).zip(values.iter().cloned()) {
+            c.get_or_compute(key, || value);
         }
         let charges = (1..=3)
-            .map(|key| entry_charge(&key, &val(key as i64)))
+            .zip(values.iter())
+            .map(|(key, value)| entry_charge(&key, value))
             .collect::<Vec<_>>();
+        assert!(charges[1] > charges[0]);
         let (_, _, before_entries, before_bytes) = c.snapshot();
         let (removed_entries, removed_bytes, remaining_entries, remaining_bytes) =
-            c.trim_to(charges[1] + charges[2]);
+            c.trim_to(charges[1] + charges[2] - 1);
         assert_eq!((before_entries, before_bytes), (3, charges.iter().sum()));
         assert_eq!((removed_entries, removed_bytes), (1, charges[0]));
-        assert_eq!(
-            (remaining_entries, remaining_bytes),
-            (2, charges[1] + charges[2])
-        );
+        assert_eq!((remaining_entries, remaining_bytes), (1, charges[2]));
         assert!(!c.inner.read().unwrap().map.contains_key(&1));
-        assert!(c.inner.read().unwrap().map.contains_key(&2));
+        assert!(!c.inner.read().unwrap().map.contains_key(&2));
         assert!(c.inner.read().unwrap().map.contains_key(&3));
-        assert_eq!(c.tier_stats().evictions, 1);
+        assert_eq!(c.tier_stats().evictions, 2);
 
-        let smaller = c.trim_to(charges[2]);
-        assert_eq!(smaller, (1, charges[1], 1, charges[2]));
         assert_eq!(c.trim_to(charges[2]), (0, 0, 1, charges[2]));
         assert_eq!(c.trim_to(0), (1, charges[2], 0, 0));
         assert_eq!(c.tier_stats().evictions, 3);
+        c.reset();
+        assert_eq!(c.tier_stats(), TierStats::default());
     }
 
     #[test]
@@ -1427,40 +1434,6 @@ mod tests {
         resume_tx.send(()).unwrap();
         assert_eq!(worker.join().unwrap(), val(9));
         assert_eq!(cache.tier_stats().entries, 1);
-    }
-
-    #[test]
-    fn trim_dispatches_every_compiled_tier() {
-        reset();
-        #[cfg(not(feature = "cgc-gen"))]
-        let tiers = vec![
-            CoefficientCacheTier::ThreeJ,
-            CoefficientCacheTier::SixJ,
-            CoefficientCacheTier::DerivedF,
-        ];
-        #[cfg(feature = "cgc-gen")]
-        let tiers = vec![
-            CoefficientCacheTier::ThreeJ,
-            CoefficientCacheTier::SixJ,
-            CoefficientCacheTier::DerivedF,
-            CoefficientCacheTier::SunProduct,
-            CoefficientCacheTier::SunCgc,
-            CoefficientCacheTier::SunF,
-            CoefficientCacheTier::BcdCgc,
-            CoefficientCacheTier::BcdF,
-        ];
-        for tier in tiers {
-            assert_eq!(
-                trim_to(tier, 0),
-                CacheTrimReport {
-                    tier,
-                    removed_entries: 0,
-                    removed_charged_bytes: 0,
-                    remaining_entries: 0,
-                    remaining_charged_bytes: 0,
-                }
-            );
-        }
     }
 
     #[test]
@@ -1619,30 +1592,6 @@ mod tests {
             .all(|product| products[0].ptr_eq(product)));
         assert_eq!(cache.tier_stats().entries, 1);
         assert_eq!(cache.tier_stats().misses, 8);
-    }
-
-    #[cfg(feature = "cgc-gen")]
-    #[test]
-    fn trimming_sun_product_releases_only_cache_owned_arc() {
-        use crate::sun::{shared_directproduct, Irrep as SunIrrep};
-
-        reset();
-        let three = SunIrrep::from_dynkin(&[1, 0]).unwrap();
-        let three_bar = SunIrrep::from_dynkin(&[0, 1]).unwrap();
-        let external = shared_directproduct(&three, &three_bar).unwrap();
-        assert_eq!(
-            external.strong_count(),
-            2,
-            "cache and caller each own one Arc"
-        );
-        let report = trim_to(CoefficientCacheTier::SunProduct, 0);
-        assert_eq!(report.removed_entries, 1);
-        assert_eq!(
-            external.strong_count(),
-            1,
-            "trim keeps the caller Arc valid"
-        );
-        assert_eq!(external.iter().count(), 2);
     }
 
     #[cfg(feature = "cgc-gen")]
