@@ -92,7 +92,7 @@ fn run(mode: &str) {
     let sample = std::env::var("COEFFICIENT_CACHE_TRIM_SAMPLE").unwrap_or_else(|_| "0".into());
     let revision = option_env!("RACAH_TRIM_REVISION").unwrap_or("not-embedded");
     eprintln!(
-        "COEFFICIENT_CACHE_TRIM {{\"schema\":1,\"revision\":\"{revision}\",\"mode\":\"{mode}\",\"sample\":{sample},\"targets\":[{},{},{}],\"reports\":[[{},{},{},{}],[{},{},{},{}],[{},{},{},{}]],\"elapsed_ns\":{elapsed_ns},\"after\":[[{},{},{},{},{}],[{},{},{},{}],[{},{},{},{}]],\"requested_live_start_bytes\":{start_live},\"requested_live_end_bytes\":{end_live},\"requested_live_peak_bytes\":{peak_live},\"rss_bytes\":{} }}",
+        "COEFFICIENT_CACHE_TRIM {{\"schema\":1,\"revision\":\"{revision}\",\"mode\":\"{mode}\",\"sample\":{sample},\"targets\":[{},{},{}],\"reports\":[[{},{},{},{}],[{},{},{},{}],[{},{},{},{}]],\"elapsed_ns\":{elapsed_ns},\"after\":[[{},{},{},{},{}],[{},{},{},{},{}],[{},{},{},{},{}]],\"requested_live_start_bytes\":{start_live},\"requested_live_end_bytes\":{end_live},\"requested_live_peak_bytes\":{peak_live},\"rss_bytes\":{} }}",
         targets[0], targets[1], targets[2],
         reports[0].removed_entries, reports[0].removed_charged_bytes, reports[0].remaining_entries, reports[0].remaining_charged_bytes,
         reports[1].removed_entries, reports[1].removed_charged_bytes, reports[1].remaining_entries, reports[1].remaining_charged_bytes,
