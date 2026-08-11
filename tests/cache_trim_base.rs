@@ -10,7 +10,6 @@ fn trim_is_tier_local_preserves_budget_and_allows_refill() {
     let _ = wigner_3j(2, 2, 2, 0, 0, 0);
     let _ = wigner_6j(2, 2, 2, 2, 2, 2);
     let _ = su2_f_symbol(2, 2, 2, 2, 2, 2);
-    let before = base_cache_stats();
     for tier in [
         CoefficientCacheTier::ThreeJ,
         CoefficientCacheTier::SixJ,
