@@ -13,6 +13,7 @@ fn irrep(d: &[i64]) -> sun::Irrep {
 fn trim_routes_to_each_populated_generated_tier() {
     cache::reset();
     let (a, b, c) = (irrep(&[1, 0]), irrep(&[0, 1]), irrep(&[1, 1]));
+    let external_product = sun::shared_directproduct(&a, &b).unwrap();
     let _ = sun::cgc(&a, &b, &c).unwrap();
     let e8 = irrep(&[1, 1]);
     let _ = sun::f_symbol(&e8, &e8, &e8, &e8, &e8, &e8).unwrap();
@@ -51,5 +52,12 @@ fn trim_routes_to_each_populated_generated_tier() {
             _ => unreachable!(),
         };
         assert_eq!(now.entries, 0);
+        if tier == CoefficientCacheTier::SunProduct {
+            assert_eq!(
+                external_product.iter().count(),
+                2,
+                "trim cannot invalidate a caller clone"
+            );
+        }
     }
 }
