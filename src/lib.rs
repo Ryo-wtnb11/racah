@@ -21,12 +21,144 @@
 //! Exactness contract: combinatorial structure and discrete data are exact;
 //! gauge fixing is a deterministic function of the subspace; floating-point
 //! stages are verification-gated and versioned.
+//!
+//! Base SU(2) provider contract: an opaque value-convention fingerprint
+//! ([`su2_authority_fingerprint`]), a checked representation surface
+//! ([`su2::Su2Irrep`] and the `*_checked` coefficient functions), and a cache
+//! resource contract ([`cache::base_cache_stats`], [`cache::BASE_CACHE_MAX_BYTES`],
+//! [`cache::reset`]). The README "Provider contract" section carries the prose.
+//!
+//! # Quick start
+//!
+//! Exact SU(2) recoupling needs no features. Spins are doubled (`dj = 2j`), so
+//! `2` means spin 1; a non-admissible label set returns exact zero, never an
+//! error. Here `{1 1 1; 1 1 1} = 1/6`:
+//!
+//! ```
+//! use racah::wigner_6j;
+//!
+//! let sixj = wigner_6j(2, 2, 2, 2, 2, 2);
+//! assert!((sixj.to_f64() - 1.0 / 6.0).abs() < 1e-14);
+//! ```
+//!
+//! The generated families (SU(N), SO(N)/Sp(2N)) live behind the `cgc-gen`
+//! feature; see the `sun` and `bcd` module docs for runnable examples of
+//! their Clebsch–Gordan and F/R surfaces.
+//!
+//! # Further reading
+//!
+//! - [`docs/theory.md`] — a light primer on the objects this API computes
+//!   (irreps, fusion multiplicities, CGC and gauge, recoupling, the two
+//!   constructions, the exactness contract).
+//! - [`docs/references.md`] — porting provenance (`file:symbol`-level) and the
+//!   verified bibliography.
+//! - [`docs/gauge.md`] / [`docs/gauge_soN.md`] — the gauge specifications.
+//!
+//! [`docs/theory.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/theory.md
+//! [`docs/references.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/references.md
+//! [`docs/gauge.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/gauge.md
+//! [`docs/gauge_soN.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/gauge_soN.md
 #![warn(missing_docs)]
+
+// The audit harness measures only allocations routed through Rust's System
+// allocator. Keeping it test-only avoids changing the library allocator
+// contract or attributing C/backend allocations to Racah.
+#[cfg(all(test, feature = "cgc-gen"))]
+#[global_allocator]
+static TEST_ALLOCATOR: audit_alloc::TrackingAllocator = audit_alloc::TrackingAllocator;
+
+#[cfg(all(test, feature = "cgc-gen"))]
+mod audit_alloc {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static LIVE: AtomicUsize = AtomicUsize::new(0);
+    static PEAK: AtomicUsize = AtomicUsize::new(0);
+    static ALLOC_CALLS: AtomicUsize = AtomicUsize::new(0);
+    static ALLOC_BYTES: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) struct TrackingAllocator;
+
+    unsafe impl GlobalAlloc for TrackingAllocator {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            let ptr = unsafe { System.alloc(layout) };
+            if !ptr.is_null() {
+                ALLOC_CALLS.fetch_add(1, Ordering::Relaxed);
+                ALLOC_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
+                let live = LIVE.fetch_add(layout.size(), Ordering::Relaxed) + layout.size();
+                PEAK.fetch_max(live, Ordering::Relaxed);
+            }
+            ptr
+        }
+
+        unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+            let ptr = unsafe { System.alloc_zeroed(layout) };
+            if !ptr.is_null() {
+                ALLOC_CALLS.fetch_add(1, Ordering::Relaxed);
+                ALLOC_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
+                let live = LIVE.fetch_add(layout.size(), Ordering::Relaxed) + layout.size();
+                PEAK.fetch_max(live, Ordering::Relaxed);
+            }
+            ptr
+        }
+
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            unsafe { System.dealloc(ptr, layout) };
+            LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
+        }
+
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, size: usize) -> *mut u8 {
+            let new = unsafe { System.realloc(ptr, layout, size) };
+            if !new.is_null() {
+                if size >= layout.size() {
+                    let delta = size - layout.size();
+                    ALLOC_CALLS.fetch_add(1, Ordering::Relaxed);
+                    ALLOC_BYTES.fetch_add(delta, Ordering::Relaxed);
+                    let live = LIVE.fetch_add(delta, Ordering::Relaxed) + delta;
+                    PEAK.fetch_max(live, Ordering::Relaxed);
+                } else {
+                    LIVE.fetch_sub(layout.size() - size, Ordering::Relaxed);
+                }
+            }
+            new
+        }
+    }
+
+    pub(crate) fn snapshot() -> (usize, usize) {
+        (LIVE.load(Ordering::Relaxed), PEAK.load(Ordering::Relaxed))
+    }
+
+    pub(crate) fn reset_peak_to_live() {
+        PEAK.store(LIVE.load(Ordering::Relaxed), Ordering::Relaxed);
+    }
+
+    /// Cumulative successful allocation requests. `realloc` contributes only
+    /// its growth delta; deallocations never subtract from these counters.
+    pub(crate) fn allocation_totals() -> (usize, usize) {
+        (
+            ALLOC_CALLS.load(Ordering::Relaxed),
+            ALLOC_BYTES.load(Ordering::Relaxed),
+        )
+    }
+}
 
 pub mod cache;
 mod exact;
 mod primefactor;
-mod su2;
+
+#[cfg(all(test, feature = "cgc-gen"))]
+mod cache_audit;
+#[cfg(all(test, feature = "cgc-gen"))]
+mod cache_budget_pressure;
+#[cfg(all(test, feature = "cgc-gen"))]
+mod cache_trim_pressure;
+
+/// Exact SU(2) recoupling: doubled-spin labels, the infallible closed-form
+/// Wigner 3j/6j, Clebsch–Gordan, F/R/Frobenius–Schur functions (zero
+/// convention for inadmissible tuples), and an additive *checked* surface
+/// (`Su2Irrep`, `wigner_6j_checked`, …) that returns a typed error instead of
+/// requiring consumers to infer validity from a zero coefficient.
+pub mod su2;
 
 /// Exact SU(N) representation combinatorics (Layer 1 of the `cgc-gen` track):
 /// GT patterns, Weyl dimension, duality, Littlewood–Richardson products, and
@@ -38,12 +170,21 @@ pub mod sun;
 /// (Layer S3.0 of the `cgc-gen` track): integer Dynkin labels, exact Weyl
 /// dimensions, duals, Frobenius–Schur indicators, Freudenthal weight
 /// multiplicities, and the exact Brauer–Klimyk/Racah–Speiser tensor-product
-/// decomposition `N^c_ab`. Compilation-gated behind `cgc-gen`.
+/// decomposition $N^c_{ab}$. Compilation-gated behind `cgc-gen`.
 #[cfg(feature = "cgc-gen")]
 pub mod bcd;
 
+// Family-generic F/R contraction + gates core, shared by `sun::fr` and
+// `bcd::fr` (Stage 3 S3.4, issue #27). Private: the public F/R surfaces stay
+// per-family; only the block types (`FBlock`/`RBlock`) are re-exported.
+#[cfg(feature = "cgc-gen")]
+mod frcore;
+
 pub use exact::SignedSqrtRational;
 pub use su2::{
-    canonical_regge_3j, canonical_regge_6j, clebsch_gordan, su2_f_symbol, su2_frobenius_schur,
-    su2_r_symbol, wigner_3j, wigner_6j, Regge3j, Regge6j, ReggeError, ReggePhase,
+    canonical_regge_3j, canonical_regge_6j, clebsch_gordan, clebsch_gordan_checked,
+    su2_authority_fingerprint, su2_f_symbol, su2_f_symbol_checked, su2_frobenius_schur,
+    su2_r_symbol, su2_r_symbol_checked, wigner_3j, wigner_3j_checked, wigner_6j, wigner_6j_checked,
+    AdmissibilityViolation, Regge3j, Regge6j, ReggeError, ReggePhase, Su2Error, Su2Fusion,
+    Su2Irrep,
 };

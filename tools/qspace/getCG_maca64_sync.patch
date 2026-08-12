@@ -1,0 +1,80 @@
+--- /Users/ryowatanabe/Research/codes/MyTensorNetworks/codebases/refs/qspace-v4-pub/Source/getCG.cc	2026-07-10 17:42:09
++++ /private/tmp/claude-501/-Users-ryowatanabe-Research-codes-MyTensorNetworks/5431698b-7c0a-400d-aa24-649c82587fb1/scratchpad/qspace-build/Source/getCG.cc	2026-07-23 19:30:23
+@@ -43,24 +43,64 @@
+ 
+    if (nargin>3) J.init(FL,argin[k+3],&qvec);
+ 
+-   if (J1.len<=1) {
+-      if (J1.len==0 || J2.len!=J1.len || qvec.len!=J1.len)
+-      wblog(FL,"ERR invalid usage (%d/%d/%d)",J1.len,J2.len,qvec.len);
++   { unsigned ql=0;
++     for (unsigned i=0; i<qvec.len; ++i) ql+=qvec[i].qlen();
++      // maca64 sync patch: the stale check (J1.len<=1) only ever admitted
++      // rank-1 symmetries; the correct requirement is that the label
++      // vectors cover the full symmetry rank.
++      if (J1.len==0 || J1.len!=ql || J2.len!=J1.len)
++      wblog(FL,"ERR invalid usage (%d/%d/%d)",J1.len,J2.len,ql);
+ 
+       if (J.isEmpty()) {
+-         wbvector < CData<gTQ,unsigned,double>* > S;
+-         gCS.getCData(FL,qvec[0],J1,J2,S);
+-         a=S.toMxP(); 
++         // maca64 sync patch (2026-07): the shipped getCG.cc predates the
++         // current CStore API (getCData was removed). Enumerate all final
++         // channels of J1 (x) J2 with CGC loaded/generated, and return the
++         // canonical CData records. Explicit-target and multi-label modes
++         // are not needed for fixture generation and error out below.
++         wbMatrix<gTQ> JJ;
++         wbMatrix< const CRef<gTQ>* > SS;
++         gCS.getQfinal_v(FL,qvec,J1,J2,JJ,&SS,QF_LOADC);
++         unsigned n=0;
++         for (unsigned i=0; i<SS.dim1; ++i)
++         for (unsigned j=0; j<SS.dim2; ++j) {
++            if (SS(i,j) && SS(i,j)->cgb) ++n; }
++         // Hand-built plain-double output: one struct per channel with
++         // fields qset / size / idx (0-based) / data. Avoids instantiating
++         // the full CData<double> machinery (broken template closure in
++         // this source snapshot) and MPFR blobs (unreadable downstream).
++         const char *fields[4]={"qset","size","idx","data"};
++         a=mxCreateStructMatrix(1,n,4,fields); n=0;
++         for (unsigned i=0; i<SS.dim1; ++i)
++         for (unsigned j=0; j<SS.dim2; ++j) {
++            if (!(SS(i,j) && SS(i,j)->cgb)) continue;
++            const CData<gTQ,RTD> &C=*SS(i,j)->cgb;
++            const wbsparray<RTD> &cg=C.cgd;
++            { mxArray *m=mxCreateDoubleMatrix(1,C.qs.len,mxREAL);
++              double *pr=mxGetPr(m);
++              for (unsigned k=0; k<C.qs.len; ++k) pr[k]=double(C.qs[k]);
++              mxSetFieldByNumber(a,n,0,m); }
++            { mxArray *m=mxCreateDoubleMatrix(1,cg.SIZE.len,mxREAL);
++              double *pr=mxGetPr(m);
++              for (unsigned k=0; k<cg.SIZE.len; ++k) pr[k]=double(cg.SIZE[k]);
++              mxSetFieldByNumber(a,n,1,m); }
++            { mxArray *m=mxCreateDoubleMatrix(cg.IDX.dim1,cg.IDX.dim2,mxREAL);
++              double *pr=mxGetPr(m);
++              for (unsigned c2=0; c2<cg.IDX.dim2; ++c2)
++              for (unsigned r2=0; r2<cg.IDX.dim1; ++r2)
++                 pr[c2*cg.IDX.dim1+r2]=double(cg.IDX(r2,c2));
++              mxSetFieldByNumber(a,n,2,m); }
++            { mxArray *m=mxCreateDoubleMatrix(1,cg.D.len,mxREAL);
++              double *pr=mxGetPr(m);
++              for (unsigned k=0; k<cg.D.len; ++k) pr[k]=double(cg.D[k]);
++              mxSetFieldByNumber(a,n,3,m); }
++            ++n;
++         }
+       }
+-      else {
+-         const CData <gTQ,unsigned,double> &S=gCS.getCData(FL,qvec[0],J1,J2,J);
+-         a=S.toMx(); 
+-      }
++      else wblog(FL,
++      "ERR explicit target label not supported in this sync build");
+    }
+-   else wblog(FL,
+-   "ERR multiple Q-labels not implemented yet (%d)",J1.len);
+ 
+-   if (vflag) gCS.printStatus(FL);
++   if (vflag) gCS.Info(FL);
+ 
+    argout[0]=a; 
+ }

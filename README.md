@@ -8,28 +8,112 @@ Coefficients for any admissible labels are computed on demand in exact or
 verification-gated arithmetic — there is no precomputed table and no label
 ceiling.
 
+## Installation
+
+Not yet published to crates.io: the `cgc-gen` feature depends on
+[tenferro-rs](https://github.com/tensor4all/tenferro-rs), which is not itself
+published, so a crates.io release is blocked upstream. The supported path today
+is a git dependency:
+
+```toml
+[dependencies]
+racah = { git = "https://github.com/Ryo-wtnb11/racah" }
+# generated SU(N)/SO(N)/Sp(2N) families:
+# racah = { git = "https://github.com/Ryo-wtnb11/racah", features = ["cgc-gen"] }
+```
+
+MSRV: latest stable Rust (CI pins no minimum version; it builds and tests on
+`stable`).
+
+## Feature flags
+
+| Feature | Adds | Pulls in |
+|---|---|---|
+| *(default)* | Exact SU(2): 3j / 6j / Clebsch–Gordan / F / R, closed-form big-rational | `num-bigint`, `num-rational`, `num-traits` only |
+| `cgc-gen` | Runtime CGC / F / R generation for SU(N) (Gelfand–Tsetlin) and SO(N)/Sp(2N) (generator bootstrap) | `tenferro-linalg` / `-cpu` / `-runtime` (the dense factorization + contraction backend) |
+
+The `cgc-gen` dependencies are pinned to an exact `tenferro-rs` git revision
+(see `Cargo.toml`), so a fresh checkout resolves without a sibling tenferro on
+disk. Consumers enabling `cgc-gen` inherit that pinned revision; bumping it is
+an ordinary reviewed commit. The default build stays dependency-light and needs
+no linear-algebra stack.
+
+## Quick start
+
+One minimal example per layer. Each is a literal copy of a crate doctest, so it
+compiles against the current API (`cargo test` / `cargo test --all-features`).
+
+Exact SU(2) 6j (base, no features). Spins are doubled (`dj = 2j`), so `2` means
+spin 1; `{1 1 1; 1 1 1} = 1/6`:
+
+```rust
+use racah::wigner_6j;
+
+let sixj = wigner_6j(2, 2, 2, 2, 2, 2);
+assert!((sixj.to_f64() - 1.0 / 6.0).abs() < 1e-14);
+```
+
+SU(N) F-symbol (`cgc-gen`). Irreps are built from Dynkin labels (length `N-1`);
+this is the SU(3) sextet `1 ⊗ 3 ⊗ 3 → 6`, a `1×1×1×1` identity move:
+
+```rust
+use racah::sun::{f_symbol, Irrep};
+
+let triv = Irrep::trivial(3).unwrap(); // SU(3) singlet
+let three = Irrep::from_dynkin(&[1, 0]).unwrap(); // fundamental
+let six = Irrep::from_dynkin(&[2, 0]).unwrap();
+
+let block = f_symbol(&triv, &three, &three, &six, &three, &six).unwrap();
+assert_eq!(block.dims(), [1, 1, 1, 1]);
+assert!((block.at(0, 0, 0, 0) - 1.0).abs() < 1e-12);
+```
+
+SO(N)/Sp(2N) F-symbol (`cgc-gen`). Generation runs through a per-(series, rank)
+`CanonicalCatalog` that caches the aligned CGC; this is an Sp(4) (`C_2`) block:
+
+```rust
+use racah::bcd::{f_symbol, CanonicalCatalog, Irrep, Series};
+
+let mut cat = CanonicalCatalog::new(Series::C, 2).unwrap(); // Sp(4)
+let triv = Irrep::trivial(Series::C, 2).unwrap();
+let v = Irrep::from_dynkin(Series::C, &[0, 1]).unwrap(); // vector
+let adj = Irrep::from_dynkin(Series::C, &[2, 0]).unwrap(); // in v ⊗ v
+
+let block = f_symbol(&mut cat, &triv, &v, &v, &adj, &v, &adj).unwrap();
+assert_eq!(block.dims(), [1, 1, 1, 1]);
+assert!((block.at(0, 0, 0, 0) - 1.0).abs() < 1e-9);
+```
+
 ## Why this crate exists
 
-Symmetric tensor libraries need, for every symmetry group they support, the
-coefficients of its representation theory: fusion multiplicities, dimensions,
-duals, Frobenius–Schur indicators, and above all the recoupling data (the
-F- and R-symbols, i.e. generalized 6j coefficients) that drive every basis
-transformation of a symmetric tensor.
+No library — in Rust, and essentially nowhere as a standalone component —
+computes the *full* representation-theory coefficient set for the compact Lie
+groups on demand with unbounded labels. By "full set" we mean, for a given
+group and any admissible irreps: fusion multiplicities, dimensions, duals,
+Frobenius–Schur indicators, Clebsch–Gordan coefficients, and the recoupling
+data (3j / 6j and the F- and R-symbols). `racah` is that standalone library. It
+covers SU(2), SU(N), SO(N), and Sp(2N); it is pure representation mathematics
+with no tensor-network vocabulary and no dependency on any tensor engine; and it
+is usable by anyone who needs these numbers — atomic and molecular spectroscopy,
+nuclear and quantum-chemistry coupling, lattice and continuum models, symmetric
+tensor networks, and more.
 
-Two supply models exist today, and both have a ceiling:
+The existing supply of these coefficients stops short of that, in two ways:
 
-- **Precomputed tables** (offline generation, checked-in blobs) are complete
-  for *finite* fusion categories — anyon models have a fixed, small sector
-  set, so a table is the whole truth. But for compact Lie groups the sector
-  set is infinite: a growing simulation produces ever-larger irreps through
-  fusion closure, and any table has a cut that will eventually be exceeded.
-- **External coefficient crates** solve one group at a fixed scope (e.g.
-  exact SU(2) 3j/6j with a bounded label domain) and cannot be extended to
-  SU(N≥3) or SO(N), where no closed-form expressions exist.
+- **Precomputed tables** (offline generation, checked-in data) are complete for
+  *finite* symmetry sets — a fixed, small collection of irreps means a table is
+  the whole truth. But a compact Lie group has infinitely many irreps, and
+  taking tensor products only makes them larger, so any table has a cut that a
+  large-enough calculation will exceed.
+- **Single-group coefficient packages** solve one group at a fixed scope (for
+  example exact SU(2) 3j/6j over a bounded label range) and do not extend to
+  SU(N≥3), SO(N), or Sp(2N), where no closed-form expressions exist and the
+  coefficients must be *constructed*.
 
-`racah` removes both ceilings: coefficients for any irrep pair are computed
-on demand, inside the process, in pure Rust. It consolidates the roles of
-three production references into one crate:
+`racah` removes both limits: coefficients for any admissible labels are computed
+on demand, inside the process, in pure Rust, with no label ceiling. To do this
+faithfully it consolidates the algorithms of three production references, one
+per family (full provenance in [`docs/references.md`](docs/references.md)):
 
 | Reference | What is taken from it |
 |---|---|
@@ -39,13 +123,15 @@ three production references into one crate:
 
 These are complementary, not competing: the Gelfand–Tsetlin construction is
 fundamentally SU(N)-specific, while QSpace's generator-based decomposition is
-the only production reference that generates SO(N) and Sp(2N).
+the only production reference that generates SO(N) and Sp(2N). For the
+representation-theory background behind these objects, see
+[`docs/theory.md`](docs/theory.md).
 
 ## What it computes
 
 - Irrep labels, dimensions, duals, Frobenius–Schur indicators.
-- Product decomposition: fusion multiplicities N^c_ab (exact combinatorics).
-- Clebsch–Gordan coefficients C^{ab→c} (m-basis tensors, outer multiplicity
+- Product decomposition: fusion multiplicities $N^c_{ab}$ (exact combinatorics).
+- Clebsch–Gordan coefficients $C^{ab\to c}$ (m-basis tensors, outer multiplicity
   as a trailing index).
 - Recoupling coefficients: F-symbols (contraction of four CGC over all
   magnetic indices, leaving the multiplicity indices) and R-symbols
@@ -101,6 +187,33 @@ forms and needs no matrix computation; every other family must be generated
 numerically. Consumers that only need abelian or SU(2) symmetries never pull
 a linear-algebra stack.
 
+### Why each family gets its algorithm
+
+The construction per family is forced by the group's branching structure, not
+chosen for convenience (the full argument is in
+[`docs/theory.md`](docs/theory.md) §5):
+
+- **SU(2)** — closed forms exist (Racah), so the 3j/6j/CGC/F/R are evaluated
+  directly in exact big-rational arithmetic with a single final rounding; there
+  is nothing to generate.
+- **SU(N)** — the unitary chain $U(N) \supset U(N-1) \supset \dots \supset U(1)$ has multiplicity-free
+  branching (the intermediate U(1) charge at each step separates copies that the
+  SU chain alone would repeat), so basis states of an SU(N) irrep are labelled
+  uniquely by Gelfand–Tsetlin patterns and the ladder operators have exact
+  closed-form matrix elements (Alex–Kalus–Huckleberry–von Delft). That closed
+  form is what makes the direct GT construction possible, and it is SU(N)-specific.
+- **SO(N) / Sp(2N)** — the symplectic chain $Sp(2r) \supset Sp(2r-2)$ has branching
+  multiplicities, so no GT-type basis with practical closed-form matrix elements
+  exists (the SO chains are multiplicity-free, and explicit GT-type matrix
+  elements for them do exist — Gelfand–Tsetlin 1950; Molev — but they are
+  substantially more involved and no production implementation exists). So these
+  families use the generator bootstrap —
+  defining-representation seeds (writable explicitly per series), tensor
+  products, numeric highest-weight decomposition, harvest, recurse — which needs
+  almost no family-specific structure. Its price, a gauge fixed by procedural
+  determinism rather than a formula, is what
+  [`docs/gauge_soN.md`](docs/gauge_soN.md) pins down.
+
 ### Kernel routing
 
 All dense numerical work behind `cgc-gen` — the nullspace/QR/least-squares
@@ -141,6 +254,10 @@ once): for generated families the single rounding point moves earlier — into
 the nullspace solve — while structure, gauge, and verification stay at the
 same standard.
 
+For the base SU(2) provider this convention set is exposed as an opaque
+fingerprint that changes only on the value-affecting breaking release of point 4
+above; see [Provider contract](#provider-contract) below.
+
 ### Gauge continuity
 
 The SU(N) pipeline reproduces the gauge of its reference implementation by
@@ -163,11 +280,208 @@ Oracles are independent of the code under test:
   orthogonality as internal consistency gates;
 - QSpace numbers for SO(N)/Sp(2N) after gauge alignment.
 
+## Provider contract
+
+The base SU(2) provider (default build, no features) exposes a small, stable
+contract so a consumer can use it as one coefficient authority without
+duplicating convention identity, representation validation, or cache accounting.
+Every item below is base-SU(2)-only and pulls no linear-algebra stack.
+
+### Authority fingerprint
+
+`su2_authority_fingerprint() -> &'static [u8]` returns opaque bytes that
+identify the *convention set* every returned SU(2) coefficient (3j, 6j,
+Clebsch–Gordan, F, R, Frobenius–Schur) is computed in.
+
+- **What it is** — an identifier for the value-fixing conventions, not a
+  document. Treat it as opaque: compare by equality only, never parse it.
+- **When it changes** — not on a rebuild, dependency bump, or additive release;
+  it is derived from none of the crate version, source, docs, or process state.
+  It changes only on a value-affecting *breaking* release — a change that can
+  alter a returned coefficient, its normalization, or its canonical convention,
+  the same event class point 4 of the exactness contract declares breaking. So
+  "fingerprint changed ⇔ value-affecting breaking release" is one reviewable
+  invariant, pinned by the compatibility-policy test `tests/su2_fingerprint.rs`.
+- **How a consumer uses it** — persist the bytes next to anything derived from
+  these coefficients (a cache, a serialized table); on load, compare for
+  equality and reject the derived data on mismatch.
+
+### Checked SU(2) representation surface
+
+The `su2` module adds a typed, checked layer over the infallible closed-form
+functions. `Su2Irrep` labels an irrep by its doubled spin (`dj = 2j`); every
+`u32` is valid, so `Su2Irrep::new` is infallible and `dj` / `dim` / `dual`
+cannot fail. `Su2Irrep::fusion` returns a non-allocating `Su2Fusion` iterator
+over the coupled irreps, or `Err(Su2Error::LabelOverflow)` when `dj1 + dj2`
+exceeds `u32`.
+
+The checked coefficient functions — `wigner_3j_checked`, `wigner_6j_checked`,
+`clebsch_gordan_checked`, `su2_f_symbol_checked`, `su2_r_symbol_checked` —
+return `Err(Su2Error::NotAdmissible(_))` for a structurally forbidden tuple
+(triangle / parity / m-range violation, named by `AdmissibilityViolation`) and
+`Ok(value)` otherwise. That `Ok` / `Err` split is the point: an admissible 6j
+can still be *accidentally* zero, so `Ok(0)` (a real zero of an admissible
+coupling) and `Err(NotAdmissible)` (a forbidden coupling) are finally
+distinguishable — where the infallible functions return the same exact zero for
+both. The checked layer is purely additive: the infallible `wigner_6j` &c. keep
+their zero convention, and both paths share one admissibility predicate, so they
+can never disagree.
+
+### Cache resource contract
+
+The three base coefficient tiers (3j, 6j, derived-F) are each bounded
+independently by a per-tier entry and conservative retained-charge cap. The documented aggregate cap
+`BASE_CACHE_MAX_BYTES` (192 MiB = 3 × 64 MiB) is their sum — a **static
+partition, not a dynamic shared pool** — and holds as a corollary of the
+per-tier charged-entry caps, tied to the per-tier cap by a `const` assertion so the two
+cannot drift.
+
+The charge covers entries currently owned by the cache. It excludes container
+retained capacity and scaffolding, allocator metadata and RSS, transient or
+external clones, and values returned through public APIs.
+
+`base_cache_stats() -> BaseCacheStats` exposes per-tier `TierStats` (`entries`,
+`bytes`, `hits`, `misses`, `evictions`) for `three_j`, `six_j`, `derived_f`,
+plus a field-wise `total()`. Each per-tier snapshot is consistent under its tier
+lock; the total is a sum of per-tier snapshots, not a global atomic snapshot, so
+under concurrent fills it is only eventually consistent (no global lock spans the
+tiers).
+
+`reset()` returns every tier's entries, bytes, and hit/miss/eviction counters to
+zero. It acts on process-global `static` state, so reset ownership is
+**single-owner**: exactly one component in a consuming process owns reset policy;
+a library must not call it.
+
+#### Process-local budget policy
+
+Before any coefficient-cache operation or policy observation, an application
+may call `configure_cache_budgets(CoefficientCacheBudgets::default()
+.with_limit(CoefficientCacheTier::SixJ, 1 << 20))`. The policy is one-shot and
+shrink-only: the compiled defaults are also the maximum accepted caps. A zero
+tier cap evaluates normally but retains no entry; `CoefficientCacheBudgets::disabled()`
+sets every compiled tier to zero. `cache_budgets()` reports the effective policy
+and fixes the default if configuration did not win the first-use race. `reset()`
+clears entries and counters without changing this policy. There are no presets,
+environment variables, shared LRU, or runtime reconfiguration.
+
+#### Per-tier cache trim
+
+`trim_to(CoefficientCacheTier::SixJ, target_charged_bytes)` is the
+single-owner, process-global lifecycle operation for releasing one tier's
+oldest FIFO entries. It returns `CacheTrimReport` with the removed and remaining
+cache-owned charged entries at its tier-lock linearization point; a concurrent
+miss may publish after the call. Zero removes that tier's entries, while hits
+and misses remain and evictions increase by the entries removed. Trimming never
+changes the one-shot budget and never promises to release external `Arc`s,
+container capacity, allocator metadata, or RSS.
+
+### Generated families (cgc-gen)
+
+The `cgc-gen` generated SU(N) and SO(N)/Sp(2N) providers add a parallel surface
+alongside the base one. It is **unstable**:
+
+> Unstable: shape may change while the generated-provider contract is negotiated.
+
+Cargo features cannot express instability tiers, so this label plus issue
+[#47](https://github.com/Ryo-wtnb11/racah/issues/47) are the ledger.
+
+#### Authority fingerprints
+
+`racah::sun::sun_authority_fingerprint()` and
+`racah::bcd::bcd_authority_fingerprint()` return opaque `&'static [u8]` that
+identify the convention set, generation pipeline, and verification/tolerance
+policy of each generated family. Unlike the exact SU(2) fingerprint, their
+contract is deliberately weaker:
+
+> Equal fingerprints identify the same convention, generation pipeline, and
+> tolerance policy. They do not imply byte-identical values or independently
+> prove numerical agreement.
+
+Numerical agreement is established by the generation-time verification gates and
+the independent oracle suites (`docs/gauge.md`, `docs/gauge_soN.md`), never by
+the fingerprint. Backend identity is deliberately excluded: per-backend ULP
+differences are inside the disclaimed tolerance class, and a discrete gauge flip
+across backends is a defect, not a tolerance event.
+
+Each family's `epoch` tag is **per-family and independent**: an SU(N) gauge
+change bumps only the SU(N) epoch and never invalidates SU(2)- or B/C/D-derived
+consumer state (and vice versa). Compare the bytes by equality only; never parse
+them.
+
+#### Generated cache aggregate
+
+The five generated tiers (SU(N) product / CGC / F, B/C/D CGC / F) are each bounded
+by a per-tier entry and conservative retained-charge cap.
+`racah::cache::GENERATED_CACHE_MAX_BYTES` (640 MiB + 128 KiB) is their documented sum,
+tied to the per-tier caps by a `const` assertion so the two cannot drift. The
+cache story is **two-layer**: base = `BASE_CACHE_MAX_BYTES`, generated =
+`GENERATED_CACHE_MAX_BYTES`, and the documented whole-process retained-entry
+charge cap is their sum. Generated-tier `TierStats::bytes` uses the same charge
+and exclusions as the base tiers: it covers entries currently owned by the
+cache, not container retained capacity/scaffolding, allocator metadata or RSS,
+transient or external clones, or values returned through public APIs. There is
+deliberately no single cross-feature constant — one number spanning
+feature-gated tiers would change meaning with the `cgc-gen` flag.
+`racah::cache::generated_cache_stats() -> GeneratedCacheStats` reports the five
+tiers per-tier plus a field-wise `total()`; `reset()` clears them alongside the
+base tiers.
+
+The generated CGC value cache is keyed by the complete `(s1, s2, s3)` irrep
+labels and is independent of which caller-owned `CanonicalCatalog` instance
+produced an entry. Dropping or rebuilding a catalog does not invalidate cached
+values:
+
+> Cached values remain valid because catalog instances implement the same
+> canonical convention and tolerance contract, and the complete
+> family/rank/irrep labels determine the key.
+
 ## Status
 
-Scaffold only; no implementation yet. Planned order: exact SU(2) base →
-GT combinatorics (exact layer) → SU(N) generation → F/R contraction and
-verification gates → SO(N)/Sp(2N).
+Feature-complete for its v0 scope; all three families are implemented and
+oracle-checked:
+
+- **SU(2)** (base): exact 3j / 6j / Clebsch–Gordan / F / R in big-rational
+  arithmetic.
+- **SU(N)** (`cgc-gen`): the full Gelfand–Tsetlin pipeline — CGC, F, R, with
+  outer-multiplicity indices.
+- **SO(N) / Sp(2N)** (`cgc-gen`): the generator-bootstrap pipeline (B/C/D
+  Cartan series) — CGC, F, R.
+
+Verification (every claim below is backed by a merged test; the crate ships its
+self-checks — orthogonality, F-unitarity, pentagon, hexagon — as public API):
+
+- **SU(2)**: exhaustive agreement with `wigner-symbols` 0.5.1 over its label
+  domain, plus reference fixtures beyond it.
+- **SU(N)**: signed element-wise table regeneration against
+  SUNRepresentations.jl v0.4.0 — a dim ≤ 8 slice on every `cargo test`, and a
+  full dim ≤ 27 sweep (76,853 F blocks) run explicitly. Products and
+  multiplicities are cross-checked against GroupMath 1.1.3 fixtures.
+- **SO(N) / Sp(2N)**: the QSpace v4 CGC projector battery — **33** of the
+  fixture's rank-2/3 B/C/D channels are projector-tested against QSpace to
+  round-off (via verified factor-basis dictionaries), **0** remain
+  structural-only, and **9** higher-rank rows (SO(7)/Sp(6)/SO(8)) are out of the
+  rank-2/3 anchor's scope and skipped. See
+  `src/bcd/qspace_oracle_tests.rs` for the full coverage note.
+
+The base SU(2) provider's stable public surface — authority fingerprint,
+checked representation layer, and cache resource contract — is described under
+[Provider contract](#provider-contract).
+
+Not published to crates.io yet (blocked on the `tenferro-rs` publish); the git
+dependency above is the supported path. See [Installation](#installation) and
+[Feature flags](#feature-flags).
+
+## More
+
+- Theory primer (the objects the API computes): [`docs/theory.md`](docs/theory.md).
+- Porting provenance and bibliography: [`docs/references.md`](docs/references.md).
+- Gauge conventions: [`docs/gauge.md`](docs/gauge.md) (SU(N)),
+  [`docs/gauge_soN.md`](docs/gauge_soN.md) (SO(N)/Sp(2N)).
+- Fixture provenance and the oracle matrix: [`tools/README.md`](tools/README.md).
+- Guard discipline (every port PR carries a guard inventory): issue
+  [#15](https://github.com/Ryo-wtnb11/racah/issues/15).
+- Build the docs locally with the same KaTeX math rendering as docs.rs:
+  `RUSTDOCFLAGS="--html-in-header doc/katex-header.html" cargo doc --no-deps --all-features --open`.
 
 ## License
 

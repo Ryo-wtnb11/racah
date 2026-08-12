@@ -1,13 +1,26 @@
-//! Exact SO(N)/Sp(2N) representation combinatorics for the B, C, D Cartan
-//! series (Layer S3.0 of the `cgc-gen` track; design authority: issue #18
-//! rulings, spec: issue #19).
+//! SO(N)/Sp(2N) irreps and their Clebsch–Gordan / recoupling coefficients for
+//! the B, C, D Cartan series, built by the generator bootstrap.
 //!
-//! Pure integer/rational arithmetic — no floats anywhere in this module. It
-//! provides irrep label types, exact Weyl dimensions, duals, Frobenius–Schur
-//! indicators, exact weight multiplicities (Freudenthal recursion) and the
-//! exact tensor-product decomposition `N^c_ab` (Brauer–Klimyk / Racah–Speiser
-//! over Weyl characters). This is the production `N`-symbol that the numeric
-//! sweep (S3.2) is checked against (`M^sweep == N^exact`, Ruling 1).
+//! An [`Irrep`](crate::bcd::Irrep) is an SO(N) or Sp(2N) highest weight; from it this module gives
+//! exact Weyl dimensions, duals, Frobenius–Schur indicators, weight
+//! multiplicities (Freudenthal recursion), and the exact tensor-product
+//! decomposition `N^c_ab` (Brauer–Klimyk / Racah–Speiser over Weyl characters).
+//! The Clebsch–Gordan coefficients and the recoupling
+//! [`f_symbol`](crate::bcd::f_symbol) / [`r_symbol`](crate::bcd::r_symbol) are
+//! generated through a per-(series, rank)
+//! [`CanonicalCatalog`](crate::bcd::CanonicalCatalog). The label combinatorics are pure integer/rational
+//! arithmetic; the generated CGC are verification-gated floating point.
+//!
+//! Unlike SU(N), these families are built by a **generator bootstrap** (seed
+//! the defining rep, take tensor products, decompose numerically, harvest,
+//! recurse), not by Gelfand–Tsetlin: the symplectic chain `Sp(2r) ⊃ Sp(2r-2)`
+//! is not multiplicity-free, so no GT-type basis with practical closed-form
+//! ladder elements exists (and the multiplicity-free SO chains have no
+//! production-viable closed forms either). See [`docs/theory.md`] §5 for the
+//! rationale and [`docs/references.md`] for the port provenance.
+//!
+//! [`docs/theory.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/theory.md
+//! [`docs/references.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/references.md
 //!
 //! # Published object (issue #18, Ruling 3)
 //!
@@ -51,17 +64,37 @@
 //!
 //! # References
 //!
-//! - W. Fulton, J. Harris, *Representation Theory* (GTM 129), §§18, 24
-//!   (root systems B/C/D, the Weyl dimension formula, weight multiplicities).
-//! - J. Humphreys, *Introduction to Lie Algebras and Representation Theory*,
-//!   §13.4 (Freudenthal's recursion), §22.3 / §24 (character arithmetic,
-//!   the Racah–Speiser / Brauer–Klimyk sign rule via the dot action of the
-//!   Weyl group).
-//! - QSpace v4 (Weichselbaum), `Source/clebsch_aux.cc` at revision `dd2cc7e`
-//!   (the revision all `clebsch_aux.cc:LINE` citations in this module refer
-//!   to): `wdim_C/B/D` (`:458/486/524`) and `findMaxWeight` label maps and
-//!   low-rank redirects (`:957–1045`, guards at `:990/1001/1018`) — the
-//!   numerical oracle whose dimension values this module reproduces.
+//! The exact combinatorics follow Fulton–Harris (root systems, Weyl dimension,
+//! weight multiplicities) and Humphreys (Freudenthal recursion, the
+//! Racah–Speiser / Brauer–Klimyk character sign rule); the generator bootstrap,
+//! seeds, and dimension oracle are ported from QSpace v4 (revision `dd2cc7e`,
+//! the revision every `clebsch_aux.cc:LINE` / `clebsch.cc:LINE` citation in
+//! this module refers to). Full citations,
+//! versions, and the `file:symbol`-level provenance are in [`docs/references.md`];
+//! the gauge is specified in [`docs/gauge_soN.md`].
+//!
+//! [`docs/references.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/references.md
+//! [`docs/gauge_soN.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/gauge_soN.md
+//!
+//! # Example
+//!
+//! F/R generation for B/C/D runs through a per-(series, rank)
+//! [`CanonicalCatalog`](crate::bcd::CanonicalCatalog)
+//! that caches the aligned CGC. This computes an Sp(4) (`C_2`) F-symbol block;
+//! with `a` trivial it is the `1×1×1×1` identity (value 1):
+//!
+//! ```
+//! use racah::bcd::{f_symbol, CanonicalCatalog, Irrep, Series};
+//!
+//! let mut cat = CanonicalCatalog::new(Series::C, 2).unwrap(); // Sp(4)
+//! let triv = Irrep::trivial(Series::C, 2).unwrap();
+//! let v = Irrep::from_dynkin(Series::C, &[0, 1]).unwrap(); // vector
+//! let adj = Irrep::from_dynkin(Series::C, &[2, 0]).unwrap(); // in v ⊗ v
+//!
+//! let block = f_symbol(&mut cat, &triv, &v, &v, &adj, &v, &adj).unwrap();
+//! assert_eq!(block.dims(), [1, 1, 1, 1]);
+//! assert!((block.at(0, 0, 0, 0) - 1.0).abs() < 1e-9);
+//! ```
 
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
@@ -223,6 +256,12 @@ pub struct Irrep {
     series: Series,
     /// Highest weight `λ` in the ε-basis, length `r`.
     weight: Box<[i64]>,
+}
+
+impl crate::cache::CacheKeyCharge for Irrep {
+    fn key_bytes(&self) -> usize {
+        std::mem::size_of::<Self>().saturating_add(std::mem::size_of_val(self.weight.as_ref()))
+    }
 }
 
 impl Irrep {
@@ -890,5 +929,109 @@ mod catalog;
 #[cfg(feature = "cgc-gen")]
 pub use catalog::{CanonicalCatalog, CatalogCgc, CatalogError};
 
+// S3.4 (#27): the B/C/D binding of the family-generic F/R core, over the S3.3
+// catalog's canonical CGC.
+#[cfg(feature = "cgc-gen")]
+mod fr;
+#[cfg(feature = "cgc-gen")]
+pub use fr::{
+    cgc_sweeps, check_f_unitarity, check_hexagon, check_pentagon, f_symbol, r_symbol, FBlock,
+    FrError, RBlock,
+};
+
+/// Opaque authority fingerprint of the generated SO(N)/Sp(2N) provider.
+///
+/// The bytes identify the *convention set*, generation pipeline, and
+/// verification/tolerance policy under which every B/C/D Clebsch–Gordan isometry
+/// (and the F/R symbols contracted from it) is produced. Their sole use is
+/// equality comparison: a consumer may persist the bytes next to data derived
+/// from these coefficients and later compare them to decide whether that derived
+/// data was produced under the same convention.
+///
+/// # Contract (binding)
+///
+/// > Equal fingerprints identify the same convention, generation pipeline, and
+/// > tolerance policy. They do not imply byte-identical values or independently
+/// > prove numerical agreement.
+///
+/// This is deliberately weaker than the base SU(2) fingerprint
+/// ([`crate::su2_authority_fingerprint`]), whose exact big-rational surface lets
+/// equal bytes mean equal values. The generated B/C/D family is a *two-layer*
+/// contract (`docs/gauge_soN.md` §12: value agreement within the verification
+/// tolerances, bitwise reproducible only single-threaded in-process, not across
+/// processes): the seed/sweep/sign/alignment gauge is a deterministic function
+/// of the subspace, but the QR/matmul stages run in `f64` and the backend's
+/// reductions are not bit-reproducible across processes. **Numerical agreement
+/// is established by the generation-time verification gates** (`docs/gauge_soN.md`
+/// §5, §6, §10: orthonormality, Cartan diagonality, exact-multiplicity — typed
+/// `SweepError`/`CatalogError`, never silent) **and the independent oracle
+/// suites** (`docs/gauge_soN.md` §13: exact decomposition vs `directproduct`,
+/// OM ≥ 2, determinism, sign convention), **never by this fingerprint.**
+///
+/// # Consumer contract
+///
+/// - **Opaque.** Compare by equality only; never parse the tags or split on
+///   `:` / `=`. The internal shape is not a stable interface.
+/// - **Stable across patch and minor releases.** The value is not derived from
+///   the crate version, source, docs, a pointer, or any process-local state.
+/// - **Changes exactly with a value-affecting breaking release.** The trailing
+///   `epoch` is bumped by hand — and only — when a change can alter a returned
+///   coefficient value, its normalization, or the canonical gauge it is
+///   expressed in (the breaking-release event class of `docs/gauge_soN.md`). The
+///   compatibility-policy test (`tests/bcd_fingerprint.rs`) pins the exact bytes,
+///   so any such change is a mutation-visible review event.
+/// - **Epoch is per-family and independent.** The B/C/D `epoch` moves
+///   independently of the SU(2) and SU(N) epochs; a B/C/D gauge change never
+///   invalidates SU(2)-derived or SU(N)-derived consumer state (and vice versa).
+///   The base SU(2) surface is untouched by this fingerprint.
+///
+/// # Tags and the conventions they pin (each cites `docs/gauge_soN.md`)
+///
+/// Every tag names a rule the gauge document already pins; nothing here invents
+/// a convention. The backend identity is deliberately excluded — per-backend ULP
+/// differences are inside the tolerance class this fingerprint's contract
+/// disclaims (`docs/gauge_soN.md` §12); backend structural identity is instead a
+/// separate acceptance gate (`tests/generated_backend_identity.rs`).
+///
+/// - `ref=qspace-v4-dd2cc7e` — the port reference: QSpace v4 (Weichselbaum),
+///   revision `dd2cc7e` (`docs/gauge_soN.md`, header).
+/// - `kron=a-fast` — the Kronecker/product-basis convention `composite(m_a, m_b)
+///   = m_a + d_a·m_b` (first factor fast); a different convention permutes the
+///   CGC rows and is a different gauge (`docs/gauge_soN.md` §1).
+/// - `parent=canonical-parent` — the canonical-parent well-order that makes each
+///   irrep's stored generator frame query-order-independent (`docs/gauge_soN.md`
+///   §14).
+/// - `sweep=gs2-qrpos-posdiag` — the decomposition sweep: persistent seed
+///   selection, ascending-index raise/lower, two-pass Gram–Schmidt, and
+///   `PositiveDiagonal` QR orthonormalization (`docs/gauge_soN.md` §2–§4, 4a).
+/// - `sort=maxweight-desc` — the descending-weight sort (reversed Cartan columns)
+///   with ascending-basis-index tie-break (`docs/gauge_soN.md` §7).
+/// - `sign=first-significant-positive` — the unconditional block sign convention:
+///   the first significant CGC entry (storage order) is made positive
+///   (`docs/gauge_soN.md` §8, incl. racah deviation #2).
+/// - `align=procrustes-canonical` — the intertwiner alignment that rotates a
+///   rediscovered block's frame onto the stored canonical frame via the
+///   orthogonal Procrustes solution (`docs/gauge_soN.md` §15).
+/// - `tol=cg-eps-tier` — the QSpace CG_EPS tolerance tier (`EPS_SWEEP`,
+///   `EPS_VERIFY`, `CG_EPS1`, `EPS_MW_UNIQUE`, `FIXRATIONAL_TOL`;
+///   `docs/gauge_soN.md` §11).
+/// - `epoch=1` — the per-family manual epoch (see above).
+///
+/// # Stability
+///
+/// **Unstable: shape may change while the generated-provider contract is
+/// negotiated.** Cargo features cannot express instability tiers; this label and
+/// issue #47 are the ledger.
+#[cfg(feature = "cgc-gen")]
+pub fn bcd_authority_fingerprint() -> &'static [u8] {
+    // Manual per-family epoch: bump the trailing `epoch=N` (and the literal in
+    // tests/bcd_fingerprint.rs) only on a value-affecting breaking release.
+    b"racah:bcd-bootstrap:ref=qspace-v4-dd2cc7e:kron=a-fast:parent=canonical-parent:sweep=gs2-qrpos-posdiag:sort=maxweight-desc:sign=first-significant-positive:align=procrustes-canonical:tol=cg-eps-tier:epoch=1"
+}
+
 #[cfg(test)]
 mod tests;
+
+// S3.5 external anchor: QSpace CGC oracle, behind the factor-basis dictionary.
+#[cfg(all(test, feature = "cgc-gen"))]
+mod qspace_oracle_tests;

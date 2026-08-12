@@ -1,19 +1,30 @@
-//! Exact SU(N) representation combinatorics (Layer 1 of the `cgc-gen` track).
+//! SU(N) irreps and their Clebsch–Gordan / recoupling coefficients, built by
+//! the Gelfand–Tsetlin (GT) construction.
 //!
-//! Pure integer/rational arithmetic: irrep labels, the Weyl dimension, duality,
-//! Gelfand–Tsetlin (GT) pattern enumeration in the reference basis order,
-//! Littlewood–Richardson product decomposition (fusion multiplicities), and the
-//! exact GT ladder (creation/annihilation) matrices with
-//! [`SignedSqrtRational`] entries.
+//! An [`Irrep`](crate::sun::Irrep) is an SU(N) highest weight; from it this
+//! module gives the Weyl [`dimension`](crate::sun::Irrep::dim), the
+//! [`dual`](crate::sun::Irrep::dual), the GT basis
+//! ([`patterns`](crate::sun::Irrep::patterns)), Littlewood–Richardson products (fusion
+//! multiplicities), and — the point of the module — the Clebsch–Gordan
+//! coefficients [`cgc`](crate::sun::cgc) and the recoupling
+//! [`f_symbol`](crate::sun::f_symbol) / [`r_symbol`](crate::sun::r_symbol),
+//! with outer-multiplicity indices. Values are exact rationals (labels, dimensions,
+//! GT ladder matrices) up to the CGC nullspace solve, which is
+//! verification-gated floating point.
 //!
-//! Ported from SUNRepresentations.jl v0.4.0
-//! (`~/.julia/packages/SUNRepresentations/BM32Z/src`). The *basis order* of
-//! [`Irrep::patterns`](crate::sun::Irrep::patterns) is load-bearing — Layer 2's
-//! gauge depends on it — so it
-//! reproduces `gtpatterns.jl:GTPatternIterator` index-for-index and is pinned
-//! by checked-in fixtures.
+//! The GT construction applies to SU(N) because the unitary chain
+//! `U(N) ⊃ U(N-1) ⊃ … ⊃ U(1)` is multiplicity-free (the intermediate U(1) charge
+//! separates copies the SU chain alone would repeat): GT patterns label basis
+//! states of an SU(N) irrep uniquely, so the ladder operators have exact
+//! closed-form matrix elements. See [`docs/theory.md`] §5 for the rationale and
+//! [`docs/references.md`] for the port provenance.
 //!
-//! # Label normalization invariant
+//! [`docs/theory.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/theory.md
+//! [`docs/references.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/references.md
+//!
+//! # Conventions
+//!
+//! ## Label normalization invariant
 //!
 //! An [`Irrep`](crate::sun::Irrep) stores the SU(N) highest weight as a *normalized* weight
 //! `λ = (λ₁ ≥ λ₂ ≥ … ≥ λ_N)` with `λ_N = 0` and all `λ_i ≥ 0`, of length `N`
@@ -22,9 +33,28 @@
 //! shift-invariant: any representative is accepted and normalized by
 //! subtracting `λ_N`. The Dynkin labels `aᵢ = λᵢ − λᵢ₊₁` (all `≥ 0`) are
 //! derivable via [`Irrep::dynkin`](crate::sun::Irrep::dynkin).
+//!
+//! # Example
+//!
+//! Irreps are built from Dynkin labels (length `N-1`). This computes an
+//! SU(3) F-symbol block for the sextet `1 ⊗ 3 ⊗ 3 → 6`; with `a` trivial the
+//! move is the `1×1×1×1` identity (value 1):
+//!
+//! ```
+//! use racah::sun::{f_symbol, Irrep};
+//!
+//! let triv = Irrep::trivial(3).unwrap(); // SU(3) singlet
+//! let three = Irrep::from_dynkin(&[1, 0]).unwrap(); // fundamental
+//! let six = Irrep::from_dynkin(&[2, 0]).unwrap();
+//!
+//! let block = f_symbol(&triv, &three, &three, &six, &three, &six).unwrap();
+//! assert_eq!(block.dims(), [1, 1, 1, 1]);
+//! assert!((block.at(0, 0, 0, 0) - 1.0).abs() < 1e-12);
+//! ```
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
+use std::sync::Arc;
 
 use num_bigint::BigInt;
 use num_rational::Ratio;
@@ -192,6 +222,99 @@ pub struct Irrep {
     weight: Box<[i64]>,
 }
 
+/// Order-normalized key for one SU(N) tensor-product decomposition.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct SunProductKey {
+    left: Irrep,
+    right: Irrep,
+}
+
+impl SunProductKey {
+    pub(crate) fn new(a: &Irrep, b: &Irrep) -> Self {
+        let (left, right) = if a <= b { (a, b) } else { (b, a) };
+        Self {
+            left: left.clone(),
+            right: right.clone(),
+        }
+    }
+}
+
+impl crate::cache::CacheKeyCharge for SunProductKey {
+    fn key_bytes(&self) -> usize {
+        self.left.key_bytes().saturating_add(self.right.key_bytes())
+    }
+}
+
+/// Shared, sorted channels of one SU(N) tensor-product decomposition.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SunProduct(Arc<[(Irrep, u32)]>);
+
+impl SunProduct {
+    pub(crate) fn from_map(product: BTreeMap<Irrep, u32>) -> Self {
+        Self(product.into_iter().collect())
+    }
+
+    /// Iterates over channels in irrep order with their multiplicities.
+    pub fn iter(&self) -> impl Iterator<Item = (&Irrep, u32)> {
+        self.0
+            .iter()
+            .map(|(irrep, multiplicity)| (irrep, *multiplicity))
+    }
+
+    /// Returns the channel multiplicity, or zero when `irrep` is absent.
+    pub fn multiplicity(&self, irrep: &Irrep) -> u32 {
+        self.0
+            .binary_search_by(|(candidate, _)| candidate.cmp(irrep))
+            .map(|index| self.0[index].1)
+            .unwrap_or(0)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn strong_count(&self) -> usize {
+        Arc::strong_count(&self.0)
+    }
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static PUBLIC_DIRECTPRODUCT_RECONSTRUCTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_public_directproduct_reconstructions() {
+    PUBLIC_DIRECTPRODUCT_RECONSTRUCTIONS.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn public_directproduct_reconstructions() -> usize {
+    PUBLIC_DIRECTPRODUCT_RECONSTRUCTIONS.with(std::cell::Cell::get)
+}
+
+impl crate::cache::CacheCharge for SunProduct {
+    fn value_bytes(&self) -> usize {
+        std::mem::size_of::<Self>()
+            .saturating_add(2 * std::mem::size_of::<usize>())
+            .saturating_add(std::mem::size_of_val(self.0.as_ref()))
+            .saturating_add(
+                self.0
+                    .iter()
+                    .map(|(irrep, _)| std::mem::size_of_val(irrep.weight.as_ref()))
+                    .sum::<usize>(),
+            )
+    }
+}
+
+impl crate::cache::CacheKeyCharge for Irrep {
+    fn key_bytes(&self) -> usize {
+        std::mem::size_of::<Self>().saturating_add(std::mem::size_of_val(self.weight.as_ref()))
+    }
+}
+
 impl Irrep {
     /// Construct from an `N`-component highest weight (any shift representative).
     ///
@@ -273,9 +396,9 @@ impl Irrep {
         let mut acc = Ratio::<BigInt>::one();
         for k2 in 2..=n {
             for k1 in 1..k2 {
-                let d = (k2 - k1) as i64;
-                let numer = d + w[k1 - 1] - w[k2 - 1];
-                acc *= Ratio::new(BigInt::from(numer), BigInt::from(d));
+                let d = BigInt::from(k2 - k1);
+                let numer = &d + BigInt::from(w[k1 - 1]) - BigInt::from(w[k2 - 1]);
+                acc *= Ratio::new(numer, d);
             }
         }
         acc.to_integer()
@@ -293,8 +416,10 @@ impl Irrep {
     /// All GT patterns of this irrep, in the reference basis order.
     ///
     /// Ported from `gtpatterns.jl:GTPatternIterator` /
-    /// `basis(s) = GTPatternIterator{N}(weight(s))`. The order is load-bearing
-    /// and pinned by fixtures. See the private `gt_enumerate` for the recursion.
+    /// `basis(s) = GTPatternIterator{N}(weight(s))`, reproduced index-for-index.
+    /// The order is load-bearing — the CGC gauge is a deterministic function of
+    /// it — so it is pinned by checked-in fixtures. See the private
+    /// `gt_enumerate` for the recursion.
     pub fn patterns(&self) -> Vec<GtPattern> {
         let n = self.rank();
         gt_enumerate(&self.weight)
@@ -531,15 +656,29 @@ fn subrow_rec(j: usize, m: usize, toprow: &[i64], cur: &mut Vec<i64>, out: &mut 
 /// iterates the smaller-dimensional basis; we replicate the `dim` swap (the
 /// result is independent of it, but the port stays faithful).
 pub fn directproduct(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, SunError> {
+    let product = shared_directproduct(a, b)?;
+    #[cfg(test)]
+    PUBLIC_DIRECTPRODUCT_RECONSTRUCTIONS.with(|count| count.set(count.get() + 1));
+    Ok(product
+        .iter()
+        .map(|(irrep, multiplicity)| (irrep.clone(), multiplicity))
+        .collect())
+}
+
+/// Returns the cached, read-only tensor-product decomposition of `a ⊗ b`.
+pub fn shared_directproduct(a: &Irrep, b: &Irrep) -> Result<SunProduct, SunError> {
     if a.rank() != b.rank() {
         return Err(SunError::RankMismatch {
             a: a.rank(),
             b: b.rank(),
         });
     }
-    if a.dim() > b.dim() {
-        return directproduct(b, a);
-    }
+    let key = SunProductKey::new(a, b);
+    Ok(crate::cache::cache_sun_product().get_or_compute(key, || directproduct_uncached(a, b)))
+}
+
+fn directproduct_uncached(a: &Irrep, b: &Irrep) -> SunProduct {
+    let (a, b) = if a.dim() <= b.dim() { (a, b) } else { (b, a) };
     let n = a.rank();
     let mut result: BTreeMap<Irrep, u32> = BTreeMap::new();
     for m in a.patterns() {
@@ -566,7 +705,7 @@ pub fn directproduct(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, SunEr
             *result.entry(s).or_insert(0) += 1;
         }
     }
-    Ok(result)
+    SunProduct::from_map(result)
 }
 
 /// `sign(coef) * sqrt(|coef|)` as an exact [`SignedSqrtRational`], matching
@@ -581,6 +720,89 @@ fn signedroot(coef: &Ratio<BigInt>) -> SignedSqrtRational {
         Ratio::from(BigInt::from(1))
     };
     SignedSqrtRational::from_prefactor_radical(s, coef.abs())
+}
+
+/// Opaque authority fingerprint of the generated SU(N) provider.
+///
+/// The bytes identify the *convention set*, generation pipeline, and
+/// verification/tolerance policy under which every SU(N) Clebsch–Gordan
+/// coefficient (and the F/R symbols contracted from it) is produced. Their sole
+/// use is equality comparison: a consumer may persist the bytes next to data
+/// derived from these coefficients and later compare them to decide whether that
+/// derived data was produced under the same convention.
+///
+/// # Contract (binding)
+///
+/// > Equal fingerprints identify the same convention, generation pipeline, and
+/// > tolerance policy. They do not imply byte-identical values or independently
+/// > prove numerical agreement.
+///
+/// This is deliberately weaker than the base SU(2) fingerprint
+/// ([`crate::su2_authority_fingerprint`]), whose exact big-rational surface lets
+/// equal bytes mean equal values. The generated SU(N) family is a *two-layer*
+/// contract (`docs/gauge.md` "value agreement within the oracle tolerance, not
+/// cross-process bit-identity"): the gauge/sign/structure is a deterministic
+/// function of the subspace, but the final dense linear-algebra stages run in
+/// `f64` and the backend's parallel reductions are not bit-reproducible across
+/// processes, so two builds may differ by a few ULPs. **Numerical agreement is
+/// established by the generation-time verification gates** (`docs/gauge.md` §9:
+/// multiplicity, orthonormality, ladder consistency — typed `SunError`, never
+/// silent) **and the independent oracle suites** (`docs/gauge.md` §11: the SU(2)
+/// embedding and the signed element-wise SUNRepresentations.jl v0.4.0
+/// fixtures), **never by this fingerprint.**
+///
+/// # Consumer contract
+///
+/// - **Opaque.** Compare by equality only; never parse the tags or split on
+///   `:` / `=`. The internal shape is not a stable interface.
+/// - **Stable across patch and minor releases.** The value is not derived from
+///   the crate version, source, docs, a pointer, or any process-local state.
+/// - **Changes exactly with a value-affecting breaking release.** The trailing
+///   `epoch` is bumped by hand — and only — when a change can alter a returned
+///   coefficient value, its normalization, or the canonical convention it is
+///   expressed in (the breaking-release event class of `docs/gauge.md`). The
+///   compatibility-policy test (`tests/sun_fingerprint.rs`) pins the exact bytes,
+///   so any such change is a mutation-visible review event.
+/// - **Epoch is per-family and independent.** The SU(N) `epoch` moves
+///   independently of the SU(2) and B/C/D epochs; an SU(N) gauge change never
+///   invalidates SU(2)-derived or B/C/D-derived consumer state (and vice versa).
+///   The base SU(2) surface is untouched by this fingerprint.
+///
+/// # Tags and the conventions they pin (each cites `docs/gauge.md`)
+///
+/// Every tag names a rule the gauge document already pins; nothing here invents
+/// a convention. The backend identity is deliberately excluded — per-backend ULP
+/// differences are inside the tolerance class this fingerprint's contract
+/// disclaims, and a discrete gauge flip across backends is a defect, not a
+/// tolerance event (`docs/gauge.md` §10).
+///
+/// - `ref=sunrep-0.4` — the port reference: SUNRepresentations.jl v0.4.0
+///   (`docs/gauge.md`, header).
+/// - `basis=gt-order` — the Gelfand–Tsetlin pattern basis order that indexes
+///   `m1, m2, m3`, and the highest-weight-system coupling-pair enumeration that
+///   follows from it (`docs/gauge.md` §1, §2).
+/// - `gauge=qrpos-cref` — the gauge canonicalization
+///   `gaugefix! = first ∘ qrpos! ∘ cref!`: the column-pivoted reduced echelon
+///   pivot rule and the positive-diagonal QR sign fix (`docs/gauge.md` §4, 4a/4b).
+/// - `descent=ladder-lstsq` — the lower-weight descent: reverse-lexicographic
+///   weight order and the QR least-squares lowering solve (`docs/gauge.md` §5).
+/// - `tol=sunrep-tol-tier` — the value-fixing tolerance tier (the reference
+///   SUNRepresentations `TOL_*` constants: `TOL_NULLSPACE` rank cut, `TOL_GAUGE`
+///   pivot, `TOL_PURGE`; `docs/gauge.md` §3, §4a, §6). The `TOL_ORTHO`/
+///   `TOL_LADDER` gates are excluded: they cannot move a returned value, so
+///   tightening them is not a breaking release (`docs/gauge.md` §9).
+/// - `epoch=1` — the per-family manual epoch (see above).
+///
+/// # Stability
+///
+/// **Unstable: shape may change while the generated-provider contract is
+/// negotiated.** Cargo features cannot express instability tiers; this label and
+/// issue #47 are the ledger.
+#[cfg(feature = "cgc-gen")]
+pub fn sun_authority_fingerprint() -> &'static [u8] {
+    // Manual per-family epoch: bump the trailing `epoch=N` (and the literal in
+    // tests/sun_fingerprint.rs) only on a value-affecting breaking release.
+    b"racah:sun-gt:ref=sunrep-0.4:basis=gt-order:gauge=qrpos-cref:descent=ladder-lstsq:tol=sunrep-tol-tier:epoch=1"
 }
 
 #[cfg(test)]
@@ -635,6 +857,12 @@ mod tests {
         assert_eq!(irr(&[1, 1]).dim(), BigInt::from(8)); // adjoint
         assert_eq!(irr(&[2, 0]).dim(), BigInt::from(6));
         assert_eq!(irr(&[3, 0]).dim(), BigInt::from(10));
+    }
+
+    #[test]
+    fn weyl_dim_large_su2_labels_stay_exact() {
+        assert_eq!(irr(&[i64::MAX]).dim(), BigInt::from(1_u64) << 63);
+        assert_eq!(irr(&[i64::MAX - 1]).dim(), BigInt::from(i64::MAX));
     }
 
     #[test]
@@ -739,6 +967,89 @@ mod tests {
     #[test]
     fn directproduct_commutes_and_dual_twist() {
         assert_commute_and_dual_twist(&irr(&[2, 1]), &irr(&[1, 1]));
+    }
+
+    #[test]
+    #[ignore = "release-mode product access collector; not a CI timing gate"]
+    fn sun_product_private_collector() {
+        use std::hint::black_box;
+        use std::time::Instant;
+
+        let a = irr(&[1, 1]);
+        let b = irr(&[1, 1]);
+        let channel = irr(&[1, 1]);
+        let product = shared_directproduct(&a, &b).unwrap();
+        let repetitions = 1_000_000u32;
+
+        let started = Instant::now();
+        for _ in 0..repetitions {
+            black_box(product.multiplicity(black_box(&channel)));
+        }
+        let shared_multiplicity = started.elapsed();
+
+        let started = Instant::now();
+        for _ in 0..repetitions {
+            black_box(
+                product
+                    .iter()
+                    .map(|(_, multiplicity)| multiplicity)
+                    .sum::<u32>(),
+            );
+        }
+        let shared_channels = started.elapsed();
+
+        let started = Instant::now();
+        for _ in 0..repetitions {
+            black_box(
+                shared_directproduct(black_box(&a), black_box(&b))
+                    .unwrap()
+                    .multiplicity(black_box(&channel)),
+            );
+        }
+        let cached_shared_multiplicity = started.elapsed();
+
+        let started = Instant::now();
+        for _ in 0..repetitions {
+            black_box(
+                shared_directproduct(black_box(&a), black_box(&b))
+                    .unwrap()
+                    .iter()
+                    .map(|(_, multiplicity)| multiplicity)
+                    .sum::<u32>(),
+            );
+        }
+        let cached_shared_channels = started.elapsed();
+
+        let started = Instant::now();
+        for _ in 0..repetitions {
+            let map = directproduct(black_box(&a), black_box(&b)).unwrap();
+            black_box(map.get(black_box(&channel)).copied().unwrap_or(0));
+        }
+        let public_multiplicity = started.elapsed();
+
+        let started = Instant::now();
+        for _ in 0..repetitions {
+            black_box(
+                directproduct(black_box(&a), black_box(&b))
+                    .unwrap()
+                    .into_keys()
+                    .collect::<Vec<_>>(),
+            );
+        }
+        let public_channels = started.elapsed();
+
+        let ns = |elapsed: std::time::Duration| elapsed.as_nanos() as f64 / repetitions as f64;
+        eprintln!(
+            "SUN_PRODUCT_PRIVATE_ACCESS case=su3_8x8 channels={} repetitions={} shared_value_multiplicity_ns={:.3} shared_value_channels_ns={:.3} cached_shared_multiplicity_ns={:.3} cached_shared_channels_ns={:.3} public_multiplicity_ns={:.3} public_channels_ns={:.3}",
+            product.0.len(),
+            repetitions,
+            ns(shared_multiplicity),
+            ns(shared_channels),
+            ns(cached_shared_multiplicity),
+            ns(cached_shared_channels),
+            ns(public_multiplicity),
+            ns(public_channels),
+        );
     }
 
     fn assert_dim_sum_rule(a: &Irrep, b: &Irrep) {

@@ -2,8 +2,7 @@
 //! track): highest-weight nullspace, deterministic gauge canonicalization, and
 //! reverse-lex weight-ladder descent.
 //!
-//! Ported from SUNRepresentations.jl v0.4.0 `clebschgordan.jl`
-//! (`~/.julia/packages/SUNRepresentations/BM32Z/src/clebschgordan.jl`). The
+//! Ported from SUNRepresentations.jl v0.4.0 `src/clebschgordan.jl`. The
 //! gauge produced here is a semver contract of this crate: any change that can
 //! alter a returned coefficient value is a breaking release. See
 //! `docs/gauge.md` for the full specification and per-choice citations.
@@ -22,7 +21,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::linalg::{self, Mat};
-use super::{directproduct, GtPattern, Irrep, LadderEntry, SunError};
+use super::{shared_directproduct, GtPattern, Irrep, LadderEntry, SunError};
 
 /// Absolute singular-value tolerance for the highest-weight nullspace rank cut.
 /// Reference: `clebschgordan.jl:TOL_NULLSPACE = 1.0e-13`.
@@ -65,11 +64,11 @@ pub struct CgcEntry {
     pub value: f64,
 }
 
-/// The Clebsch-Gordan coefficients coupling `s1 ⊗ s2 → s3`, as a sparse
+/// The Clebsch-Gordan coefficients coupling $s_1 \otimes s_2 \to s_3$, as a sparse
 /// m-basis tensor with the outer multiplicity carried on a trailing axis.
 ///
-/// Shape is `[dim(s1), dim(s2), dim(s3), N]` with `N = N^{s3}_{s1 s2}` the
-/// Layer 1 fusion multiplicity ([`directproduct`]). Only nonzero entries (after
+/// Shape is $[\dim(s_1), \dim(s_2), \dim(s_3), N]$ with $N = N^{s_3}_{s_1 s_2}$ the
+/// Layer 1 fusion multiplicity ([`crate::sun::directproduct`]). Only nonzero entries (after
 /// the `TOL_PURGE` cut) are stored, sorted by `(m1, m2, m3, mu)`.
 ///
 /// Coefficient values realize the SUNRepresentations.jl v0.4.0 gauge (see
@@ -112,9 +111,9 @@ impl Cgc {
     pub fn nnz(&self) -> usize {
         self.entries.len()
     }
-    /// Retained-storage bytes (used by the byte-accounted cache): the entry
-    /// vector plus the three irrep weight buffers. Over-counts rather than
-    /// under-counts so a cache byte bound stays a true ceiling.
+    /// Conservative retained charge used by the cache: the entry vector plus
+    /// the three irrep weight buffers and value shell. Container scaffolding,
+    /// allocator metadata/RSS, and external clones are outside this charge.
     pub(crate) fn storage_bytes(&self) -> usize {
         self.entries.len() * std::mem::size_of::<CgcEntry>()
             + std::mem::size_of::<Cgc>()
@@ -246,11 +245,10 @@ fn generate(
     let d1 = s1.patterns().len();
     let d2 = s2.patterns().len();
     let d3 = s3.patterns().len();
-    let expected = expected_override.unwrap_or_else(|| {
-        directproduct(s1, s2)
-            .map(|p| p.get(s3).copied().unwrap_or(0) as usize)
-            .unwrap_or(0)
-    });
+    let expected = match expected_override {
+        Some(expected) => expected,
+        None => shared_directproduct(s1, s2)?.multiplicity(s3) as usize,
+    };
 
     // Trivial couplings (clebschgordan.jl:trivial_CGC): 1 ⊗ s → s and s ⊗ 1 → s
     // are identity embeddings, no linear algebra.
@@ -863,6 +861,18 @@ mod tests {
                 found: 1
             }
         );
+    }
+
+    #[test]
+    fn private_generate_does_not_reconstruct_public_product_maps() {
+        crate::sun::reset_public_directproduct_reconstructions();
+
+        let trivial = Irrep::trivial(3).unwrap();
+        let three = irr(&[1, 0]);
+        let c = generate(&trivial, &three, &three, None).unwrap();
+
+        assert_eq!(c.multiplicity(), 1);
+        assert_eq!(crate::sun::public_directproduct_reconstructions(), 0);
     }
 
     #[test]

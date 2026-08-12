@@ -201,6 +201,35 @@ fn trim(powers: &mut Vec<u32>) {
 static PRIMES: RwLock<Vec<u64>> = RwLock::new(Vec::new());
 static FACT: RwLock<Vec<Vec<u32>>> = RwLock::new(Vec::new());
 
+#[cfg(all(test, feature = "cgc-gen"))]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct TableStats {
+    pub(crate) factorial_rows: usize,
+    pub(crate) primes: usize,
+    pub(crate) retained_capacity_bytes: usize,
+}
+
+#[cfg(all(test, feature = "cgc-gen"))]
+pub(crate) fn table_stats() -> TableStats {
+    let table = FACT.read().unwrap();
+    let factorial_bytes = table
+        .capacity()
+        .saturating_mul(std::mem::size_of::<Vec<u32>>())
+        .saturating_add(
+            table
+                .iter()
+                .map(|row| row.capacity().saturating_mul(std::mem::size_of::<u32>()))
+                .sum::<usize>(),
+        );
+    let primes = PRIMES.read().unwrap();
+    TableStats {
+        factorial_rows: table.len(),
+        primes: primes.len(),
+        retained_capacity_bytes: factorial_bytes
+            .saturating_add(primes.capacity().saturating_mul(std::mem::size_of::<u64>())),
+    }
+}
+
 /// The `idx`-th prime (`idx == 0` -> 2), extending the shared list if needed
 /// (`primefactorization.jl::prime`).
 fn nth_prime(idx: usize) -> u64 {

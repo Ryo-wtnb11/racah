@@ -13,8 +13,7 @@ bit-identity: the dense backend's parallel reductions are not bit-reproducible,
 so two independent generations of the same coupling can differ by a few ULPs
 (within a single process the cache serializes all readers to one winner value).
 
-The construction is a port of **SUNRepresentations.jl v0.4.0**
-(`~/.julia/packages/SUNRepresentations/BM32Z/src`). Every choice below cites the
+The construction is a port of **SUNRepresentations.jl v0.4.0** (`src/`). Every choice below cites the
 reference `file:symbol`. A reader with this document and the reference source
 can re-derive the gauge without reading the Rust implementation.
 
@@ -73,9 +72,7 @@ Reference: `clebschgordan.jl:highest_weight_CGC`. Over the coupling pairs
 system expressing that every simple raising operator annihilates the coupled
 highest-weight state:
 
-```
-(J⁺_l(s1) ⊗ 𝟙 + 𝟙 ⊗ J⁺_l(s2)) |m1, m2⟩ = 0,   l = 1 … N−1
-```
+$$ (J^+_l(s_1) \otimes \mathbb{1} + \mathbb{1} \otimes J^+_l(s_2))\, |m_1, m_2\rangle = 0, \quad l = 1 \dots N-1 $$
 
 The raising matrices are the exact GT ladder matrices
 (`gtpatterns.jl:creation`, `sun::Irrep::creation`), entries `signedroot(coef)`.

@@ -1,12 +1,20 @@
 [package]
 name = "racah"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Racah-Wigner calculus for compact Lie groups: exact SU(2) recoupling, and runtime Clebsch-Gordan / F- / R-coefficient generation for SU(N), SO(N), and Sp(2N)"
 repository = "https://github.com/Ryo-wtnb11/racah"
-keywords = ["representation-theory", "clebsch-gordan", "wigner", "lie-group", "6j"]
+keywords = ["recoupling", "clebsch-gordan", "wigner", "lie-group", "6j"]
 categories = ["mathematics", "science"]
+
+# docs.rs builds the generated SU(N)/SO(N)/Sp(2N) surfaces too, not just the
+# base SU(2) path, so the published docs cover the whole API.
+# The KaTeX header renders `$...$` / `$$...$$` math in the doc comments; local
+# and CI doc builds pass the same flag (README dev note; CI `doc` job).
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--html-in-header", "doc/katex-header.html"]
 
 [features]
 default = []
@@ -64,5 +72,17 @@ required-features = ["cgc-gen"]
 # SU(N) F-symbol generation cost (cold contraction + warm F-cache hit).
 [[bench]]
 name = "sun_fr"
+harness = false
+required-features = ["cgc-gen"]
+
+# SU(N) product working-set collector plus cold/warm decomposition timing.
+[[bench]]
+name = "sun_product"
+harness = false
+required-features = ["cgc-gen"]
+
+# B/C/D F-symbol generation cost (cold catalog+sweep+contraction + warm hit).
+[[bench]]
+name = "bcd_fr"
 harness = false
 required-features = ["cgc-gen"]

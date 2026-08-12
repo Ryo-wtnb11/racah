@@ -1,0 +1,66 @@
+--- a/Source/getRC.cc
++++ b/Source/getRC.cc
+@@ -86,7 +86,62 @@
+              genRG_struct<gTQ,RTD> &B=gRS.Buf(t);
+              const genRG_base<gTQ,RTD> &R=B.RSet[qs];
+ 
+-             a=R.toMx();
++             // maca64 sync patch (2026-07): emit plain-double dense Sp/Sz
++             // (default toMx keeps MPFR decimal-string blobs, useless to
++             // an external consumer). Fields: J, Z, Sp{k}, Sz{k}.
++             { const char *fields[4]={"J","Z","Sp","Sz"};
++               a=mxCreateStructMatrix(1,1,4,fields);
++               { mxArray *m=mxCreateDoubleMatrix(1,qs.len,mxREAL);
++                 double *pr=mxGetPr(m);
++                 for (unsigned k=0; k<qs.len; ++k) pr[k]=double(qs[k]);
++                 mxSetFieldByNumber(a,0,0,m);
++               }
++               { mxArray *m=mxCreateDoubleMatrix(R.Z.dim1,R.Z.dim2,mxREAL);
++                 double *pr=mxGetPr(m);
++                 for (unsigned c2=0; c2<R.Z.dim2; ++c2)
++                 for (unsigned r2=0; r2<R.Z.dim1; ++r2)
++                    pr[c2*R.Z.dim1+r2]=double(R.Z(r2,c2));
++                 mxSetFieldByNumber(a,0,1,m);
++               }
++               for (unsigned fi=0; fi<2; ++fi) {
++                  const wbvector< wbsparray<RTD> > &V = (fi==0 ? R.Sp : R.Sz);
++                  mxArray *cell=mxCreateCellMatrix(1,V.len);
++                  for (unsigned k=0; k<V.len; ++k) {
++                     const wbsparray<RTD> &A=V[k];
++                     char isdiag=(A.SIZE.len==0 && A.D.len>0);
++                     unsigned d1=isdiag ? unsigned(A.D.len)
++                        : (A.SIZE.len>0 ? unsigned(A.SIZE[0]) : 0);
++                     unsigned d2=isdiag ? d1
++                        : (A.SIZE.len>1 ? unsigned(A.SIZE[1]) : 1);
++                     mxArray *m=mxCreateDoubleMatrix(d1,d2,mxREAL);
++                     double *pr=mxGetPr(m);
++                     if (isdiag) {
++                        for (unsigned r2=0; r2<d1; ++r2)
++                           pr[r2*d1+r2]=double(A.D[r2]);
++                     } else if (A.IDX.isEmpty() && A.D.len==size_t(d1)*d2) {
++                        // flat/dense storage: D in row-major (wb) order
++                        for (unsigned r2=0; r2<d1; ++r2)
++                        for (unsigned c2=0; c2<d2; ++c2)
++                           pr[c2*d1+r2]=double(A.D[size_t(r2)*d2+c2]);
++                     } else {
++                        for (unsigned e2=0; e2<A.D.len; ++e2) {
++                           unsigned r2, c2;
++                           if (A.IDX.dim2==2) {
++                              r2=unsigned(A.IDX(e2,0)); c2=unsigned(A.IDX(e2,1));
++                           } else if (A.IDX.dim2==1) {
++                              unsigned li=unsigned(A.IDX(e2,0));
++                              r2=li%d1; c2=li/d1;
++                           } else {
++                              mexErrMsgTxt("getRC: unexpected IDX shape");
++                           }
++                           pr[c2*d1+r2]=double(A.D[e2]);
++                        }
++                     }
++                     mxSetCell(cell,k,m);
++                  }
++                  mxSetFieldByNumber(a,0,2+fi,cell);
++               }
++             }
+           }
+        }
+     }
