@@ -7,6 +7,16 @@ value/gauge rule noted below.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-12
+
+This release publishes the generated-provider dependency closure against the
+published Tenferro 0.3.0 registry line.
+
+### Changed
+
+- Use registry `tenferro-* = "0.3.0"` dependencies for `cgc-gen`.
+- Document crates.io installation and the published feature configuration.
+
 Generated-provider (`cgc-gen`) observability and convention-identity surface
 (issue [#47](https://github.com/Ryo-wtnb11/racah/issues/47)). This whole surface
 is **unstable: shape may change while the generated-provider contract is
@@ -107,5 +117,6 @@ SU(2) provider this rule is mechanized by `su2_authority_fingerprint()`: its
 epoch is bumped only on such a value-affecting release, so a fingerprint change
 and a breaking release are one reviewable event.
 
-[Unreleased]: https://github.com/Ryo-wtnb11/racah/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Ryo-wtnb11/racah/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Ryo-wtnb11/racah/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Ryo-wtnb11/racah/releases/tag/v0.1.0
