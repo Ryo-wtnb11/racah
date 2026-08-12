@@ -4,9 +4,10 @@ Racah–Wigner calculus for compact Lie groups, in Rust: irreducible
 representations, Clebsch–Gordan coefficients, and recoupling coefficients
 (3j / 6j / F / R) for SU(2), SU(N), SO(N), and Sp(2N).
 
-Coefficients for any admissible labels are computed on demand in exact or
-verification-gated arithmetic — there is no precomputed table and no label
-ceiling.
+Coefficients for any admissible labels are computed on demand — exactly for
+SU(2), and through a deterministically gauged, verification-gated numerical
+pipeline for the generated families. There is no precomputed table and no
+label ceiling.
 
 ## Installation
 
@@ -21,8 +22,14 @@ racah = "0.1.1"
 # racah = { version = "0.1.1", features = ["cgc-gen"] }
 ```
 
-MSRV: latest stable Rust (CI pins no minimum version; it builds and tests on
-`stable`).
+No fixed MSRV: the crate is built and tested on current stable Rust, and
+`Cargo.toml` sets no `rust-version`.
+
+With `cgc-gen` enabled the coefficient caches may retain several hundred MiB of
+generated values by default; call
+`configure_cache_budgets` once before first use to lower that bound. See
+[Cache resource contract](#cache-resource-contract) and
+[Process-local budget policy](#process-local-budget-policy).
 
 ## Feature flags
 
@@ -223,10 +230,15 @@ implemented, not a private arithmetic stack inside this crate.
 
 ### Exactness contract
 
+Structural and discrete data are exact; generated coefficients are
+deterministically gauged and verification-gated floating-point quantities.
 Coefficient *values* are floating point — as in every production reference
 (the Julia SU(N) stack is Float64 end-to-end after the ladder matrices;
 QSpace is double or MPFR-128; exact algebraic-number coefficients exist only
-in research-scale tools). What is exact is the *computation*:
+in research-scale tools). The base SU(2) path computes in big rationals and
+rounds once; the generated families run a floating-point nullspace solve
+(QR/SVD, least squares) and are exact in structure, not in arithmetic. What
+each level of the contract promises:
 
 1. **Combinatorial structure is exact.** Pattern enumeration, fusion
    multiplicities, weight systems, and multiplicity dimensions use
@@ -245,10 +257,13 @@ in research-scale tools). What is exact is the *computation*:
    pentagon/hexagon checks run at generation time; a tolerance violation is
    a typed error, never a silently degraded coefficient.
 
-This generalizes the exact-SU(2) tradition (compute in rationals, round
-once): for generated families the single rounding point moves earlier — into
-the nullspace solve — while structure, gauge, and verification stay at the
-same standard.
+So multiplicities, weights, and labels are exact; the basis and gauge
+convention is deterministic; CGC / F / R values are numerical; and a numerical
+failure is rejected by the verification gate rather than returned. This
+generalizes the exact-SU(2) tradition (compute in rationals, round once): for
+generated families the single rounding point moves earlier — into the
+nullspace solve — while structure, gauge, and verification stay at the same
+standard.
 
 For the base SU(2) provider this convention set is exposed as an opaque
 fingerprint that changes only on the value-affecting breaking release of point 4
@@ -462,10 +477,6 @@ self-checks — orthogonality, F-unitarity, pentagon, hexagon — as public API)
 The base SU(2) provider's stable public surface — authority fingerprint,
 checked representation layer, and cache resource contract — is described under
 [Provider contract](#provider-contract).
-
-Not published to crates.io yet (blocked on the `tenferro-rs` publish); the git
-dependency above is the supported path. See [Installation](#installation) and
-[Feature flags](#feature-flags).
 
 ## More
 
