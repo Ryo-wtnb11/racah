@@ -236,9 +236,11 @@ Coefficient *values* are floating point — as in every production reference
 (the Julia SU(N) stack is Float64 end-to-end after the ladder matrices;
 QSpace is double or MPFR-128; exact algebraic-number coefficients exist only
 in research-scale tools). The base SU(2) path computes in big rationals and
-rounds once; the generated families run a floating-point nullspace solve
-(QR/SVD, least squares) and are exact in structure, not in arithmetic. What
-each level of the contract promises:
+rounds once; the generated families run floating-point linear algebra —
+SU(N) a highest-weight nullspace solve plus least-squares ladder descent,
+SO(N)/Sp(2N) rank-revealing QR and an SVD Procrustes alignment — and are
+exact in structure, not in arithmetic. What each level of the contract
+promises:
 
 1. **Combinatorial structure is exact.** Pattern enumeration, fusion
    multiplicities, weight systems, and multiplicity dimensions use
@@ -261,9 +263,9 @@ So multiplicities, weights, and labels are exact; the basis and gauge
 convention is deterministic; CGC / F / R values are numerical; and a numerical
 failure is rejected by the verification gate rather than returned. This
 generalizes the exact-SU(2) tradition (compute in rationals, round once): for
-generated families the single rounding point moves earlier — into the
-nullspace solve — while structure, gauge, and verification stay at the same
-standard.
+generated families the rounding point moves earlier — into the linear algebra
+that constructs the intertwiners — while structure, gauge, and verification
+stay at the same standard.
 
 For the base SU(2) provider this convention set is exposed as an opaque
 fingerprint that changes only on the value-affecting breaking release of point 4
