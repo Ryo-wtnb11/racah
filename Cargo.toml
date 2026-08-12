@@ -38,13 +38,12 @@ num-traits = "0.2"
 # ladder descent = least-squares, gauge = positive-diagonal QR). Only the
 # `cgc-gen` feature pulls these; base builds stay dependency-light.
 #
-# Pinned to an exact git revision so a standalone CI checkout (no sibling
-# tenferro-rs on disk) resolves. Bumping `rev` is an ordinary reviewed commit.
-# Local work against an in-progress tenferro checkout uses a gitignored
-# `.cargo/config.toml` [patch] override -- see AGENTS.md.
-tenferro-linalg = { git = "https://github.com/tensor4all/tenferro-rs", rev = "5ef41cc9b1746c07aea2e7c7cb618ff255f6aa5e", default-features = false, optional = true }
-tenferro-cpu = { git = "https://github.com/tensor4all/tenferro-rs", rev = "5ef41cc9b1746c07aea2e7c7cb618ff255f6aa5e", default-features = false, optional = true }
-tenferro-runtime = { git = "https://github.com/tensor4all/tenferro-rs", rev = "5ef41cc9b1746c07aea2e7c7cb618ff255f6aa5e", default-features = false, optional = true }
+# The generated-coefficient feature uses the published Tenferro 0.3.0 line.
+# Local work against an in-progress checkout can still use the gitignored
+# `.cargo/config.toml` [patch] override described in AGENTS.md.
+tenferro-linalg = { version = "0.3.0", default-features = false, optional = true }
+tenferro-cpu = { version = "0.3.0", default-features = false, optional = true }
+tenferro-runtime = { version = "0.3.0", default-features = false, optional = true }
 
 [dev-dependencies]
 # Oracle on the doubled-spin <= 254 overlap domain; pulls rug/GMP in tests
