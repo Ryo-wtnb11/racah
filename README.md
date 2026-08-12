@@ -10,16 +10,15 @@ ceiling.
 
 ## Installation
 
-Not yet published to crates.io: the `cgc-gen` feature depends on
-[tenferro-rs](https://github.com/tensor4all/tenferro-rs), which is not itself
-published, so a crates.io release is blocked upstream. The supported path today
-is a git dependency:
+Racah is available on crates.io. The default build provides the exact SU(2)
+path; the optional `cgc-gen` feature uses the published Tenferro 0.3.0 line.
+For a source checkout or unreleased development, use the git dependency:
 
 ```toml
 [dependencies]
-racah = { git = "https://github.com/Ryo-wtnb11/racah" }
+racah = "0.1.1"
 # generated SU(N)/SO(N)/Sp(2N) families:
-# racah = { git = "https://github.com/Ryo-wtnb11/racah", features = ["cgc-gen"] }
+# racah = { version = "0.1.1", features = ["cgc-gen"] }
 ```
 
 MSRV: latest stable Rust (CI pins no minimum version; it builds and tests on
@@ -32,11 +31,8 @@ MSRV: latest stable Rust (CI pins no minimum version; it builds and tests on
 | *(default)* | Exact SU(2): 3j / 6j / Clebsch–Gordan / F / R, closed-form big-rational | `num-bigint`, `num-rational`, `num-traits` only |
 | `cgc-gen` | Runtime CGC / F / R generation for SU(N) (Gelfand–Tsetlin) and SO(N)/Sp(2N) (generator bootstrap) | `tenferro-linalg` / `-cpu` / `-runtime` (the dense factorization + contraction backend) |
 
-The `cgc-gen` dependencies are pinned to an exact `tenferro-rs` git revision
-(see `Cargo.toml`), so a fresh checkout resolves without a sibling tenferro on
-disk. Consumers enabling `cgc-gen` inherit that pinned revision; bumping it is
-an ordinary reviewed commit. The default build stays dependency-light and needs
-no linear-algebra stack.
+The `cgc-gen` dependencies use the published Tenferro 0.3.0 registry line. The
+default build stays dependency-light and needs no linear-algebra stack.
 
 ## Quick start
 
