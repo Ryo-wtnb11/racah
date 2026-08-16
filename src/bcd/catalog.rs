@@ -342,11 +342,21 @@ impl CanonicalCatalog {
     /// Seed the two base cases: the trivial rep (a 1-dimensional carrier, all
     /// generators zero) and the defining rep (from the exact S3.1 seed). Both
     /// are `≺`-minimal (§14), so every canonical-parent chain bottoms out here.
+    ///
+    /// The defining seed is stored in QSpace's `Setup_*` state order, which is
+    /// **not** the sweep's descending-weight order; it is therefore brought into
+    /// the canonical frame by one pass of the §1–§8 sweep over its own carrier
+    /// (`docs/gauge_soN.md` §14.2, issue #90) — exactly what the spinor base
+    /// cases already do (§16.3). One frame convention for every catalog entry:
+    /// a rediscovered defining block is then coherent with the stored one, so
+    /// the §15 coherence guard and the alignment apply to it unchanged.
     fn seed_base(&mut self) -> Result<(), CatalogError> {
         // Rank guard (excluded low-rank isomorphisms) fires here via the seed.
         let seed = defining_seed(self.series, self.rank)?;
-        let defining = Generators::from_seed(&seed);
         let defining_irrep = self.defining_irrep()?;
+        let expected = std::collections::BTreeMap::from([(defining_irrep.clone(), 1u32)]);
+        let decomp = decompose(&Generators::from_seed(&seed), &expected)?;
+        let defining = decomp.blocks()[0].generators().clone();
         let trivial_irrep = Irrep::trivial(self.series, self.rank)?;
         let trivial = Generators::trivial(self.series, self.rank);
         self.commit_one(trivial_irrep, trivial);
@@ -496,10 +506,10 @@ impl CanonicalCatalog {
     /// coherence guard (issue #15 instance 5) still fires — now on the
     /// **post-alignment** residual — as [`CatalogError::BasisIncoherent`] when a
     /// frame cannot be aligned within tolerance (a genuinely different irrep or a
-    /// numerically hopeless embedding). The two base cases (trivial, defining) are
-    /// exempt — their stored basis is the S3.1 seed rather than a descending-weight
-    /// sweep, so an element-wise comparison is not meaningful, and neither is ever
-    /// the ill-conditioned case the guard targets.
+    /// numerically hopeless embedding). **No irrep is exempt** — every catalog
+    /// entry, base cases included, is stored in the sweep's descending-weight
+    /// frame (issue #90), so the element-wise comparison is meaningful for all of
+    /// them and a frame mismatch can no longer hide behind an exemption.
     fn assemble_cgc(
         &self,
         s1: &Irrep,
@@ -508,37 +518,32 @@ impl CanonicalCatalog {
         copies: &[&Block],
     ) -> Result<CatalogCgc, CatalogError> {
         let stored = self.store.get(s3).expect("caller ensured s3");
-        let check = !self.is_base_case(s3);
         let (rows, d3) = copies[0].cgc_shape();
         let mut cols = Vec::with_capacity(rows * d3 * copies.len());
         for b in copies {
             debug_assert_cartan_matches(b, stored);
-            if check {
-                let raw = b.generators().coherence_residual(stored);
-                if raw <= TOL_BASIS_COHERENT {
-                    // Already in the canonical frame: use the block CGC verbatim
-                    // (bit-exact fast path — alignment on a coherent block is the
-                    // identity up to sign, so this avoids perturbing stored values).
-                    cols.extend_from_slice(b.cgc());
-                } else {
-                    // Rotated frame (issue #24 ill-conditioning): align to the
-                    // canonical stored frame (issue #29) instead of bricking. The
-                    // coherence guard now runs on the POST-alignment residual — it
-                    // moved after alignment, it was not removed (issue #15 ledger):
-                    // a frame that still disagrees is a genuinely different irrep
-                    // or a numerically hopeless embedding and stays BasisIncoherent.
-                    let (aligned, residual) = align_block(b, stored)?;
-                    if residual > TOL_BASIS_COHERENT {
-                        return Err(CatalogError::BasisIncoherent {
-                            irrep: s3.dynkin(),
-                            product: (s1.dynkin(), s2.dynkin()),
-                            residual,
-                        });
-                    }
-                    cols.extend_from_slice(&aligned.data);
-                }
-            } else {
+            let raw = b.generators().coherence_residual(stored);
+            if raw <= TOL_BASIS_COHERENT {
+                // Already in the canonical frame: use the block CGC verbatim
+                // (bit-exact fast path — alignment on a coherent block is the
+                // identity up to sign, so this avoids perturbing stored values).
                 cols.extend_from_slice(b.cgc());
+            } else {
+                // Rotated frame (issue #24 ill-conditioning): align to the
+                // canonical stored frame (issue #29) instead of bricking. The
+                // coherence guard now runs on the POST-alignment residual — it
+                // moved after alignment, it was not removed (issue #15 ledger):
+                // a frame that still disagrees is a genuinely different irrep
+                // or a numerically hopeless embedding and stays BasisIncoherent.
+                let (aligned, residual) = align_block(b, stored)?;
+                if residual > TOL_BASIS_COHERENT {
+                    return Err(CatalogError::BasisIncoherent {
+                        irrep: s3.dynkin(),
+                        product: (s1.dynkin(), s2.dynkin()),
+                        residual,
+                    });
+                }
+                cols.extend_from_slice(&aligned.data);
             }
         }
         Ok(CatalogCgc {
@@ -550,22 +555,6 @@ impl CanonicalCatalog {
             multiplicity: copies.len(),
             cols,
         })
-    }
-
-    /// Whether `c` is one of the two **QSpace-seeded** base cases (trivial or
-    /// defining), whose stored basis is the ported QSpace seed rather than a
-    /// descending-weight sweep and is therefore exempt from the element-wise
-    /// coherence guard.
-    ///
-    /// The spinor base cases (§16) are deliberately **not** exempt: their seed
-    /// is built directly in the sweep's descending-weight order, so a
-    /// rediscovered spinor block is coherent with the stored one and the guard
-    /// is meaningful there.
-    fn is_base_case(&self, c: &Irrep) -> bool {
-        Irrep::trivial(self.series, self.rank)
-            .map(|t| &t == c)
-            .unwrap_or(false)
-            || self.defining_irrep().map(|d| &d == c).unwrap_or(false)
     }
 
     /// Drop every discovered generator set and re-seed the base cases, returning
@@ -938,10 +927,10 @@ fn build_into(
 ///
 /// Compared as a **multiset** of per-state weight vectors, not state-by-state:
 /// the weight *content* of an irrep is gauge-independent, but the state *order*
-/// is not. A non-base entry (from a sweep) and a base-case entry (the S3.1 seed,
-/// whose native basis is not the sweep's descending-weight order) can therefore
-/// carry the same weights in a different order — a multiset check is the correct,
-/// gauge-independent statement of "same irrep, same weight system". Weights are
+/// is not, and this cheap check deliberately makes no order claim — the
+/// element-wise statement (which since issue #90 does bind every entry, base
+/// cases included) is the production coherence guard in
+/// [`assemble_cgc`](CanonicalCatalog::assemble_cgc). Weights are
 /// integer Cartan eigenvalues (snapped in the sweep, §6), so they compare exactly
 /// after rounding.
 fn debug_assert_cartan_matches(block: &Block, stored: &Generators) {

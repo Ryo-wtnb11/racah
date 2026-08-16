@@ -33,6 +33,30 @@ fn construction_seeds_base_cases() {
     assert!(cat.bytes() > 0);
 }
 
+/// The base cases are stored in the sweep's descending-weight frame, like every
+/// other catalog entry (`docs/gauge_soN.md` §14.2 "Base-case frame", issue #90).
+///
+/// `1 ⊗ V → V` rediscovers the defining rep inside a product and so runs it
+/// through the coherence guard, which no longer exempts base cases. Under
+/// `epoch = 1` — the defining seed stored in QSpace's `Setup_*` order while the
+/// sweep produced the descending-weight order — this exact call reported
+/// `BasisIncoherent { irrep: [1,0], residual: 2.0 }` for `B`/`D`.
+#[test]
+fn base_cases_are_stored_in_the_sweep_frame() {
+    for (series, r) in [
+        (Series::B, 2),
+        (Series::B, 3),
+        (Series::C, 2),
+        (Series::D, 3),
+    ] {
+        let mut cat = CanonicalCatalog::new(series, r).unwrap();
+        let v = defining(series, r);
+        let one = Irrep::trivial(series, r).unwrap();
+        cat.cgc(&one, &v, &v)
+            .unwrap_or_else(|e| panic!("{series:?}_{r} base-case frame: {e:?}"));
+    }
+}
+
 #[test]
 fn excluded_low_rank_is_typed_error() {
     // B1 = SO(3), C1 = Sp(2), D2 = SO(4) are excluded isomorphisms.

@@ -1262,7 +1262,11 @@ pub use fr::{
 /// - `tol=cg-eps-tier` — the QSpace CG_EPS tolerance tier (`EPS_SWEEP`,
 ///   `EPS_VERIFY`, `CG_EPS1`, `EPS_MW_UNIQUE`, `FIXRATIONAL_TOL`;
 ///   `docs/gauge_soN.md` §11).
-/// - `epoch=1` — the per-family manual epoch (see above).
+/// - `epoch=2` — the per-family manual epoch (see above). Moved `1` → `2` by
+///   the base-case frame correction of `docs/gauge_soN.md` §14.2 (issue #90),
+///   which re-frames the B/D defining seed into the sweep's descending-weight
+///   order and moves every B/D value that couples through it; C values are
+///   unchanged.
 ///
 /// # Stability
 ///
@@ -1274,7 +1278,7 @@ pub fn bcd_authority_fingerprint() -> &'static [u8] {
     // Spec version. Bump the trailing `epoch=N` (and the literal in
     // tests/bcd_fingerprint.rs) only when docs/gauge_soN.md is corrected, under
     // the four-step rule in docs/gauge.md "Status". A refactor never bumps it.
-    b"racah:bcd-bootstrap:ref=qspace-v4-dd2cc7e:kron=a-fast:parent=canonical-parent:sweep=gs2-qrpos-posdiag:sort=maxweight-desc:sign=first-significant-positive:align=procrustes-canonical:tol=cg-eps-tier:epoch=1"
+    b"racah:bcd-bootstrap:ref=qspace-v4-dd2cc7e:kron=a-fast:parent=canonical-parent:sweep=gs2-qrpos-posdiag:sort=maxweight-desc:sign=first-significant-positive:align=procrustes-canonical:tol=cg-eps-tier:epoch=2"
 }
 
 #[cfg(test)]

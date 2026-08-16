@@ -540,6 +540,38 @@ The trivial and defining reps are seeded into the catalog at construction; a
 spinor base case is seeded the first time it is asked for, so a catalog that is
 only ever asked for tensor irreps builds no spinor matrices at all.
 
+**Base-case frame (normative; corrected in `epoch = 2`, issue #90).** *Every*
+catalog entry, base cases included, is stored in the sweep's **descending-weight
+frame** (§7). The trivial rep is 1-dimensional and its frame is unique. The
+defining seed's native state order is QSpace's `Setup_*` order, which is **not**
+descending-weight, so before it enters the catalog it is passed through one
+§1–§8 sweep pass over its own carrier (`CanonicalCatalog::seed_base`) — exactly
+what a spinor seed already does (§16.3). One frame convention holds for the
+whole catalog, and therefore the §15 coherence guard and the intertwiner
+alignment apply to a base case exactly as they do to any other block: **nothing
+is exempt from them.**
+
+*The defect this corrects (`epoch = 1` → `2`).* Through `epoch = 1` the defining
+seed was stored in the raw `Setup_*` order, while every *rediscovery* of the
+same irrep inside a product was produced in the descending-weight order, and
+`CanonicalCatalog::assemble_cgc` exempted the base cases from both the coherence
+guard and the alignment — so the two frames were silently mixed inside a single
+contraction. It was a *frame mismatch*, not a rotation the guard was blind to:
+with the exemption removed, `epoch = 1` reports it explicitly as
+`BasisIncoherent { irrep: [1,0], product: ([0,0],[1,0]), residual: 2.0 }`.
+Measured consequences on `epoch = 1` (no spinor involved): the `B_2` vector
+pentagon residual `0.285_239_560_970_874_55` and the `D_3` vector pentagon
+residual `0.129_099_444_873_580_74` (both must close to `~1e-12`), and
+`B_2 F(1, v, v; adj | v, adj) = 0.0` where F-unitarity forces `1.0`. `C_r`'s
+`Setup_SpN` order happens *already* to be descending-weight, so the correction
+moves **no** `C` value; it moves `B`/`D` values wherever the defining rep enters
+a product or a coupled channel — including, transitively, every irrep whose
+canonical-parent chain passes through the defining rep, and hence the `Spin(N)`
+coefficients coupling into those irreps. That is a value move, so it ships as a
+specification correction under [`gauge.md`, "Status"](gauge.md#status-frozen-normative-specification):
+this amendment, the `epoch = 2` bump, the regenerated `tests/gauge_golden.rs`
+values, and the CHANGELOG breaking-change entry, in one PR.
+
 **Candidate-set restriction (class-indexed).** Let `[c] ∈ P/Q` be the central
 class of `c`. If `[c]` lies in the **tensor sublattice** (`{0}` for `B_r`/`C_r`,
 `{0, v}` for `D_r`), the candidate set of condition 1 below is further
@@ -883,12 +915,14 @@ the Cartan columns read in reverse, i.e. descending in `(λ_1,…,λ_r)`, i.e.
 descending in the bit-reversed occupation string. A spinor's weights are
 non-degenerate, so there are no ties and §7's tie-break never fires.
 
-This is a deliberate difference from the two QSpace-ported base cases, whose
-state order is QSpace's `Setup_*` order and is *not* descending-weight. Building
-the spinor seed in the sweep's own order means a spinor rediscovered inside a
-product presents the same frame as the stored seed, so the §15 coherence guard
-and the intertwiner alignment apply to a spinor base case exactly as they do to
-any non-base irrep — it is not exempted from them.
+Building the spinor seed in the sweep's own order means a spinor rediscovered
+inside a product presents the same frame as the stored seed, so the §15
+coherence guard and the intertwiner alignment apply to a spinor base case
+exactly as they do to any non-base irrep — it is not exempted from them. Since
+`epoch = 2` (issue #90) the same is true of the QSpace-ported defining seed,
+whose native `Setup_*` order is *not* descending-weight and which is therefore
+put through one sweep pass over its own carrier (§14.2): there is exactly one
+frame convention in the specification, and no base-case exemption anywhere.
 
 ### 16.2 Generators
 
@@ -932,14 +966,16 @@ describes.
 
 ### 16.4 Fingerprint
 
-`bcd_authority_fingerprint()` gains **no new tag** and its `epoch` stays `1`.
+`bcd_authority_fingerprint()` gains **no new tag** for the spinor sector, and
+the spinor sector by itself moves no `epoch` (the `epoch` is `2` since the
+unrelated §14.2 base-case-frame correction of issue #90).
 
 The tag list is normative and its bytes are contractually stable: the
 fingerprint "changes exactly with a specification correction" (`src/bcd.rs`,
 consumer contract). Adding a `spinor=` tag would change the bytes without a
 specification correction, and would force every consumer holding persisted
-`SO(N)`/`Sp(2N)` coefficients — every one of which is byte-identical across this
-change — to treat them as invalid. Nothing an earlier version could produce
+`SO(N)`/`Sp(2N)` coefficients — every one of which is byte-identical across the
+§16 change — to treat them as invalid. Nothing an earlier version could produce
 moves, and no earlier version could produce a spinor coefficient at all, so the
 existing bytes remain a truthful answer to the question the fingerprint exists
 to answer ("was this derived data produced under the same conventions?"). A

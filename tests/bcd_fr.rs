@@ -258,6 +258,31 @@ fn b2_vector_hexagon_closes() {
     assert_closes(check_hexagon(&mut cat, &v, &v, &v));
 }
 
+/// The B2 vector pentagon — the gate that was **missing** from this release
+/// list, which is how the base-case frame mismatch of issue #90 survived: the
+/// goldens pin CGC values (self-consistent within the mismatched frame) rather
+/// than the F-contractions that cross it. It failed on `epoch = 1` with residual
+/// `0.285_239_560_970_874_55`; with the defining seed re-framed into the sweep
+/// order (`docs/gauge_soN.md` §14.2) it closes.
+#[test]
+#[ignore = "heavy: materializes many CGC; run with --release --ignored"]
+fn b2_vector_pentagon_closes() {
+    let mut cat = CanonicalCatalog::new(Series::B, 2).unwrap();
+    let v = irr(Series::B, &[1, 0]);
+    assert_closes(check_pentagon(&mut cat, &v, &v, &v, &v));
+}
+
+/// The D3 vector pentagon — the other #90 witness (residual
+/// `0.129_099_444_873_580_74` on `epoch = 1`), and the D-series counterpart of
+/// the B2 gate above.
+#[test]
+#[ignore = "heavy: materializes many CGC; run with --release --ignored"]
+fn d3_vector_pentagon_closes() {
+    let mut cat = CanonicalCatalog::new(Series::D, 3).unwrap();
+    let v = irr(Series::D, &[1, 0, 0]);
+    assert_closes(check_pentagon(&mut cat, &v, &v, &v, &v));
+}
+
 /// OM ≥ 2 on the D3 adjoint g = (0,1,1): `g⊗g → g` has multiplicity 2 (exact
 /// S3.0). The g⊗g decomposition's 84 = (0,2,2) channel is near-rank-deficient in
 /// QR (PR #24) and embeds in an O(1)-rotated frame (residual 3.65 on dev macOS

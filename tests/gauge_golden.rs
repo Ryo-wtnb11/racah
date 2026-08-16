@@ -179,10 +179,18 @@ fn su3_f_symbol_matches_the_frozen_gauge() {
 type BcdRow = (usize, usize, usize, f64);
 
 /// SO(5) `[1,0] ⊗ [1,0] → [0,2]` (vector² → adjoint, 5⊗5 → 10).
+///
+/// Regenerated at `epoch = 2` (issue #90): the defining rep is now stored in the
+/// sweep's descending-weight frame, which permutes the product rows `i1 + 5·i2`
+/// of every coupling with a defining-rep factor — the old coordinates
+/// `(2,0)/(10,0)/(14,1)` are exactly zero in the corrected frame. The Sp(4) rows
+/// below are byte-identical across the correction (`Setup_SpN` was already in
+/// that order), which is the C-family half of the claim.
 const SO5_V_V_ADJ: &[BcdRow] = &[
-    (0, 2, 0, 0.707_106_781_186_547_6),
-    (0, 10, 0, -0.707_106_781_186_547_6),
-    (0, 14, 1, -0.707_106_781_186_547_6),
+    (0, 1, 0, 0.707_106_781_186_547_6),
+    (0, 5, 0, -0.707_106_781_186_547_6),
+    (0, 4, 4, 0.5),
+    (0, 4, 5, -0.5),
 ];
 
 /// Sp(4) `[1,0] ⊗ [1,0] → [2,0]` (defining² → adjoint, 4⊗4 → 10).
@@ -389,6 +397,25 @@ fn spinor_f_symbol_matches_the_frozen_gauge() {
 // Regeneration helper (spec-correction path only; see the module docs).
 // ---------------------------------------------------------------------------
 
+/// Print every significant entry of a B/C/D CGC as a `BcdRow` literal. The
+/// pinned coordinates are not stable across a specification correction — a
+/// re-framed factor basis permutes the product rows (issue #90 moved the SO(5)
+/// rows off their old coordinates entirely) — so the regeneration path dumps the
+/// whole block and the pins are re-picked from it.
+fn print_nonzeros(c: &racah::bcd::CatalogCgc) {
+    let (rows, cols) = c.copy_shape();
+    for mu in 0..c.multiplicity() {
+        for col in 0..cols {
+            for row in 0..rows {
+                let v = c.copy(mu)[col * rows + row];
+                if v.abs() > 1e-9 {
+                    println!("    ({mu}, {row}, {col}, {v:?}),");
+                }
+            }
+        }
+    }
+}
+
 #[test]
 #[ignore = "prints the current values for a spec correction; not an assertion"]
 fn print_golden() {
@@ -429,12 +456,7 @@ fn print_golden() {
         )
         .unwrap();
     println!("SO5_V_V_ADJ: shape {:?}", c.copy_shape());
-    for &(mu, row, col, _) in SO5_V_V_ADJ {
-        println!(
-            "    ({mu}, {row}, {col}, {:?}),",
-            bcd_value(&c, mu, row, col)
-        );
-    }
+    print_nonzeros(&c);
 
     let mut cat = CanonicalCatalog::new(Series::C, 2).unwrap();
     let c = cat
@@ -445,12 +467,7 @@ fn print_golden() {
         )
         .unwrap();
     println!("SP4_V_V_ADJ: shape {:?}", c.copy_shape());
-    for &(mu, row, col, _) in SP4_V_V_ADJ {
-        println!(
-            "    ({mu}, {row}, {col}, {:?}),",
-            bcd_value(&c, mu, row, col)
-        );
-    }
+    print_nonzeros(&c);
     let v = bcd(Series::C, &[1, 0]);
     let block = bcd_f_symbol(
         &mut cat,
@@ -506,18 +523,8 @@ fn print_golden() {
                 &spin(*n, labels[2]),
             )
             .unwrap();
-        let (rows, cols) = c.copy_shape();
         println!("{tag}: shape {:?}", c.copy_shape());
-        for mu in 0..c.multiplicity() {
-            for col in 0..cols {
-                for row in 0..rows {
-                    let v = c.copy(mu)[col * rows + row];
-                    if v.abs() > 1e-9 {
-                        println!("    ({mu}, {row}, {col}, {v:?}),");
-                    }
-                }
-            }
-        }
+        print_nonzeros(&c);
     }
 
     let mut cat = CanonicalCatalog::new(Series::D, 3).unwrap();

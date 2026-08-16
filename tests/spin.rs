@@ -12,22 +12,20 @@
 //! Each public operation gets its own focused test rather than one umbrella
 //! run, so a regression names the operation that broke.
 //!
-//! # Known limitation, measured, not hidden
+//! # The former limitation, now closed (issue #90)
 //!
-//! The recoupling gates (`check_f_unitarity` / `check_pentagon` /
-//! `check_hexagon`) close on the spinor channels that do **not** route through
-//! a *defining*-rep coupled channel, and fail on the ones that do. That failure
-//! is **not** a spinor defect: the two QSpace-seeded base cases (trivial and
-//! defining) are stored in the QSpace seed frame while every rediscovery of
-//! them inside a product is produced in the sweep's descending-weight frame,
-//! and `CanonicalCatalog::assemble_cgc` exempts base cases from both the
-//! coherence guard and the intertwiner alignment. The same defect already makes
-//! the *tensor* `B_2` and `D_3` vector pentagons fail on `main` with residuals
-//! `0.285_239_560_970_874_5` and `0.129_099_444_873_580_7` — identical, to the
-//! last digit, on this branch. Fixing it moves shipped coefficient values, so it
-//! is a specification correction under `docs/gauge.md` "Status" and is out of
-//! scope here. The spinor base cases are deliberately built in the sweep frame
-//! so they do **not** add a third instance of it.
+//! Until `epoch = 2` the recoupling gates (`check_f_unitarity` /
+//! `check_pentagon` / `check_hexagon`) closed on the spinor channels that did
+//! **not** route through a *defining*-rep coupled channel and failed on the ones
+//! that did — not a spinor defect but the base-case frame mismatch of issue #90
+//! (the QSpace-seeded defining rep stored in `Setup_*` order, rediscovered in
+//! the sweep's descending-weight order, with base cases exempt from the
+//! coherence guard and the alignment). It also made the *tensor* `B_2` and `D_3`
+//! vector pentagons fail, with residuals `0.285_239_560_970_874_6` and
+//! `0.129_099_444_873_580_7`. `docs/gauge_soN.md` §14.2 "Base-case frame" now
+//! puts the defining seed through the same sweep pass the spinor seeds already
+//! took, and the gates below — including the ones that route through the
+//! defining rep — close.
 
 #![cfg(feature = "cgc-gen")]
 
@@ -389,4 +387,18 @@ fn spinor_hexagon_closes_on_spin6() {
     let sb = ir(6, &[0, 1, 0]);
     let v = ir(6, &[1, 0, 0]);
     check_hexagon(&mut cat, &s, &sb, &v).unwrap();
+}
+
+/// The `Spin(6)` `4 ⊗ 4 = 6 + 1̄0` family routes through the **defining**-rep
+/// coupled channel, which is exactly what the base-case frame mismatch of issue
+/// #90 broke: on `epoch = 1` this pentagon failed at residual
+/// `0.750_000_000_000_000_4` and the hexagon at `0.75`. With the defining seed
+/// re-framed into the sweep order (`docs/gauge_soN.md` §14.2) both close.
+#[test]
+fn spinor_recoupling_closes_through_the_defining_channel_on_spin6() {
+    let s = ir(6, &[0, 0, 1]);
+    let mut cat = CanonicalCatalog::new(Series::D, 3).unwrap();
+    check_pentagon(&mut cat, &s, &s, &s, &s).unwrap();
+    let mut cat = CanonicalCatalog::new(Series::D, 3).unwrap();
+    check_hexagon(&mut cat, &s, &s, &s).unwrap();
 }
