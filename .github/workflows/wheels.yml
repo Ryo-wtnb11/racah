@@ -24,7 +24,10 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
       - run: pip install maturin pytest numpy
-      - run: maturin develop --release --manifest-path racah-py/Cargo.toml
+      # `maturin develop` needs an activated virtualenv; the runner's Python is
+      # already isolated, so build the wheel and install it.
+      - run: maturin build --release --manifest-path racah-py/Cargo.toml --out dist
+      - run: pip install --no-index --find-links dist racah-py
       - run: pytest racah-py/tests -q
 
   wheels:
