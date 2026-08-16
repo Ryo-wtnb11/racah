@@ -7,7 +7,9 @@ representations, Clebsch–Gordan coefficients, and recoupling coefficients
 Coefficients for any admissible labels are computed on demand — exactly for
 SU(2), and through a deterministically gauged, verification-gated numerical
 pipeline for the generated families. There is no precomputed table and no
-label ceiling.
+generation-time label cut: labels are bounded only by the machine-word ranges
+of the label types, which report a typed overflow error rather than a wrong
+answer.
 
 ## Installation
 
@@ -27,7 +29,8 @@ No fixed MSRV: the crate is built and tested on current stable Rust, and
 
 With `cgc-gen` enabled the coefficient caches may retain several hundred MiB of
 generated values by default; call
-`configure_cache_budgets` once before first use to lower that bound. See
+`racah::cache::configure_cache_budgets` once before first use to lower that
+bound. See
 [Cache resource contract](#cache-resource-contract) and
 [Process-local budget policy](#process-local-budget-policy).
 
@@ -91,7 +94,7 @@ assert!((block.at(0, 0, 0, 0) - 1.0).abs() < 1e-9);
 
 No library — in Rust, and essentially nowhere as a standalone component —
 computes the *full* representation-theory coefficient set for the compact Lie
-groups on demand with unbounded labels. By "full set" we mean, for a given
+groups on demand, for any admissible labels. By "full set" we mean, for a given
 group and any admissible irreps: fusion multiplicities, dimensions, duals,
 Frobenius–Schur indicators, Clebsch–Gordan coefficients, and the recoupling
 data (3j / 6j and the F- and R-symbols). `racah` is that standalone library. It
@@ -114,7 +117,12 @@ The existing supply of these coefficients stops short of that, in two ways:
   coefficients must be *constructed*.
 
 `racah` removes both limits: coefficients for any admissible labels are computed
-on demand, inside the process, in pure Rust, with no label ceiling. To do this
+on demand, inside the process, in pure Rust — no table to exceed and no
+generation-time label cut. The remaining bounds are the machine-word ranges of
+the label types themselves (`Su2Irrep`'s `u32` doubled spin, the `i128`
+weight-multiplicity accumulation in the B/C/D combinatorics), far above any
+physical calculation, and they surface as a typed overflow error rather than a
+silently wrong answer. To do this
 faithfully it consolidates the algorithms of three production references, one
 per family (full provenance in [`docs/references.md`](docs/references.md)):
 
@@ -220,10 +228,12 @@ chosen for convenience (the full argument is in
 ### Kernel routing
 
 All dense numerical work behind `cgc-gen` — the nullspace/QR/least-squares
-factorizations and the CGC contractions producing F/R — routes through a
-selectable dense backend. `racah` contains no hand-rolled numeric kernels:
-the backend a consumer selects for its tensor computations is the backend
-used for coefficient generation. An extended-precision tier (the QSpace
+factorizations and the CGC contractions producing F/R — routes through the
+Tenferro traced surface at a single seam (`src/sun/linalg.rs`,
+`src/bcd/linalg.rs`). `racah` contains no hand-rolled numeric kernels. That
+seam is currently executed on the CPU faer backend, constructed internally;
+selecting a backend is **not yet a public API**, so a consumer cannot choose
+one today. An extended-precision tier (the QSpace
 model: compute in ~128-bit precision, tighten tolerances, store f64) is a
 future backend capability with an explicit unsupported boundary until
 implemented, not a private arithmetic stack inside this crate.
@@ -395,8 +405,8 @@ alongside the base one. It is **unstable**:
 
 > Unstable: shape may change while the generated-provider contract is negotiated.
 
-Cargo features cannot express instability tiers, so this label plus issue
-[#47](https://github.com/Ryo-wtnb11/racah/issues/47) are the ledger.
+Cargo features cannot express instability tiers, so this label — carried on
+every generated-provider item's rustdoc — is the ledger.
 
 #### Authority fingerprints
 
@@ -482,6 +492,8 @@ checked representation layer, and cache resource contract — is described under
 
 ## More
 
+- Python bindings (PyO3 + maturin, `cgc-gen` always on, import name `racah`):
+  [`racah-py/README.md`](racah-py/README.md).
 - Theory primer (the objects the API computes): [`docs/theory.md`](docs/theory.md).
 - Porting provenance and bibliography: [`docs/references.md`](docs/references.md).
 - Gauge conventions: [`docs/gauge.md`](docs/gauge.md) (SU(N)),

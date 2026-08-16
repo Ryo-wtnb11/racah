@@ -7,6 +7,19 @@ value/gauge rule noted below.
 
 ## [Unreleased]
 
+### Added
+
+- **`racah-py`**: PyO3/maturin Python bindings for the SU(N) surface, built as
+  a workspace member with `cgc-gen` always on. Import name `racah`,
+  distribution `racah-py`; abi3-py312 wheels are built by the `wheels`
+  workflow. See [`racah-py/README.md`](racah-py/README.md).
+
+### Changed
+
+- Docs: replaced the "no label ceiling" absolute with the machine-word label
+  bounds that report a typed overflow, and corrected "selectable dense
+  backend" to the single Tenferro seam with no public backend-selection API.
+
 ## [0.1.1] - 2026-08-12
 
 This release publishes the generated-provider dependency closure against the

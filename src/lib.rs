@@ -15,8 +15,9 @@
 //! - `cgc-gen` feature: runtime coefficient generation for SU(N) (Gelfand–
 //!   Tsetlin construction), and SO(N)/Sp(2N) (defining-representation seeds
 //!   plus a family-generic decomposition loop). Dense factorizations and the
-//!   CGC contractions producing F/R route through the selected backend; no
-//!   hand-rolled kernels.
+//!   CGC contractions producing F/R route through the Tenferro traced surface
+//!   at a single seam, currently executed on the CPU faer backend; no
+//!   hand-rolled kernels, and no public backend-selection API yet.
 //!
 //! Exactness contract: combinatorial structure and discrete data are exact;
 //! gauge fixing is a deterministic function of the subspace; floating-point
