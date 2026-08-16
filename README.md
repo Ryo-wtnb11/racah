@@ -148,9 +148,13 @@ representation-theory background behind these objects, see
   magnetic indices, leaving the multiplicity indices) and R-symbols
   (symmetric braiding phases). For SU(2) these reduce to the closed-form
   Racah/6j expressions and are computed exactly.
-- Self-check functions: CGC orthogonality, F-unitarity, R-orthogonality,
-  pentagon/hexagon identities — shipped as public API so they double as
-  generation gates and as oracle harnesses for downstream users.
+- Self-check functions: F-unitarity and the pentagon/hexagon identities are
+  shipped as public API per generated family (`check_f_unitarity`,
+  `check_pentagon`, `check_hexagon` in both `sun` and `bcd`; `bcd` adds
+  `check_commutators` for the seed algebra), so they double as generation gates
+  and as oracle harnesses for downstream users. CGC orthonormality and
+  R-orthogonality run as generation gates only — they are not callable checks,
+  and a violation surfaces as a typed error (`SunError::NotOrthonormal` &c.).
 
 ## What it deliberately is not
 
@@ -471,7 +475,7 @@ oracle-checked:
   Cartan series) — CGC, F, R.
 
 Verification (every claim below is backed by a merged test; the crate ships its
-self-checks — orthogonality, F-unitarity, pentagon, hexagon — as public API):
+self-checks — F-unitarity, pentagon, hexagon — as public API):
 
 - **SU(2)**: exhaustive agreement with `wigner-symbols` 0.5.1 over its label
   domain, plus reference fixtures beyond it.
