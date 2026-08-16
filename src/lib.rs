@@ -144,6 +144,13 @@ mod audit_alloc {
 }
 
 pub mod cache;
+
+/// Root datum plus global form (issue #87): `RootSystem`, `GlobalForm`,
+/// `CenterSubgroup`, `GroupId` and the central-character admissibility
+/// predicate. Pure integer arithmetic, no feature gate, no dependency on
+/// `su2`, `sun` or `bcd`.
+pub mod group;
+
 mod exact;
 mod primefactor;
 

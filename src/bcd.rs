@@ -103,6 +103,8 @@ use num_bigint::BigInt;
 use num_rational::Ratio;
 use num_traits::One;
 
+use crate::group::{CenterSubgroup, GlobalForm, GroupId, RootSystem};
+
 /// The three orthogonal/symplectic Cartan series covered here.
 ///
 /// `B_r = SO(2r+1)`, `C_r = Sp(2r)`, `D_r = SO(2r)`. The name `bcd` is used
@@ -132,6 +134,35 @@ impl Series {
         match self {
             Series::B | Series::C => 2,
             Series::D => 3,
+        }
+    }
+
+    /// The root system of this bootstrap family at rank `r`.
+    ///
+    /// The only bridge between [`Series`] (the bootstrap-family key: it
+    /// indexes the defining seeds and the canonical catalog) and
+    /// [`RootSystem`] (the label-lattice type, which also covers `G2`–`E8`).
+    /// The two do different jobs and neither is an alias of the other.
+    pub fn root_system(self, r: usize) -> RootSystem {
+        match self {
+            Series::B => RootSystem::B(r),
+            Series::C => RootSystem::C(r),
+            Series::D => RootSystem::D(r),
+        }
+    }
+
+    /// The group whose linear representations this module publishes at rank
+    /// `r` — `SO(2r+1)`, `Sp(2r)`, `SO(2r)` (issue #18 Ruling 3).
+    fn published_group(self, r: usize) -> GroupId {
+        GroupId {
+            root_system: self.root_system(r),
+            form: match self {
+                // Spin(2r+1)/Z2 and Spin(2r)/Z2 (the vector class).
+                Series::B => GlobalForm::Quotient(CenterSubgroup::Z2),
+                // Sp(2r) is simply connected.
+                Series::C => GlobalForm::SimplyConnected,
+                Series::D => GlobalForm::Quotient(CenterSubgroup::DVector),
+            },
         }
     }
 
@@ -290,12 +321,10 @@ impl Irrep {
             });
         }
         // Tensor-irrep (integer-partition) constraint; violation is a spinor.
-        let spinor = match series {
-            Series::B => dynkin[r - 1] % 2 != 0,
-            Series::C => false,
-            Series::D => (dynkin[r - 2] + dynkin[r - 1]) % 2 != 0,
-        };
-        if spinor {
+        // This is the central-character condition of the published group —
+        // one implementation, in `crate::group` (issue #87 §2). For `C` the
+        // published form is simply connected, so nothing is rejected.
+        if !series.published_group(r).admits(dynkin) {
             return Err(BcdError::SpinorLabel {
                 series,
                 dynkin: dynkin.to_vec(),
