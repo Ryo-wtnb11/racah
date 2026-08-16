@@ -1,3 +1,8 @@
+# The Python bindings (`racah-py`, issue #81) are a workspace member; the root
+# crate keeps its own manifest untouched otherwise.
+[workspace]
+members = ["racah-py"]
+
 [package]
 name = "racah"
 version = "0.1.1"

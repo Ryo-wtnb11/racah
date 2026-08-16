@@ -3,3 +3,8 @@ Cargo.lock
 .DS_Store
 # Developer-local tenferro-rs override (see AGENTS.md); never committed.
 /.cargo/
+
+# Python bindings dev venv (racah-py); never committed.
+/racah-py/.venv/
+__pycache__/
+.pytest_cache/
