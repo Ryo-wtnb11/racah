@@ -9,6 +9,24 @@ value/gauge rule noted below.
 
 ### Added
 
+- **Frozen gauge specification.** [`docs/gauge.md`](docs/gauge.md) and
+  [`docs/gauge_soN.md`](docs/gauge_soN.md) are declared **normative**: the
+  documents are the authority and the code implements them. `docs/gauge.md` also
+  now specifies the base SU(2) conventions (§12) and marks the rules the
+  implementation fixes only implicitly. **No coefficient value changes**; all
+  three `epoch` tags stay at `1`. What changes is the meaning of the authority
+  fingerprints: they are now **specification versions**, moving only on a
+  specification correction (spec edit + `epoch` bump + CHANGELOG breaking-change
+  entry + regenerated goldens, in one PR), never because a refactor moved a
+  value. A refactor that moves a value is now a bug by definition.
+  ([#84](https://github.com/Ryo-wtnb11/racah/issues/84))
+- **`tests/gauge_golden.rs`**: the in-repo gauge tripwire — a small committed
+  table of SU(3) CGC (including the OM = 2 adjoint vertex), SU(3) F, and signed
+  SO(5)/Sp(4) CGC and F values, asserted at `1e-12` in the default `cgc-gen` test
+  run. It covers the drift the external oracles miss by default: SU(3) F symbols
+  are otherwise pinned only by an `#[ignore]`d heavy table oracle, and the QSpace
+  B/C/D anchor compares an isotypic projector that is blind to the coupled-side
+  gauge. It is a drift detector, not an oracle.
 - **`racah-py`**: PyO3/maturin Python bindings for the SU(N) surface, built as
   a workspace member with `cgc-gen` always on. Import name `racah`,
   distribution `racah-py`; abi3-py312 wheels are built by the `wheels`

@@ -10,13 +10,15 @@ use racah::su2_authority_fingerprint;
 /// (including a value-affecting convention change or an epoch bump) breaks this
 /// assertion and forces a review event.
 ///
-/// Updating this literal REQUIRES a breaking-release decision: the fingerprint
-/// changes exactly when a returned SU(2) coefficient value, its normalization,
-/// or its canonical convention changes — the same event class the crate's
-/// semantic-versioning contract declares breaking (README "Exactness contract",
-/// point 4 "Versioned values"; `docs/gauge.md`). Do not update it to make a
-/// test pass; update it only as part of that decision, bumping the `epoch=N`
-/// tag in `su2_authority_fingerprint` in the same change.
+/// Updating this literal REQUIRES a specification correction: the fingerprint is
+/// the **version of the SU(2) convention specification** (`docs/gauge.md` §12),
+/// so it moves only when that section is corrected in a way that changes a
+/// returned value, its normalization, or its canonical convention — never
+/// because the code's output drifted.
+///
+/// Do not update it to make a test pass. Update it only as one of the four steps
+/// of `docs/gauge.md`, "Status": the spec edit, the `epoch=N` bump in
+/// `su2_authority_fingerprint`, and the CHANGELOG breaking-change entry.
 #[test]
 fn fingerprint_matches_pinned_compatibility_bytes() {
     assert_eq!(

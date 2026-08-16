@@ -1090,7 +1090,17 @@ pub fn su2_r_symbol_checked(dj1: u32, dj2: u32, dj3: u32) -> Result<f64, Su2Erro
     Ok(su2_r_symbol(dj1, dj2, dj3))
 }
 
-/// Opaque authority fingerprint of the base SU(2) provider.
+/// Opaque authority fingerprint of the base SU(2) provider — **the version of
+/// the SU(2) convention specification**.
+///
+/// `docs/gauge.md` §12 is a **frozen normative specification**: it is the
+/// authority, and this crate is an implementation of it. These bytes name the
+/// version of that section, not "whatever the current code outputs". A refactor
+/// that moves a coefficient value is a deviation from the spec — a bug — not a
+/// new convention deserving a new fingerprint. The value changes only on a
+/// specification correction, under the four-step rule in `docs/gauge.md`,
+/// "Status" (spec edit, `epoch` bump here and in `tests/su2_fingerprint.rs`,
+/// CHANGELOG breaking-change entry, regenerated goldens).
 ///
 /// The bytes identify the *convention set* that every returned SU(2)
 /// coefficient (3j, 6j, Clebsch–Gordan, F, R, Frobenius–Schur) is computed in.
@@ -1109,13 +1119,13 @@ pub fn su2_r_symbol_checked(dj1: u32, dj2: u32, dj3: u32) -> Result<f64, Su2Erro
 ///   from the crate version, source, docs, a pointer, or any process-local
 ///   state, so a rebuild, a dependency bump, or an additive-API release leaves
 ///   it byte-identical.
-/// - **Changes exactly with a value-affecting breaking release.** The trailing
-///   `epoch` is bumped by hand — and only — when a change can alter a returned
-///   coefficient value, its normalization, or the canonical convention it is
-///   expressed in. That is the same event class the crate's semantic-versioning
-///   contract already declares breaking (README, "Exactness contract", point 4
-///   "Versioned values"; the analogous SU(N) statement is `docs/gauge.md`), so
-///   "fingerprint changed ⇔ value-affecting breaking release" is one reviewable
+/// - **Changes exactly with a specification correction.** The trailing `epoch` is
+///   bumped by hand — and only — when `docs/gauge.md` §12 is corrected in a way
+///   that alters a returned coefficient value, its normalization, or the
+///   canonical convention it is expressed in. That is the event class the
+///   crate's contract declares breaking (README, "Exactness contract", point 4
+///   "Specified values"; the rules themselves are `docs/gauge.md` §12), so
+///   "fingerprint changed ⇔ specification correction" is one reviewable
 ///   invariant. Adding the `cg` and `fs` tags keeps `epoch=1`: the fingerprint
 ///   is still unreleased (no consumer has persisted these bytes), so extending
 ///   the tag set now is not a compatibility break for anyone.
@@ -1125,9 +1135,10 @@ pub fn su2_r_symbol_checked(dj1: u32, dj2: u32, dj3: u32) -> Result<f64, Su2Erro
 ///
 /// # Why a manual epoch, not a hash or the crate version
 ///
-/// A hash of the source or docs is fragile (it moves on a comment edit or a
-/// refactor that changes no value) and not reviewable (a human cannot look at
-/// it and confirm it *should* have changed). The crate version moves on every
+/// A hash of the source or docs would encode exactly the semantics the freeze
+/// rejects — "the current code's output" — and is fragile (it moves on a comment
+/// edit or a refactor that changes no value) and not reviewable (a human cannot
+/// look at it and confirm it *should* have changed). The crate version moves on every
 /// patch, which would force consumers to re-derive on releases that change no
 /// value. A hand-bumped epoch makes the change an explicit, mutation-visible
 /// review event: the compatibility-policy test (`tests/su2_fingerprint.rs`)
@@ -1175,8 +1186,9 @@ pub fn su2_r_symbol_checked(dj1: u32, dj2: u32, dj3: u32) -> Result<f64, Su2Erro
 /// shape is not included). The crate version and any source/doc hash are
 /// excluded for the reasons above.
 pub fn su2_authority_fingerprint() -> &'static [u8] {
-    // Manual epoch: bump the trailing `epoch=N` (and the literal in
-    // tests/su2_fingerprint.rs) only on a value-affecting breaking release.
+    // Spec version. Bump the trailing `epoch=N` (and the literal in
+    // tests/su2_fingerprint.rs) only when docs/gauge.md §12 is corrected, under
+    // the four-step rule in its "Status" section. A refactor never bumps it.
     b"racah:su2-exact:model=bigrational-round-once:3j=condon-shortley:cg=condon-shortley:6j=racah-single-sum:f=tks-su2irrep:r=tks-su2irrep:fs=tks-su2irrep:epoch=1"
 }
 

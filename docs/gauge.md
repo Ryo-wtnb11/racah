@@ -1,21 +1,90 @@
-# SU(N) Clebsch–Gordan gauge specification
+# Coefficient gauge specification (base SU(2) and SU(N))
 
-This document specifies the **gauge** of the SU(N) Clebsch–Gordan coefficients
-produced by `racah::sun::cgc` — the deterministic rule that fixes the otherwise
-free basis of each coupled subspace. The gauge is part of this crate's
-**semantic-versioning contract**: any change that can alter a returned
-coefficient *value* (a different pivot rule, sign convention, tolerance that
-moves a rank cut, descent order, or multiplicity-column order) is a **breaking
-release**, so consumers may key persisted data on the crate version.
+This document specifies the **gauge** of the coefficients this crate returns —
+the deterministic rules that fix the otherwise free basis, sign, and ordering of
+every coefficient. It covers the base SU(2) family (§12) and the SU(N) family
+(§1–§11, the bulk of the document); SO(N)/Sp(2N) is specified in
+[`gauge_soN.md`](gauge_soN.md) and is normative on the same terms.
+
+## Status: FROZEN NORMATIVE SPECIFICATION
+
+**This document is the authority. The code is an implementation of it.**
+
+That direction is the whole point, so it is worth stating without hedging.
+A gauge that means "whatever the current code outputs" gives a consumer nothing:
+every internal refactor — a rewritten loop with a different iteration order, a
+swapped-in factorization kernel with a different pivot, a "tidied"
+multiplicity-column order — silently redefines the gauge, and a consumer's
+checkpointed coefficients quietly stop matching what the crate now produces,
+with no signal anywhere. Under this freeze the arrow points the other way:
+
+- The rules below **define** the coefficient values. A build that returns a
+  value contradicting a rule here has a **bug** — by definition, not by
+  judgement. The right fix is to restore the specified value, not to redefine
+  the gauge to match the new output.
+- The rules below are **complete for value-fixing purposes**. Every discrete
+  choice that can move a returned value (basis order, column order, pivot rule,
+  tie-break, sign convention, rank cut, descent order, multiplicity-axis order,
+  the value-fixing tolerance tier) is stated here. A choice the implementation
+  makes that is *not* stated here is not gauge, and is free to change.
+- Several rules are **implicit in the implementation** — fixed by an inherited
+  iteration order or by a comparison operator rather than by anything that looks
+  like a convention. Those are called out at the point of use with the phrase
+  *implicit in the code, normative here*. Implicitness is exactly what makes them
+  easy to break by accident, so being written down is the only protection they
+  have.
+- The **authority fingerprints are the version of this specification**, not a
+  label for the current build's output. `sun_authority_fingerprint()`,
+  `bcd_authority_fingerprint()`, and `su2_authority_fingerprint()` change only
+  when the specification they cite is corrected.
+
+### Operational rule for changing a value
+
+A change to a returned coefficient value, its normalization, or the canonical
+convention it is expressed in is not an ordinary change. It is a **specification
+correction**, and it requires, in one PR:
+
+1. **The spec edit.** The changed rule edited here (or in `gauge_soN.md`), with
+   the defect it corrects stated — what the old rule got wrong, not merely what
+   the new rule says.
+2. **A fingerprint bump.** The affected family's `epoch=N` tag incremented in
+   `su2.rs:su2_authority_fingerprint` / `sun.rs:sun_authority_fingerprint` /
+   `bcd.rs:bcd_authority_fingerprint`, and the pinned literal in the matching
+   `tests/*_fingerprint.rs` updated in the same PR. Epochs are per-family and
+   independent: correcting the SU(N) spec never invalidates SU(2)- or
+   B/C/D-derived consumer state.
+3. **A CHANGELOG breaking-change entry** naming the spec correction and the new
+   epoch, so a consumer reading only the changelog still learns their persisted
+   coefficients are stale.
+4. **Regenerated golden values** (`tests/gauge_golden.rs`) in the same commit.
+
+Anything that moves a value without those four is a defect. `tests/gauge_golden.rs`
+is the tripwire that makes it fail loudly rather than ship: a small committed
+table of coefficient values asserted at `1e-12`, running in the default
+`cgc-gen` test run with no reference toolchain in the loop.
+
+**What is *not* a specification correction**, and so needs none of the above:
+anything that cannot move a returned value. Tightening the `TOL_ORTHO` /
+`TOL_LADDER` verification gates (§9), reorganizing code, changing the dense
+backend (§10), changing cache behaviour, and editing prose are ordinary changes.
+
+The contract is *value agreement within the oracle tolerance*, not cross-process
+bit-identity — see the next paragraph. Two builds under the same specification
+version may differ by a few ULPs; that is not a spec deviation.
+
+---
 
 The contract is *value agreement within the oracle tolerance*, not cross-process
 bit-identity: the dense backend's parallel reductions are not bit-reproducible,
 so two independent generations of the same coupling can differ by a few ULPs
 (within a single process the cache serializes all readers to one winner value).
 
-The construction is a port of **SUNRepresentations.jl v0.4.0** (`src/`). Every choice below cites the
-reference `file:symbol`. A reader with this document and the reference source
-can re-derive the gauge without reading the Rust implementation.
+**§1–§11 specify the SU(N) family** — the coefficients produced by
+`racah::sun::cgc` and the F/R symbols contracted from them. The construction is
+a port of **SUNRepresentations.jl v0.4.0** (`src/`). Every choice below cites the
+reference `file:symbol` and its implementing function in this crate. A reader
+with this document and the reference source can re-derive the gauge without
+reading the Rust implementation.
 
 Coefficient *values* are `f64` (as in the reference, which is `Float64`
 end-to-end after the exact ladder matrices). What is exact and gauge-fixing is
@@ -51,6 +120,11 @@ the reference iteration order.
 - Port: `sun::Irrep::patterns` (`sun.rs`), pinned index-for-index by the Layer 1
   fixtures (`tests/sun_oracle.rs`) and re-verified here by the signed CGC oracle
   (`tests/sun_cgc_fixtures.rs`, §11).
+- *Implicit in the code, normative here*: nothing in `patterns` announces itself
+  as a convention — the order is whatever the recursive enumeration emits. It
+  nonetheless indexes every returned coefficient, so a rewritten enumeration that
+  emits the same *set* of patterns in a different order permutes `m1, m2, m3` and
+  is a specification deviation, not a refactor.
 - The highest-weight pattern (all rows equal to the top-row prefix) is the
   **last** basis index `d3 − 1`; this is where the highest-weight block is
   stored (`clebschgordan.jl:highest_weight_CGC`, `CGC[m1m2, d3, α]`).
@@ -222,6 +296,9 @@ Port: `cgc.rs:trivial_cgc`.
   `qrpos!`). Their order on the
   trailing axis `μ` is therefore the column order that block produces — it is
   *not* an independent convention and cannot be chosen per column.
+  *Implicit in the code, normative here*: no line assigns `μ` indices; they fall
+  out of `cref`'s pivot walk. Sorting, reversing, or otherwise "normalizing" the
+  multiplicity columns is a specification deviation.
 - This is the same ordering SUNRepresentations produces (its 4th CGC index).
   The signed oracle (§11) checks OM ≥ 2 channels **including the `μ` order**, so
   a divergent column order would fail the oracle. (Umbrella #9 pins the
@@ -285,5 +362,76 @@ in `cgc.rs` (§4a).
   including OM ≥ 2 channels and the `μ`-axis order. Observed worst
   `|Δ| ≈ 2.4e-15`.
 
-A change that moves any observed value beyond these oracles' tolerances is, by
-definition of this document, a breaking release.
+A change that moves any observed value beyond these oracles' tolerances is a
+deviation from this specification: a defect unless it ships as a specification
+correction under the four-step rule in **Status** above.
+
+The in-repo drift tripwire is `tests/gauge_golden.rs` (§Status). It is not an
+oracle — its numbers come from this crate — and it does not replace the two
+suites above; it is what fires when a refactor moves a value with no reference
+toolchain present.
+
+---
+
+## 12. The base SU(2) family
+
+The base (no-feature) SU(2) path has no free basis to fix: every coefficient is a
+closed-form expression in exact big-rational arithmetic, so its "gauge" is the
+set of **phase, normalization, and argument-order conventions** the formulas are
+written in. They are normative on the same terms as §1–§11, and are the
+conventions the `su2_authority_fingerprint` tags name.
+
+- **Evaluation model — `model=bigrational-round-once`.** Every value is computed
+  as a big-rational Racah sum carried as `exact.rs:SignedSqrtRational` (a signed
+  rational under a square root) with a **single final rounding** to `f64`
+  (`su2.rs` module docs). No intermediate rounding: the dimension factors fold
+  into the radicand (`times_sqrt_int`) and phases into the sign. Where the
+  presented value is `f64` (`su2.rs:su2_f_symbol`) it is a *presentation* of that
+  same exact value, never an independent computation. This is value-fixing: a
+  differently-associated float evaluation is a different (worse) value.
+- **3j — `3j=condon-shortley`.** `su2.rs:wigner_3j` (`wigner_3j_uncached`): the
+  Condon–Shortley phase convention, evaluated by the prime-factorized Racah
+  single sum (`primefactor.rs`). Non-admissible labels return exact zero, never
+  an error and never a panic.
+- **6j — `6j=racah-single-sum`.** `su2.rs:wigner_6j` (`wigner_6j_uncached`): the
+  Racah single-sum closed form, with the triangle coefficients from
+  `su2.rs:delta_sq_pf`.
+- **Clebsch–Gordan — `cg=condon-shortley`.** `su2.rs:clebsch_gordan`, composed
+  from the 3j as $\sqrt{dj_3+1}\,(-1)^{(dj_2-dj_1-dm_3)/2}\,
+  \begin{pmatrix} dj_1 & dj_2 & dj_3 \\ dm_1 & dm_2 & -dm_3\end{pmatrix}$. Both
+  the $\sqrt{dj_3+1}$ normalization and the sign are part of the gauge: this is
+  its own convention, not inherited from the 3j.
+- **F symbol — `f=tks-su2irrep`.** `su2.rs:f_symbol_exact` is the value
+  authority: $F = (-1)^{j_1+j_2+j_3+j_4}\sqrt{(dj_5+1)(dj_6+1)}\;
+  \{dj_1\,dj_2\,dj_5 / dj_3\,dj_4\,dj_6\}$, matching TensorKitSectors
+  `su2irrep.jl:Fsymbol`. **The 6j argument order is gauge**, not an
+  implementation detail — a permuted argument order is a different F convention
+  with the same 6j.
+- **R symbol — `r=tks-su2irrep`.** `su2.rs:su2_r_symbol`: $(-1)^{j_1+j_2-j_3}$ on
+  an admissible triangle, exact `0.0` otherwise (TensorKitSectors
+  `su2irrep.jl:Rsymbol`). The zero on a non-admissible triple mirrors
+  `Nsymbol == 0` and is normative: it is what stops a caller multiplying a
+  spurious sign into a forbidden channel.
+- **Frobenius–Schur — `fs=tks-su2irrep`.** `su2.rs:su2_frobenius_schur`:
+  $(-1)^{dj}$, i.e. `+1` for integer `j` and `-1` for half-integer. Tagged
+  separately from `r` because it is a distinct formula, not the R convention.
+
+**Deliberately not gauge** (so changing it needs no epoch bump):
+
+- The **doubled-spin label encoding** `dj = 2j`. It is input addressing / API
+  shape; changing it would be an API break that leaves every value unchanged.
+- The **canonical Regge keys** (`su2.rs:canonical_regge_3j`,
+  `canonical_regge_6j`, `canonicalize3j`). These canonicalize a symbol onto a
+  representative of its symmetry class *for caching*, carrying the compensating
+  phase so the returned value is identical either way. They are value-neutral by
+  construction, and pinned by the symmetry tests in `tests/properties.rs`.
+
+## 13. SO(N)/Sp(2N)
+
+Specified in [`gauge_soN.md`](gauge_soN.md): the defining-representation
+generator seeds, the Kronecker convention, the decomposition sweep and its
+Gram–Schmidt/QR gauge, the descending-weight sort and its tie-break, the
+first-significant-entry sign convention, the outer-multiplicity assignment, the
+canonical-parent rule, and the intertwiner alignment. That document is normative
+under this same freeze, and `bcd_authority_fingerprint`'s `epoch` is its
+specification version.

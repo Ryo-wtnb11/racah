@@ -3,12 +3,29 @@
 This document specifies the **gauge** of the SO(N)/Sp(2N) Clebsch–Gordan
 isometries and projected generators produced by `racah::bcd`'s decomposition
 sweep (`src/bcd/sweep.rs`, Layer S3.2) — the deterministic rules that fix the
-otherwise-free basis of each coupled multiplet. The gauge is part of this
-crate's **semantic-versioning contract**: any change that can alter a returned
-coefficient *value* (a different seed rule, Gram–Schmidt order, QR sign
-convention, weight-sort tie-break, sign convention, or a tolerance that moves a
-rank cut) is a **breaking release**, so consumers may key persisted data on the
-crate version.
+otherwise-free basis of each coupled multiplet.
+
+## Status: FROZEN NORMATIVE SPECIFICATION
+
+**This document is the authority; the code is an implementation of it.** The
+rules below define the B/C/D coefficient values: a build that returns a value
+contradicting one of them has a bug, and the fix is to restore the specified
+value rather than to redefine the gauge. Every discrete choice that can move a
+returned value (seed rule, operator-application order, Gram–Schmidt order, QR
+sign convention, weight-sort and its tie-break, block sign convention,
+outer-multiplicity assignment, canonical-parent order, intertwiner alignment, and
+the value-fixing tolerance tier) is stated here.
+
+`bcd_authority_fingerprint()`'s `epoch` tag is **the version of this
+specification**, not a label for the current build's output: it moves only when
+this document is corrected. Changing a value therefore requires the four-step
+specification-correction rule — spec edit, epoch bump, CHANGELOG breaking-change
+entry, regenerated golden values — declared in
+[`gauge.md`, "Status"](gauge.md#status-frozen-normative-specification), which
+governs all three families. `tests/gauge_golden.rs` pins signed SO(5) and Sp(4)
+coefficients as the in-repo tripwire (the QSpace anchor in
+`src/bcd/qspace_oracle_tests.rs` compares the isotypic projector, which is by
+construction blind to exactly the coupled-side gauge this document fixes).
 
 The construction is a port of **QSpace v4** (Weichselbaum), revision `dd2cc7e`,
 `Source/clebsch_aux.cc:getSymmetryStates` (`:53-348`) and `findMaxWeight`

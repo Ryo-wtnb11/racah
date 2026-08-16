@@ -25,8 +25,12 @@ non-trivial change.
 2. Discrete data exact (duals, Frobenius–Schur phases, signs, basis order).
 3. Gauge fixing deterministic: pivot rules and sign conventions are part of
    the specification; discrete gauge flips across runs/backends are defects.
-4. Algorithm/gauge changes bump the version; values are part of the semver
-   contract.
+4. The gauge is a **frozen normative specification** (`docs/gauge.md`,
+   `docs/gauge_soN.md`): the documents are the authority, the code implements
+   them. A change that moves a coefficient value is a bug unless it ships as a
+   specification correction — spec edit, fingerprint `epoch` bump, CHANGELOG
+   breaking-change entry, regenerated `tests/gauge_golden.rs` values, one PR
+   (`docs/gauge.md`, "Status").
 5. Floating-point stages verification-gated: orthogonality, unitarity,
    pentagon/hexagon checks run at generation time; violations are typed
    errors, never silently degraded coefficients.

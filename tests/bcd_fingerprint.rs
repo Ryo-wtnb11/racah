@@ -16,14 +16,17 @@ use racah::bcd::bcd_authority_fingerprint;
 /// (a value-affecting convention change or an epoch bump) breaks this assertion
 /// and forces a review event.
 ///
-/// Updating this literal REQUIRES a breaking-release decision: the B/C/D
-/// fingerprint changes exactly when a returned SO(N)/Sp(2N) coefficient value,
-/// its normalization, or its canonical gauge changes — the breaking-release
-/// event class of `docs/gauge_soN.md`. The epoch is per-family: this literal
-/// moves independently of `tests/su2_fingerprint.rs` and
-/// `tests/sun_fingerprint.rs`. Do not update it to make a test pass; update it
-/// only as part of that decision, bumping the `epoch=N` tag in
-/// `bcd_authority_fingerprint` in the same change.
+/// Updating this literal REQUIRES a specification correction: the fingerprint is
+/// the **version of the B/C/D gauge specification** (`docs/gauge_soN.md`), so it
+/// moves only when that document is corrected in a way that changes a returned
+/// value, its normalization, or its canonical gauge — never because the code's
+/// output drifted. The epoch is per-family: this literal moves independently of
+/// `tests/su2_fingerprint.rs` and `tests/sun_fingerprint.rs`.
+///
+/// Do not update it to make a test pass. Update it only as one of the four steps
+/// of `docs/gauge.md`, "Status": the spec edit, the `epoch=N` bump in
+/// `bcd_authority_fingerprint`, the CHANGELOG breaking-change entry, and the
+/// regenerated `tests/gauge_golden.rs` values — all in the same PR.
 #[test]
 fn fingerprint_matches_pinned_compatibility_bytes() {
     assert_eq!(

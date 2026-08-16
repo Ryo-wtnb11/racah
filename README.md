@@ -265,10 +265,11 @@ promises:
    deterministic function of the nullspace subspace (pivot rules and sign
    conventions included); a discrete gauge flip across runs, builds, or
    backends is a defect, not a tolerance event.
-4. **Versioned values.** The generation algorithm and gauge are part of this
-   crate's semantic-versioning contract: any change that can alter
-   coefficient values is a breaking change, so consumers can key caches and
-   persisted data on the crate version.
+4. **Specified values.** The gauge is a frozen normative specification, not a
+   description of the current build's output: a change that alters a
+   coefficient value is a spec deviation (a bug) unless it ships as a
+   specification correction with a fingerprint epoch bump and a CHANGELOG
+   breaking-change entry. See [Gauge](#gauge).
 5. **Verification-gated floating point.** Orthogonality, unitarity, and
    pentagon/hexagon checks run at generation time; a tolerance violation is
    a typed error, never a silently degraded coefficient.
@@ -284,6 +285,36 @@ stay at the same standard.
 For the base SU(2) provider this convention set is exposed as an opaque
 fingerprint that changes only on the value-affecting breaking release of point 4
 above; see [Provider contract](#provider-contract) below.
+
+## Gauge
+
+A coefficient has no meaning without the convention that fixes its basis, sign,
+and ordering. Those conventions are written down as a **frozen normative
+specification**:
+
+- [`docs/gauge.md`](docs/gauge.md) — base SU(2) closed-form conventions, and the
+  SU(N) Gelfand–Tsetlin construction (basis order, highest-weight column order,
+  nullspace rank rule, the `qrpos! ∘ cref!` canonicalization and its pivot and
+  tie rules, descent order, multiplicity-axis order).
+- [`docs/gauge_soN.md`](docs/gauge_soN.md) — SO(N)/Sp(2N): generator seeds, sweep
+  order, QR gauge, weight sort, sign convention, canonical parent, alignment.
+
+**Frozen means the documents are the authority and the code implements them.**
+The gauge is *not* "whatever the current build outputs": a change that alters a
+returned coefficient value is a deviation from spec — a bug — unless it ships as
+an explicit specification correction, which requires the spec edit, an authority
+fingerprint `epoch` bump, a CHANGELOG breaking-change entry, and regenerated
+golden values in one PR. So the authority fingerprints are **specification
+versions**: same fingerprint, same coefficients (within the tolerance class the
+fingerprint contract disclaims), across any amount of internal refactoring.
+Consumers can checkpoint coefficients against the fingerprint and trust it.
+
+Each rule cites its implementing function, and rules the implementation fixes
+only implicitly (an order inherited from an iteration order, a tie broken by a
+strict comparison) are marked as such — those are the ones a refactor breaks by
+accident. `tests/gauge_golden.rs` is the in-repo tripwire: a small committed
+table of coefficient values asserted at `1e-12`, which fails on any gauge drift
+with no reference toolchain in the loop.
 
 ### Gauge continuity
 
@@ -430,10 +461,11 @@ the fingerprint. Backend identity is deliberately excluded: per-backend ULP
 differences are inside the disclaimed tolerance class, and a discrete gauge flip
 across backends is a defect, not a tolerance event.
 
-Each family's `epoch` tag is **per-family and independent**: an SU(N) gauge
-change bumps only the SU(N) epoch and never invalidates SU(2)- or B/C/D-derived
-consumer state (and vice versa). Compare the bytes by equality only; never parse
-them.
+Each family's `epoch` tag is the **version of that family's gauge
+specification** ([Gauge](#gauge)), and is **per-family and independent**: it moves
+only when the spec document is corrected, and an SU(N) correction bumps only the
+SU(N) epoch, never invalidating SU(2)- or B/C/D-derived consumer state (and vice
+versa). Compare the bytes by equality only; never parse them.
 
 #### Generated cache aggregate
 
@@ -500,7 +532,8 @@ checked representation layer, and cache resource contract — is described under
   [`racah-py/README.md`](racah-py/README.md).
 - Theory primer (the objects the API computes): [`docs/theory.md`](docs/theory.md).
 - Porting provenance and bibliography: [`docs/references.md`](docs/references.md).
-- Gauge conventions: [`docs/gauge.md`](docs/gauge.md) (SU(N)),
+- Gauge specification (frozen, normative — see [Gauge](#gauge)):
+  [`docs/gauge.md`](docs/gauge.md) (base SU(2) and SU(N)),
   [`docs/gauge_soN.md`](docs/gauge_soN.md) (SO(N)/Sp(2N)).
 - Fixture provenance and the oracle matrix: [`tools/README.md`](tools/README.md).
 - Guard discipline (every port PR carries a guard inventory): issue

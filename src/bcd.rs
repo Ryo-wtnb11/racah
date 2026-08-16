@@ -939,7 +939,21 @@ pub use fr::{
     FrError, RBlock,
 };
 
-/// Opaque authority fingerprint of the generated SO(N)/Sp(2N) provider.
+/// Opaque authority fingerprint of the generated SO(N)/Sp(2N) provider — **the
+/// version of the B/C/D gauge specification**.
+///
+/// `docs/gauge_soN.md` is a **frozen normative specification**: it is the
+/// authority, and this crate is an implementation of it. These bytes name the
+/// version of that document, not "whatever the current code outputs". A
+/// refactor that moves a coefficient value is a deviation from the spec (a bug,
+/// and `tests/gauge_golden.rs` fails on it), not a new gauge deserving a new
+/// fingerprint. The value changes only on a specification correction, which
+/// requires — in one PR — the spec edit stating the defect it corrects, the
+/// `epoch` bump here and in `tests/bcd_fingerprint.rs`, a CHANGELOG
+/// breaking-change entry, and regenerated golden values (`docs/gauge.md`,
+/// "Status", which governs all three families). So: **same fingerprint, same
+/// coefficients**, within the tolerance class the binding contract below
+/// disclaims.
 ///
 /// The bytes identify the *convention set*, generation pipeline, and
 /// verification/tolerance policy under which every B/C/D Clebsch–Gordan isometry
@@ -974,12 +988,12 @@ pub use fr::{
 ///   `:` / `=`. The internal shape is not a stable interface.
 /// - **Stable across patch and minor releases.** The value is not derived from
 ///   the crate version, source, docs, a pointer, or any process-local state.
-/// - **Changes exactly with a value-affecting breaking release.** The trailing
-///   `epoch` is bumped by hand — and only — when a change can alter a returned
-///   coefficient value, its normalization, or the canonical gauge it is
-///   expressed in (the breaking-release event class of `docs/gauge_soN.md`). The
-///   compatibility-policy test (`tests/bcd_fingerprint.rs`) pins the exact bytes,
-///   so any such change is a mutation-visible review event.
+/// - **Changes exactly with a specification correction.** The trailing `epoch` is
+///   bumped by hand — and only — when `docs/gauge_soN.md` is corrected in a way
+///   that alters a returned coefficient value, its normalization, or the
+///   canonical gauge it is expressed in (the four-step rule of `docs/gauge.md`,
+///   "Status"). The compatibility-policy test (`tests/bcd_fingerprint.rs`) pins
+///   the exact bytes, so any such change is a mutation-visible review event.
 /// - **Epoch is per-family and independent.** The B/C/D `epoch` moves
 ///   independently of the SU(2) and SU(N) epochs; a B/C/D gauge change never
 ///   invalidates SU(2)-derived or SU(N)-derived consumer state (and vice versa).
@@ -1024,8 +1038,9 @@ pub use fr::{
 /// issue #47 are the ledger.
 #[cfg(feature = "cgc-gen")]
 pub fn bcd_authority_fingerprint() -> &'static [u8] {
-    // Manual per-family epoch: bump the trailing `epoch=N` (and the literal in
-    // tests/bcd_fingerprint.rs) only on a value-affecting breaking release.
+    // Spec version. Bump the trailing `epoch=N` (and the literal in
+    // tests/bcd_fingerprint.rs) only when docs/gauge_soN.md is corrected, under
+    // the four-step rule in docs/gauge.md "Status". A refactor never bumps it.
     b"racah:bcd-bootstrap:ref=qspace-v4-dd2cc7e:kron=a-fast:parent=canonical-parent:sweep=gs2-qrpos-posdiag:sort=maxweight-desc:sign=first-significant-positive:align=procrustes-canonical:tol=cg-eps-tier:epoch=1"
 }
 
