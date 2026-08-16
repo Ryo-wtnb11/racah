@@ -45,6 +45,7 @@ use std::collections::HashMap;
 
 use num_bigint::BigInt;
 
+use super::seeds::spinor_seeds;
 use super::sweep::{align_block, decompose, Block, Generators, SweepError};
 use super::{defining_seed, directproduct, BcdError, Irrep, Series};
 
@@ -548,9 +549,15 @@ impl CanonicalCatalog {
         })
     }
 
-    /// Whether `c` is one of the two seeded base cases (trivial or defining),
-    /// whose stored basis is an S3.1 seed rather than a sweep and is therefore
-    /// exempt from the element-wise coherence guard.
+    /// Whether `c` is one of the two **QSpace-seeded** base cases (trivial or
+    /// defining), whose stored basis is the ported QSpace seed rather than a
+    /// descending-weight sweep and is therefore exempt from the element-wise
+    /// coherence guard.
+    ///
+    /// The spinor base cases (§16) are deliberately **not** exempt: their seed
+    /// is built directly in the sweep's descending-weight order, so a
+    /// rediscovered spinor block is coherent with the stored one and the guard
+    /// is meaningful there.
     fn is_base_case(&self, c: &Irrep) -> bool {
         Irrep::trivial(self.series, self.rank)
             .map(|t| &t == c)
@@ -633,6 +640,15 @@ fn gen_bytes(g: &Generators) -> usize {
 }
 
 // ---- the canonical parent rule (docs/gauge_soN.md §14) ---------------------
+
+/// Whether `c` is a **fundamental spinor** — `ω_r` for `B_r`, `ω_{r-1}`/`ω_r`
+/// for `D_r` — i.e. one of the spinor base cases (§14.2, §16). These are
+/// exactly the spinor labels whose doubled weight is `(±1,…,±1)`: the
+/// `≺`-minimal irreps of the spinor class, and the only ones that carry a
+/// Clifford seed rather than a canonical parent.
+fn is_spinor_base(c: &Irrep) -> bool {
+    c.is_spinor() && c.two_partition().iter().all(|x| x.abs() == 1)
+}
 
 /// The **doubled** box count of an irrep's highest weight: `Σ_i |2λ_i|` over
 /// the ε-basis partition (§14.1). Strictly monotone under adding/removing a box
@@ -847,6 +863,30 @@ fn build_into(
         return Ok(()); // already committed or staged (includes the base cases)
     }
 
+    // Spinor base case (§14.2, issue #54): the fundamental spinors are not in
+    // any product of already-materialized irreps — they carry their own S3.1
+    // Clifford seed. Seeded on demand rather than at construction, so a catalog
+    // that is only ever asked for tensor irreps builds no spinor matrices and
+    // its byte accounting is exactly what it always was.
+    if is_spinor_base(c) {
+        for (label, seed) in spinor_seeds(series, rank)? {
+            if Irrep::from_dynkin_in(&series.cover_group(rank), &label)? == *c {
+                // The Clifford seed is brought into the canonical frame by one
+                // pass of the §1–§8 sweep over its own carrier (§16). That is
+                // what makes a spinor base case behave exactly like any other
+                // catalog entry: every later rediscovery of `c` is produced by
+                // the same sweep, so the §15 coherence guard and the alignment
+                // apply to it unchanged.
+                let raw = Generators::from_seed(&seed);
+                let expected = std::collections::BTreeMap::from([(c.clone(), 1u32)]);
+                let decomp = decompose(&raw, &expected)?;
+                let gens = decomp.blocks()[0].generators().clone();
+                staged.push((c.clone(), gens));
+                return Ok(());
+            }
+        }
+    }
+
     // Non-base c: its canonical parent exists (§14.4 existence argument). The
     // error path is unreachable by that theorem; kept as defense-in-depth.
     let (a, b) = canonical_parent(series, rank, c)
@@ -912,12 +952,15 @@ fn debug_assert_cartan_matches(block: &Block, stored: &Generators) {
     }
     let rank = stored.rank();
     let d = stored.dim();
-    let round = |x: f64| x.round() as i64;
+    // Compared at the doubled scale: a carrier with a spinor factor has
+    // half-integer Cartan eigenvalues, and `2·weight` is an integer for every
+    // irrep of the cover (§6, §16).
+    let round = |x: f64| (2.0 * x).round() as i64;
     let mut block_w: Vec<Vec<i64>> = (0..d)
         .map(|s| (0..rank).map(|j| round(block.weight(s, j))).collect())
         .collect();
     let mut stored_w: Vec<Vec<i64>> = (0..d)
-        .map(|s| (0..rank).map(|j| stored.cartan_diag(j)[s] as i64).collect())
+        .map(|s| (0..rank).map(|j| round(stored.cartan_diag(j)[s])).collect())
         .collect();
     block_w.sort_unstable();
     stored_w.sort_unstable();

@@ -166,6 +166,20 @@ impl Series {
         }
     }
 
+    /// The **cover** of this bootstrap family at rank `r` — `Spin(2r+1)`,
+    /// `Sp(2r)`, `Spin(2r)`.
+    ///
+    /// This is the group the generator bootstrap works in: the catalog's base
+    /// cases include the spinor seeds, and a product containing a spinor factor
+    /// discovers spinor labels. The *published* labels of a query are a subset
+    /// of it, cut down by [`published_group`](Self::published_group).
+    pub(crate) fn cover_group(self, r: usize) -> GroupId {
+        GroupId {
+            root_system: self.root_system(r),
+            form: GlobalForm::SimplyConnected,
+        }
+    }
+
     /// Redirection guidance for the excluded low rank, **per global form**
     /// (issue #87 Q3): the low-rank isomorphism is an isomorphism of *groups*,
     /// so the redirect a caller needs depends on which form was asked for. The
@@ -1108,7 +1122,7 @@ pub fn directproduct(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, BcdEr
 }
 
 mod seeds;
-pub use seeds::{check_commutators, defining_seed, CommReport, Seed};
+pub use seeds::{check_commutators, defining_seed, spinor_seeds, CommReport, Seed};
 
 // The decomposition sweep (S3.2) and its dense linalg seam depend on
 // `tenferro-linalg`, so they live behind the `cgc-gen` feature like the SU(N)

@@ -37,6 +37,9 @@ use std::collections::BTreeMap;
 
 use std::collections::HashMap;
 
+use num_rational::Ratio;
+use num_traits::One;
+
 use super::linalg::{matmul, qr_positive_q, svd, tmatmul, Dense};
 use super::seeds::Seed;
 use super::{directproduct, Irrep, Series};
@@ -272,6 +275,12 @@ pub struct Generators {
     sp: Vec<Dense>,
     /// `sz[i]` = the `i`-th Cartan diagonal, length `D`.
     sz: Vec<Vec<f64>>,
+    /// Denominator of the grid the Cartan eigenvalues live on: `1` for a
+    /// carrier built entirely from tensor irreps, `2` once a spinor factor is
+    /// present (half-integer weights, issue #54). It is the grid the §6 snap
+    /// and its `NonIntegerWeight` gate use, so a pure-tensor product keeps the
+    /// strict integer gate it has always had.
+    weight_denom: u32,
 }
 
 impl Generators {
@@ -349,25 +358,40 @@ impl Generators {
         self.dim
     }
 
-    /// The defining-representation generator set for `seed` (dense `f64` from the
-    /// exact integer [`Seed`]).
+    /// The generator set for `seed` (dense `f64` from the exact [`Seed`]) —
+    /// the defining rep, or one of the spinor base cases (issue #54).
+    ///
+    /// The seed's exact scales are applied here: the Cartan records are
+    /// multiplied by `Seed::cartan_scale` and the raising records by
+    /// `√(Seed::raising_scale2(i))`. Both are exactly `1` for every defining
+    /// seed, so those matrices are bit-identical to what a scale-free
+    /// conversion produced.
     pub fn from_seed(seed: &Seed) -> Generators {
         let d = seed.dim();
         let sp: Vec<Dense> = seed
             .raising()
             .iter()
-            .map(|recs| {
+            .enumerate()
+            .map(|(i, recs)| {
+                let g2 = seed.raising_scale2(i);
+                let g = if g2.is_one() {
+                    1.0
+                } else {
+                    ratio_f64(g2).sqrt()
+                };
                 let mut m = Dense::zeros(d, d);
                 for &(row, col, v) in recs {
-                    m.set(row, col, v as f64);
+                    m.set(row, col, v as f64 * g);
                 }
                 m
             })
             .collect();
+        let s = seed.cartan_scale();
+        let sf = ratio_f64(s);
         let sz: Vec<Vec<f64>> = seed
             .cartan()
             .iter()
-            .map(|diag| diag.iter().map(|&x| x as f64).collect())
+            .map(|diag| diag.iter().map(|&x| x as f64 * sf).collect())
             .collect();
         Generators {
             series: seed.series(),
@@ -375,6 +399,7 @@ impl Generators {
             dim: d,
             sp,
             sz,
+            weight_denom: *s.denom() as u32,
         }
     }
 
@@ -388,6 +413,7 @@ impl Generators {
             dim: 1,
             sp: (0..r).map(|_| Dense::zeros(1, 1)).collect(),
             sz: (0..r).map(|_| vec![0.0]).collect(),
+            weight_denom: 1,
         }
     }
 
@@ -461,6 +487,7 @@ impl Generators {
             dim: d,
             sp,
             sz,
+            weight_denom: a.weight_denom.max(b.weight_denom),
         })
     }
 
@@ -823,7 +850,9 @@ fn get_symmetry_states(g: &Generators) -> Result<Vec<Block>, SweepError> {
                     residual: worst,
                 });
             }
-            let diag: Vec<f64> = (0..d0).map(|a| snap_int(rszj.at(a, a))).collect();
+            let diag: Vec<f64> = (0..d0)
+                .map(|a| snap_grid(rszj.at(a, a), g.weight_denom))
+                .collect();
             for (a, &val) in diag.iter().enumerate() {
                 if (val - rszj.at(a, a)).abs() > FIXRATIONAL_TOL {
                     return Err(SweepError::NonIntegerWeight {
@@ -873,6 +902,7 @@ fn get_symmetry_states(g: &Generators) -> Result<Vec<Block>, SweepError> {
             dim: d0,
             sp: rsp_sorted,
             sz: rsz_sorted,
+            weight_denom: g.weight_denom,
         };
 
         blocks.push(Block {
@@ -923,7 +953,11 @@ fn find_max_weight(
     // qm = z.row(k) in ORIGINAL column order; convert to Dynkin per series.
     let qm: Vec<f64> = (0..nz).map(|c| z.at(k, c)).collect();
     let dynkin = to_dynkin(series, r, &qm, block)?;
-    let irrep = Irrep::from_dynkin(series, &dynkin)
+    // The bootstrap works in the **cover**: a product with a spinor factor
+    // discovers spinor labels, which are representations of `Spin(N)` and not
+    // of the published `SO(N)` (issue #54). Nothing else changes — a product of
+    // tensor irreps only ever discovers tensor labels.
+    let irrep = Irrep::from_dynkin_in(&series.cover_group(r), &dynkin)
         .map_err(|_| SweepError::InvalidDiscoveredLabel { dynkin })?;
     Ok((irrep, perm))
 }
@@ -1301,6 +1335,29 @@ fn snap_int(x: f64) -> f64 {
     }
 }
 
+/// Snap `x` to the nearest multiple of `1/denom` if within `FIXRATIONAL_TOL`,
+/// else leave it — [`snap_int`] generalized to the half-integer grid a carrier
+/// with a spinor factor lives on (§6). `denom = 1` is exactly [`snap_int`], so
+/// a pure-tensor product keeps the strict integer gate.
+fn snap_grid(x: f64, denom: u32) -> f64 {
+    if denom == 1 {
+        return snap_int(x);
+    }
+    let d = f64::from(denom);
+    let q = (x * d).round() / d;
+    if (x - q).abs() <= FIXRATIONAL_TOL {
+        q
+    } else {
+        x
+    }
+}
+
+/// `Ratio<i64>` as `f64` — the exact seed scales applied to the dense `f64`
+/// generator matrices ([`Generators::from_seed`]).
+fn ratio_f64(x: Ratio<i64>) -> f64 {
+    *x.numer() as f64 / *x.denom() as f64
+}
+
 // ---- intertwiner alignment of rediscovered frames (issue #29, gauge_soN §15) --
 
 /// Threshold separating distinct integer weights when partitioning states into
@@ -1376,6 +1433,7 @@ fn conjugate_generators(g: &Generators, w: &Dense) -> Result<Generators, SweepEr
         dim: g.dim,
         sp,
         sz: g.sz.clone(),
+        weight_denom: g.weight_denom,
     })
 }
 
