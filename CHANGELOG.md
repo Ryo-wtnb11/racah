@@ -9,6 +9,28 @@ value/gauge rule noted below.
 
 ### Changed
 
+- **BREAKING (gauge specification correction, B/D coefficient values move):
+  the B/D defining-rep base case is re-framed into the sweep's descending-weight
+  order; `bcd_authority_fingerprint()` moves to `epoch=2`**
+  ([#90](https://github.com/Ryo-wtnb11/racah/issues/90)). The QSpace-ported
+  defining seed was stored in QSpace's `Setup_*` state order while every
+  rediscovery of the same irrep inside a product was produced in the sweep's
+  descending-weight order, and `assemble_cgc` exempted base cases from both the
+  coherence guard and the intertwiner alignment — so the two frames were mixed
+  silently inside a contraction. Measured on `epoch=1`: the `B_2` vector
+  pentagon residual `0.285_239_560_970_874_55`, the `D_3` vector pentagon
+  residual `0.129_099_444_873_580_74`, and `B_2 F(1,v,v;adj|v,adj) = 0.0` where
+  unitarity forces `1.0`. The seed is now put through one §1–§8 sweep pass over
+  its own carrier before it enters the catalog (`docs/gauge_soN.md` §14.2,
+  "Base-case frame"), so there is one frame convention in the crate, and the
+  base-case exemption is **removed**: the coherence guard and the alignment now
+  bind every block, base cases included, which makes this defect class
+  impossible to reintroduce silently. Consequences for consumers: persisted
+  `SO(2r+1)`/`SO(2r)`/`Spin(N)` coefficients derived under `epoch=1` are stale
+  and must be regenerated; `Sp(2r)` (the `C` family) values are **unchanged** —
+  `Setup_SpN`'s order was already descending-weight, which is why the C gates
+  always closed. `tests/gauge_golden.rs` is regenerated for the moved entries.
+
 - **`BcdError::ExcludedRank::redirect` is form-aware** (stage (b) of #87, Q3):
   the low-rank isomorphism is an isomorphism of *groups*, so `Spin(3)` now
   redirects to `"use SU(2) instead"` while `SO(3)` redirects to `"use SU(2)
