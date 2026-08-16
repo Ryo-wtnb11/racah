@@ -722,7 +722,8 @@ fn signedroot(coef: &Ratio<BigInt>) -> SignedSqrtRational {
     SignedSqrtRational::from_prefactor_radical(s, coef.abs())
 }
 
-/// Opaque authority fingerprint of the generated SU(N) provider.
+/// Opaque authority fingerprint of the generated SU(N) provider — **the version
+/// of the SU(N) gauge specification**.
 ///
 /// The bytes identify the *convention set*, generation pipeline, and
 /// verification/tolerance policy under which every SU(N) Clebsch–Gordan
@@ -730,6 +731,24 @@ fn signedroot(coef: &Ratio<BigInt>) -> SignedSqrtRational {
 /// use is equality comparison: a consumer may persist the bytes next to data
 /// derived from these coefficients and later compare them to decide whether that
 /// derived data was produced under the same convention.
+///
+/// # This is a spec version, not a build label
+///
+/// `docs/gauge.md` is a **frozen normative specification**: it is the authority,
+/// and this crate is an implementation of it. So these bytes do *not* mean
+/// "whatever the current code outputs" — they name the version of that
+/// document. A refactor that moves a coefficient value is a deviation from the
+/// spec (a bug, and `tests/gauge_golden.rs` fails on it), **not** a new gauge
+/// deserving a new fingerprint.
+///
+/// The value therefore changes only when the specification itself is corrected:
+/// an exceptional, deliberate, loud event that requires, in one PR, the
+/// `docs/gauge.md` edit stating the defect it corrects, the `epoch` bump here
+/// and in `tests/sun_fingerprint.rs`, a CHANGELOG breaking-change entry, and
+/// regenerated golden values (`docs/gauge.md`, "Status"). For a consumer that
+/// means the strong promise: **same fingerprint, same coefficients** — within
+/// the tolerance class the binding contract below disclaims — across any amount
+/// of internal churn.
 ///
 /// # Contract (binding)
 ///
@@ -757,12 +776,12 @@ fn signedroot(coef: &Ratio<BigInt>) -> SignedSqrtRational {
 ///   `:` / `=`. The internal shape is not a stable interface.
 /// - **Stable across patch and minor releases.** The value is not derived from
 ///   the crate version, source, docs, a pointer, or any process-local state.
-/// - **Changes exactly with a value-affecting breaking release.** The trailing
-///   `epoch` is bumped by hand — and only — when a change can alter a returned
-///   coefficient value, its normalization, or the canonical convention it is
-///   expressed in (the breaking-release event class of `docs/gauge.md`). The
-///   compatibility-policy test (`tests/sun_fingerprint.rs`) pins the exact bytes,
-///   so any such change is a mutation-visible review event.
+/// - **Changes exactly with a specification correction.** The trailing `epoch` is
+///   bumped by hand — and only — when `docs/gauge.md` is corrected in a way that
+///   alters a returned coefficient value, its normalization, or the canonical
+///   convention it is expressed in (the four-step rule of `docs/gauge.md`,
+///   "Status"). The compatibility-policy test (`tests/sun_fingerprint.rs`) pins
+///   the exact bytes, so any such change is a mutation-visible review event.
 /// - **Epoch is per-family and independent.** The SU(N) `epoch` moves
 ///   independently of the SU(2) and B/C/D epochs; an SU(N) gauge change never
 ///   invalidates SU(2)-derived or B/C/D-derived consumer state (and vice versa).
@@ -800,8 +819,9 @@ fn signedroot(coef: &Ratio<BigInt>) -> SignedSqrtRational {
 /// issue #47 are the ledger.
 #[cfg(feature = "cgc-gen")]
 pub fn sun_authority_fingerprint() -> &'static [u8] {
-    // Manual per-family epoch: bump the trailing `epoch=N` (and the literal in
-    // tests/sun_fingerprint.rs) only on a value-affecting breaking release.
+    // Spec version. Bump the trailing `epoch=N` (and the literal in
+    // tests/sun_fingerprint.rs) only when docs/gauge.md is corrected, under the
+    // four-step rule in its "Status" section. A refactor never bumps it.
     b"racah:sun-gt:ref=sunrep-0.4:basis=gt-order:gauge=qrpos-cref:descent=ladder-lstsq:tol=sunrep-tol-tier:epoch=1"
 }
 
