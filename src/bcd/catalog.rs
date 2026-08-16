@@ -634,12 +634,17 @@ fn gen_bytes(g: &Generators) -> usize {
 
 // ---- the canonical parent rule (docs/gauge_soN.md §14) ---------------------
 
-/// The number of boxes in an irrep's highest weight: `Σ_i |λ_i|` over the
-/// ε-basis partition. Strictly monotone under adding/removing a box, and — unlike
-/// `dim` — monotone in **every** coordinate including the D-series sign-carrying
-/// last part (see §14.1). The primary `≺` component.
+/// The **doubled** box count of an irrep's highest weight: `Σ_i |2λ_i|` over
+/// the ε-basis partition (§14.1). Strictly monotone under adding/removing a box
+/// (which moves it by 2), and — unlike `dim` — monotone in **every** coordinate
+/// including the D-series sign-carrying last part. The primary `≺` component.
+///
+/// Doubling is a uniform rescaling of the old `Σ|λ_i|`, so `≺` — and every
+/// parent chosen through it — is unchanged on the tensor irreps; what doubling
+/// buys is that a spinor's half-integer weight has an integer box count too
+/// (`box'(ω_r) = r`).
 fn box_count(c: &Irrep) -> i64 {
-    c.partition().iter().map(|x| x.abs()).sum()
+    c.two_partition().iter().map(|x| x.abs()).sum()
 }
 
 /// The `≺` sort key of an irrep: `(box_count, dim, dynkin)` (§14.1). Box count
@@ -719,32 +724,49 @@ fn canonical_parent(series: Series, rank: usize, c: &Irrep) -> Option<(Irrep, Ir
     best.map(|c| (c.a, c.b))
 }
 
-/// All tensor irreps `x` of `(series, rank)` with `x ≺ c`, sorted ascending by
-/// `(dim, dynkin)` — the order the pruning in [`canonical_parent`] relies on.
+/// The irreps `x` of `(series, rank)` with `x ≺ c` that are **admissible as
+/// parents of `c`** (§14.2, class-indexed candidate-set restriction), sorted
+/// ascending by `(dim, dynkin)` — the order the pruning in
+/// [`canonical_parent`] relies on.
 ///
-/// Enumerated by a depth-first walk over integer partitions `λ` (ε-basis,
-/// nonincreasing, `≥ 0`; the D series additionally emits the `λ_r < 0` chiral
-/// partner) bounded by **box count** `Σ|λ_i| ≤ box_count(c)`. Box count is
-/// monotone in every coordinate (including the D-series last part, where `dim`
-/// is not — the P1 fix), so the prune is exact for all three series. Every
-/// `x ≺ c` has `box_count(x) ≤ box_count(c)`, so the walk is a complete
-/// superset; the `retain` keeps exactly `{ x : x ≺ c }`. The set is finite
-/// because a bounded box count bounds the partition.
+/// **Class restriction (option (B) of issue #87 §5).** If `c` lies in the
+/// tensor sublattice of `P/Q`, the candidate set is restricted to the tensor
+/// sublattice; a spinor is never a parent of a tensor irrep, so every shipped
+/// `SO(N)`/`Sp(2N)` coefficient is unaffected by the arrival of `Spin(N)`. If
+/// `c` is a spinor, both classes are candidates (a spinor's parents are a
+/// spinor and a tensor irrep — no product of tensor irreps contains a spinor).
+///
+/// Enumerated by a depth-first walk over doubled weights `2λ` (ε-basis,
+/// nonincreasing, `≥ 0`, all of one parity; the D series additionally emits the
+/// `λ_r < 0` chiral partner) bounded by the doubled **box count**
+/// `Σ|2λ_i| ≤ box_count(c)`. Box count is monotone in every coordinate
+/// (including the D-series last part, where `dim` is not — the P1 fix), so the
+/// prune is exact for all three series. Every `x ≺ c` has
+/// `box_count(x) ≤ box_count(c)`, so the walk is a complete superset; the
+/// `retain` keeps exactly `{ x : x ≺ c }`.
 fn irreps_below(series: Series, rank: usize, c: &Irrep) -> Vec<Irrep> {
     let max_boxes = box_count(c);
     let key_c = prec_key(c);
     let mut out: Vec<Irrep> = Vec::new();
     let mut cur = vec![0i64; rank];
-    enum_partitions(series, rank, max_boxes, 0, 0, &mut cur, &mut out);
+    // Parity 0 = the tensor sublattice, parity 1 = the spinor class.
+    enum_partitions(series, rank, max_boxes, 0, 0, 0, &mut cur, &mut out);
+    if c.is_spinor() {
+        enum_partitions(series, rank, max_boxes, 1, 0, 0, &mut cur, &mut out);
+    }
     out.retain(|x| prec_key(x) < key_c);
     out.sort_by_key(|x| (x.dim(), x.dynkin()));
     out
 }
 
+/// Walk the doubled dominant weights of one class (`parity` 0 = tensor, 1 =
+/// spinor) with `Σ|2λ_i| ≤ max_boxes`.
+#[allow(clippy::too_many_arguments)]
 fn enum_partitions(
     series: Series,
     rank: usize,
     max_boxes: i64,
+    parity: i64,
     pos: usize,
     used: i64,
     cur: &mut Vec<i64>,
@@ -755,17 +777,17 @@ fn enum_partitions(
         return;
     }
     let upper = if pos == 0 { max_boxes } else { cur[pos - 1] };
-    let mut v = 0i64;
+    let mut v = parity;
     while v <= upper {
         // Prune on box count: monotone in v for every coordinate ⇒ safe break.
         if used + v > max_boxes {
             break;
         }
         cur[pos] = v;
-        enum_partitions(series, rank, max_boxes, pos + 1, used + v, cur, out);
-        v += 1;
+        enum_partitions(series, rank, max_boxes, parity, pos + 1, used + v, cur, out);
+        v += 2;
     }
-    cur[pos] = 0;
+    cur[pos] = parity;
 }
 
 /// Emit the (non-negative) partition `cur` as an irrep, and — for the D series
@@ -783,12 +805,12 @@ fn push_partition_irrep(series: Series, cur: &[i64], out: &mut Vec<Irrep>) {
     }
 }
 
-/// Construct an [`Irrep`] directly from an ε-basis partition `weight` (a
+/// Construct an [`Irrep`] directly from a doubled ε-basis weight `2λ` (a
 /// descendant module of `bcd` may build the private struct). The enumeration
-/// only ever produces valid integer dominant weights, so no validation is
+/// only ever produces valid dominant weights of the cover, so no validation is
 /// needed here.
-fn make_irrep(series: Series, weight: Vec<i64>) -> Irrep {
-    super::Irrep::from_weight(series, weight)
+fn make_irrep(series: Series, two_weight: Vec<i64>) -> Irrep {
+    super::Irrep::from_two_weight(series, two_weight)
 }
 
 // ---- recursive build into the staging buffer -------------------------------

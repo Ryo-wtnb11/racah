@@ -64,6 +64,8 @@
 use num_rational::Ratio;
 use num_traits::Zero;
 
+use crate::group::GlobalForm;
+
 use super::{BcdError, Series};
 
 /// The exact defining-representation generator seed for one B/C/D group.
@@ -152,7 +154,10 @@ pub fn defining_seed(series: Series, r: usize) -> Result<Seed, BcdError> {
         return Err(BcdError::ExcludedRank {
             series,
             rank: r,
-            redirect: series.low_rank_redirect(),
+            // The seed layer works on the **cover** (it is where the spinor
+            // base cases live), so the simply-connected redirect is the right
+            // one: `B_1 = Spin(3) ≅ SU(2)`, `D_2 = Spin(4) ≅ SU(2)×SU(2)`.
+            redirect: series.low_rank_redirect(GlobalForm::SimplyConnected),
         });
     }
     let seed = match series {

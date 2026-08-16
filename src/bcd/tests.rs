@@ -31,13 +31,16 @@ fn dynkin_partition_round_trip() {
 #[test]
 fn partition_is_nonincreasing_and_dominant() {
     // B_3 vector rep (1,0,0) → partition (1,0,0).
-    assert_eq!(irr(Series::B, &[1, 0, 0]).partition(), &[1, 0, 0]);
+    assert_eq!(
+        irr(Series::B, &[1, 0, 0]).partition().unwrap(),
+        vec![1, 0, 0]
+    );
     // C_2 fundamental (1,0) → (1,0); adjoint (2,0) → (2,0).
-    assert_eq!(irr(Series::C, &[1, 0]).partition(), &[1, 0]);
-    assert_eq!(irr(Series::C, &[2, 0]).partition(), &[2, 0]);
+    assert_eq!(irr(Series::C, &[1, 0]).partition().unwrap(), vec![1, 0]);
+    assert_eq!(irr(Series::C, &[2, 0]).partition().unwrap(), vec![2, 0]);
     // D_3 chiral (0,2,0) vs (0,0,2): opposite last-coordinate signs (chirality).
-    let p = irr(Series::D, &[0, 2, 0]).partition().to_vec();
-    let q = irr(Series::D, &[0, 0, 2]).partition().to_vec();
+    let p = irr(Series::D, &[0, 2, 0]).partition().unwrap();
+    let q = irr(Series::D, &[0, 0, 2]).partition().unwrap();
     assert_eq!(p, vec![1, 1, -1]);
     assert_eq!(q, vec![1, 1, 1]);
 }
@@ -230,6 +233,7 @@ fn weight_multiplicities_sum_to_dim() {
         let s = irr(series, &d);
         let total: u64 = s
             .weight_multiplicities()
+            .expect("tensor irrep")
             .iter()
             .map(|(mu, &m)| m * weyl_orbit(series, mu).len() as u64)
             .sum();
@@ -246,7 +250,10 @@ fn adjoint_has_rank_zero_weight() {
     // The adjoint of SO(5) (B_2 (0,2)) has the zero weight with multiplicity =
     // rank = 2.
     let s = irr(Series::B, &[0, 2]);
-    assert_eq!(s.weight_multiplicities().get(&vec![0, 0]), Some(&2));
+    assert_eq!(
+        s.weight_multiplicities().unwrap().get(&vec![0, 0]),
+        Some(&2)
+    );
 }
 
 // ---- fundamental products (independent anchors) --------------------------

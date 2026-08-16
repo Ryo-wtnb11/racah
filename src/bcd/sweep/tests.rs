@@ -26,7 +26,7 @@ fn weight_counts(a: &Irrep) -> (usize, usize) {
     let series = a.series();
     let mut distinct: HashSet<Vec<i64>> = HashSet::new();
     let mut total = 0usize;
-    for (mu, &m) in &a.weight_multiplicities() {
+    for (mu, &m) in &a.weight_multiplicities().expect("tensor irrep") {
         let orbit = weyl_orbit(series, mu);
         for w in &orbit {
             distinct.insert(w.clone());
