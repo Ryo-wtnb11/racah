@@ -24,8 +24,11 @@
 //! [`cgc`](CanonicalCatalog::cgc) recursively materialize an irrep's
 //! canonical-parent chain as needed. The recursion is well-founded (§14 of the
 //! gauge doc): each parent is strictly smaller than its child in a fixed
-//! well-order over the exact irrep data, and the chain bottoms out at the two
-//! base cases (the trivial and defining reps), which are seeded at construction.
+//! well-order over the exact irrep data, and the chain bottoms out at the base
+//! cases: the trivial and defining reps, seeded at construction, and — for the
+//! `B`/`D` spinor class — the fundamental spinors, whose Clifford seeds
+//! (`docs/gauge_soN.md` §16) are built on demand, so a catalog only ever asked
+//! for tensor irreps never materializes one.
 //! QSpace's fixed-pass `dmax` enumeration (`clebsch.cc` bootstrap loop) is **not**
 //! ported as semantics — see §14.
 //!
