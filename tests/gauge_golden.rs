@@ -63,6 +63,7 @@
 #![allow(clippy::approx_constant)]
 
 use racah::bcd::{f_symbol as bcd_f_symbol, CanonicalCatalog, Irrep as Bcd, Series};
+use racah::group::GroupId;
 use racah::sun::{cgc, f_symbol, Irrep as Sun};
 
 /// Discrete-event tolerance; see the module docs.
@@ -245,6 +246,146 @@ fn sp4_f_symbol_matches_the_frozen_gauge() {
 }
 
 // ---------------------------------------------------------------------------
+// Spin(N): signed spinor CGC and F (issue #54; docs/gauge_soN.md §16).
+//
+// The spinor sector is new gauge, so it needs its own pins from the day it
+// ships: nothing else fixes the sign of a spinor coefficient, and the seed
+// conventions of §16 (Fock index order, Jordan–Wigner signs, the descending
+// weight order, the 1/√2 short-root scale) are all value-affecting. These rows
+// are the tripwire for every one of them.
+// ---------------------------------------------------------------------------
+
+fn spin(n: usize, d: &[i64]) -> Bcd {
+    Bcd::from_dynkin_in(&GroupId::spin(n).unwrap(), d).unwrap()
+}
+
+/// `Spin(5)`: `4 ⊗ 4 → 10` (spinor² → adjoint).
+const SPIN5_S_S_ADJ: &[BcdRow] = &[
+    (0, 0, 0, 1.0),
+    (0, 1, 1, 0.707_106_781_186_547_6),
+    (0, 4, 1, 0.707_106_781_186_547_6),
+    (0, 5, 2, 1.0),
+];
+
+/// `Spin(6)`: `4 ⊗ 4̄ → 15` (half-spinor × conjugate → adjoint).
+const SPIN6_S_SBAR_ADJ: &[BcdRow] = &[
+    (0, 0, 0, 1.0),
+    (0, 4, 1, 1.0),
+    (0, 1, 2, 1.0),
+    (0, 5, 3, 1.0),
+];
+
+/// `Spin(7)`: `8 ⊗ 8 → 21` (spinor² → adjoint).
+const SPIN7_S_S_ADJ: &[BcdRow] = &[
+    (0, 1, 0, 0.707_106_781_186_547_6),
+    (0, 8, 0, -0.707_106_781_186_547_6),
+    (0, 2, 1, 0.707_106_781_186_547_6),
+    (0, 16, 1, -0.707_106_781_186_547_6),
+];
+
+/// `Spin(10)`: `16 ⊗ 1̄6 → 45`. The rank-5 pin — it exercises a five-mode
+/// Clifford seed and a `256`-dimensional product sweep.
+const SPIN10_S_SBAR_ADJ: &[BcdRow] = &[
+    (0, 3, 0, 0.5),
+    (0, 18, 0, -0.500_000_000_000_000_1),
+    (0, 33, 0, 0.5),
+    (0, 48, 0, -0.500_000_000_000_000_1),
+];
+
+#[test]
+fn spinor_cgc_matches_the_frozen_gauge() {
+    let mut cat = CanonicalCatalog::new(Series::B, 2).unwrap();
+    let c = cat
+        .cgc(&spin(5, &[0, 1]), &spin(5, &[0, 1]), &spin(5, &[0, 2]))
+        .unwrap();
+    for &(mu, row, col, want) in SPIN5_S_S_ADJ {
+        close(
+            &format!("spin5 cgc 4x4->10 mu={mu} ({row},{col})"),
+            bcd_value(&c, mu, row, col),
+            want,
+        );
+    }
+
+    let mut cat = CanonicalCatalog::new(Series::D, 3).unwrap();
+    let c = cat
+        .cgc(
+            &spin(6, &[0, 0, 1]),
+            &spin(6, &[0, 1, 0]),
+            &spin(6, &[0, 1, 1]),
+        )
+        .unwrap();
+    for &(mu, row, col, want) in SPIN6_S_SBAR_ADJ {
+        close(
+            &format!("spin6 cgc 4x4bar->15 mu={mu} ({row},{col})"),
+            bcd_value(&c, mu, row, col),
+            want,
+        );
+    }
+
+    let mut cat = CanonicalCatalog::new(Series::B, 3).unwrap();
+    let c = cat
+        .cgc(
+            &spin(7, &[0, 0, 1]),
+            &spin(7, &[0, 0, 1]),
+            &spin(7, &[0, 1, 0]),
+        )
+        .unwrap();
+    for &(mu, row, col, want) in SPIN7_S_S_ADJ {
+        close(
+            &format!("spin7 cgc 8x8->21 mu={mu} ({row},{col})"),
+            bcd_value(&c, mu, row, col),
+            want,
+        );
+    }
+
+    let mut cat = CanonicalCatalog::new(Series::D, 5).unwrap();
+    let c = cat
+        .cgc(
+            &spin(10, &[0, 0, 0, 0, 1]),
+            &spin(10, &[0, 0, 0, 1, 0]),
+            &spin(10, &[0, 1, 0, 0, 0]),
+        )
+        .unwrap();
+    for &(mu, row, col, want) in SPIN10_S_SBAR_ADJ {
+        close(
+            &format!("spin10 cgc 16x16bar->45 mu={mu} ({row},{col})"),
+            bcd_value(&c, mu, row, col),
+            want,
+        );
+    }
+}
+
+/// `Spin(6)` F symbol on the `4 ⊗ 4̄` spinor family, with the trivial internal
+/// channel. Every vertex is multiplicity-free and no vertex couples into the
+/// defining rep, so this is a clean spinor-side F pin.
+const SPIN6_F_TRIVIAL_INTERNAL: f64 = 0.968_245_836_551_854_4;
+/// The same family with the adjoint internal channel.
+const SPIN6_F_ADJOINT_INTERNAL: f64 = 0.250_000_000_000_000_06;
+
+#[test]
+fn spinor_f_symbol_matches_the_frozen_gauge() {
+    let mut cat = CanonicalCatalog::new(Series::D, 3).unwrap();
+    let s = spin(6, &[0, 0, 1]);
+    let sb = spin(6, &[0, 1, 0]);
+    let one = spin(6, &[0, 0, 0]);
+    let adj = spin(6, &[0, 1, 1]);
+
+    let block = bcd_f_symbol(&mut cat, &s, &sb, &s, &s, &one, &adj).unwrap();
+    close(
+        "spin6 F 4,4bar,4->4 (e=1)",
+        block.at(0, 0, 0, 0),
+        SPIN6_F_TRIVIAL_INTERNAL,
+    );
+
+    let block = bcd_f_symbol(&mut cat, &s, &sb, &s, &s, &adj, &adj).unwrap();
+    close(
+        "spin6 F 4,4bar,4->4 (e=15)",
+        block.at(0, 0, 0, 0),
+        SPIN6_F_ADJOINT_INTERNAL,
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Regeneration helper (spec-correction path only; see the module docs).
 // ---------------------------------------------------------------------------
 
@@ -322,4 +463,78 @@ fn print_golden() {
     )
     .unwrap();
     println!("SP4_F = {:?};", block.at(0, 0, 0, 0));
+
+    // Spin(N): the §16 spinor rows.
+    /// `(series, rank, N, [a, b, c], tag)` for one spinor CGC row block.
+    type SpinorBlock = (Series, usize, usize, [&'static [i64]; 3], &'static str);
+    let spinor_blocks: &[SpinorBlock] = &[
+        (
+            Series::B,
+            2,
+            5,
+            [&[0, 1], &[0, 1], &[0, 2]],
+            "SPIN5_S_S_ADJ",
+        ),
+        (
+            Series::D,
+            3,
+            6,
+            [&[0, 0, 1], &[0, 1, 0], &[0, 1, 1]],
+            "SPIN6_S_SBAR_ADJ",
+        ),
+        (
+            Series::B,
+            3,
+            7,
+            [&[0, 0, 1], &[0, 0, 1], &[0, 1, 0]],
+            "SPIN7_S_S_ADJ",
+        ),
+        (
+            Series::D,
+            5,
+            10,
+            [&[0, 0, 0, 0, 1], &[0, 0, 0, 1, 0], &[0, 1, 0, 0, 0]],
+            "SPIN10_S_SBAR_ADJ",
+        ),
+    ];
+    for (series, r, n, labels, tag) in spinor_blocks {
+        let mut cat = CanonicalCatalog::new(*series, *r).unwrap();
+        let c = cat
+            .cgc(
+                &spin(*n, labels[0]),
+                &spin(*n, labels[1]),
+                &spin(*n, labels[2]),
+            )
+            .unwrap();
+        let (rows, cols) = c.copy_shape();
+        println!("{tag}: shape {:?}", c.copy_shape());
+        for mu in 0..c.multiplicity() {
+            for col in 0..cols {
+                for row in 0..rows {
+                    let v = c.copy(mu)[col * rows + row];
+                    if v.abs() > 1e-9 {
+                        println!("    ({mu}, {row}, {col}, {v:?}),");
+                    }
+                }
+            }
+        }
+    }
+
+    let mut cat = CanonicalCatalog::new(Series::D, 3).unwrap();
+    let s = spin(6, &[0, 0, 1]);
+    let sb = spin(6, &[0, 1, 0]);
+    let one = spin(6, &[0, 0, 0]);
+    let adj = spin(6, &[0, 1, 1]);
+    println!(
+        "SPIN6_F_TRIVIAL_INTERNAL = {:?};",
+        bcd_f_symbol(&mut cat, &s, &sb, &s, &s, &one, &adj)
+            .unwrap()
+            .at(0, 0, 0, 0)
+    );
+    println!(
+        "SPIN6_F_ADJOINT_INTERNAL = {:?};",
+        bcd_f_symbol(&mut cat, &s, &sb, &s, &s, &adj, &adj)
+            .unwrap()
+            .at(0, 0, 0, 0)
+    );
 }

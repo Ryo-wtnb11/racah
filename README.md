@@ -505,6 +505,11 @@ oracle-checked:
   outer-multiplicity indices.
 - **SO(N) / Sp(2N)** (`cgc-gen`): the generator-bootstrap pipeline (B/C/D
   Cartan series) — CGC, F, R.
+- **Spin(N)** (`cgc-gen`): the same pipeline on the simply-connected form, so
+  the spinor irreps of `Spin(2r+1)` and both chiralities of `Spin(2r)` are
+  available through `Irrep::from_dynkin_in(&GroupId::spin(n), …)`. Which
+  weights a group admits is a per-irrep predicate (`racah::group`); the
+  coefficients are the cover's and do not depend on the form asked through.
 
 Verification (every claim below is backed by a merged test; the crate ships its
 self-checks — F-unitarity, pentagon, hexagon — as public API):
@@ -521,6 +526,12 @@ self-checks — F-unitarity, pentagon, hexagon — as public API):
   structural-only, and **9** higher-rank rows (SO(7)/Sp(6)/SO(8)) are out of the
   rank-2/3 anchor's scope and skipped. See
   `src/bcd/qspace_oracle_tests.rs` for the full coverage note.
+- **Spin(N)**: the low-rank isomorphisms on the **whole** weight lattice —
+  `Spin(6) ≅ SU(4)` and `Spin(5) ≅ Sp(4)` agree on dimensions, duals,
+  Frobenius–Schur indicators and every ordered product, spinor labels included
+  (`tests/isomorphism.rs`); the Clifford seeds pass the same exact commutator
+  self-check as the defining seeds and report the same structure constants
+  (`tests/spin.rs`).
 
 The base SU(2) provider's stable public surface — authority fingerprint,
 checked representation layer, and cache resource contract — is described under

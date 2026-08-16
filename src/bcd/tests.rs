@@ -45,6 +45,63 @@ fn partition_is_nonincreasing_and_dominant() {
     assert_eq!(q, vec![1, 1, 1]);
 }
 
+/// `from_dynkin_in` rejects a group it does not implement, and a label whose
+/// length disagrees with the group's rank — the two ill-posed inputs the
+/// form-aware constructor adds (issue #87 §6).
+#[test]
+fn from_dynkin_in_rejects_a_foreign_group_and_a_wrong_length_label() {
+    use crate::group::{GlobalForm, GroupId, RootSystem};
+    let a3 = GroupId {
+        root_system: RootSystem::A(3),
+        form: GlobalForm::SimplyConnected,
+    };
+    assert_eq!(
+        Irrep::from_dynkin_in(&a3, &[1, 0, 0]),
+        Err(BcdError::UnsupportedRootSystem {
+            root_system: RootSystem::A(3)
+        })
+    );
+    assert_eq!(
+        Irrep::from_dynkin_in(&GroupId::spin(7).unwrap(), &[1, 0]),
+        Err(BcdError::RankMismatch {
+            expected: 3,
+            got: 2
+        })
+    );
+    assert_eq!(
+        Irrep::from_dynkin_in(&GroupId::spin(7).unwrap(), &[]),
+        Err(BcdError::EmptyLabel)
+    );
+}
+
+/// The `redirect` of an excluded low rank names the right SU(2) statement for
+/// the **requested form** (issue #87 Q3): the cover is plain SU(2), the
+/// quotient is its integer-`j` (resp. `j₁+j₂ ∈ ℤ`) sublattice.
+#[test]
+fn low_rank_redirect_is_form_aware() {
+    use crate::group::GroupId;
+    let redirect = |g, d: &[i64]| match Irrep::from_dynkin_in(&g, d) {
+        Err(BcdError::ExcludedRank { redirect, .. }) => redirect,
+        other => panic!("expected ExcludedRank, got {other:?}"),
+    };
+    assert_eq!(
+        redirect(GroupId::spin(3).unwrap(), &[1]),
+        "use SU(2) instead"
+    );
+    assert_eq!(
+        redirect(GroupId::so(3).unwrap(), &[2]),
+        "use SU(2) with integer j only instead"
+    );
+    assert_eq!(
+        redirect(GroupId::spin(4).unwrap(), &[0, 0]),
+        "use SU(2)×SU(2) instead"
+    );
+    assert_eq!(
+        redirect(GroupId::so(4).unwrap(), &[0, 0]),
+        "use SU(2)×SU(2) with j₁+j₂ integer instead"
+    );
+}
+
 // ---- guards (issue #15 inventory) ----------------------------------------
 
 #[test]
