@@ -1,0 +1,72 @@
+name: wheels
+
+# Python bindings (`racah-py`, issue #81): abi3-py312 wheels for linux-x86_64
+# and macos-arm64. Publishing to PyPI stays a manual owner action.
+on:
+  push:
+    branches: [main]
+    tags: ["*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Build the extension in place and run the Python smoke tests.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@v2
+      - run: pip install maturin pytest numpy
+      # `maturin develop` needs an activated virtualenv; the runner's Python is
+      # already isolated, so build the wheel and install it.
+      - run: maturin build --release --manifest-path racah-py/Cargo.toml --out dist
+      - run: pip install --no-index --find-links dist racah-py
+      - run: pytest racah-py/tests -q
+
+  wheels:
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64
+          - runner: macos-14
+            target: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          # abi3-py312: one wheel per platform covers CPython >= 3.12.
+          args: --release --out dist --manifest-path racah-py/Cargo.toml
+          manylinux: auto
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.runner }}-${{ matrix.target }}
+          path: dist
+
+  # Publishing is the repository owner's action; wire it up (with a PyPI
+  # trusted publisher or an API token) when the first release is cut:
+  #
+  # publish:
+  #   needs: wheels
+  #   if: startsWith(github.ref, 'refs/tags/')
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/download-artifact@v4
+  #     - uses: PyO3/maturin-action@v1
+  #       with:
+  #         command: upload
+  #         args: --non-interactive --skip-existing wheels-*/*

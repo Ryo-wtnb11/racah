@@ -1,0 +1,31 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "racah-py"
+description = "Python bindings for racah: SU(N) irreps, fusion, Clebsch-Gordan, F/R symbols"
+readme = "README.md"
+requires-python = ">=3.12"
+# Same dual license as the racah crate (LICENSE-MIT / LICENSE-APACHE at the
+# repository root).
+license = "MIT OR Apache-2.0"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = ["numpy>=1.26"]
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/Ryo-wtnb11/racah"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.maturin]
+module-name = "racah"
+# The SU(N) surface is the point of the bindings; wheels always carry `cgc-gen`.
+features = ["pyo3/extension-module"]
+include = ["racah.pyi"]

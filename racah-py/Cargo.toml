@@ -1,0 +1,23 @@
+[package]
+name = "racah-py"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Python bindings for the racah crate: SU(N) irreps, fusion, Clebsch-Gordan, F/R symbols"
+repository = "https://github.com/Ryo-wtnb11/racah"
+publish = false
+
+# The extension module is imported as `racah`, so the cdylib carries that name.
+[lib]
+name = "racah"
+crate-type = ["cdylib"]
+
+[dependencies]
+# The bindings exist for the generated SU(N) surface, so `cgc-gen` is not
+# optional here: the wheel is always built with it on.
+# Aliased: the `#[pymodule]` function is itself named `racah`.
+racah_core = { package = "racah", path = "..", features = ["cgc-gen"] }
+pyo3 = { version = "0.29", features = ["abi3-py312", "extension-module", "num-bigint"] }
+numpy = "0.29"
+# `Irrep.dim()` is exact; pyo3's num-bigint conversion hands it to Python as an int.
+num-bigint = "0.4"
