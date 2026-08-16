@@ -76,6 +76,22 @@ pinned by [`docs/gauge_soN.md`](gauge_soN.md). See [`docs/theory.md`](theory.md)
 | `frcore.rs` (F/R contraction) | SUNRepresentations.jl v0.4.0, `src/sector.jl:_Fsymbol`/`_Rsymbol`; TensorKitSectors `src/sectors.jl:Fsymbol_from_fusiontensor` $[9]$ | Shared F/R contraction wiring and axis order for `sun::fr` and `bcd::fr` | One correct contraction, reused across families | Private core; only `FBlock`/`RBlock` re-exported |
 | `frcore.rs` pentagon / hexagon gates | TensorKitSectors `src/sectors.jl:pentagon_equation` (`:786-819`), `hexagon_equation` (`:834-871`), GenericFusion branch $[2]$ background | Pentagon (associativity) and hexagon (braiding) consistency checks | The categorical consistency laws every F/R must satisfy | Shipped as public self-checks / generation gates |
 
+## Global form — fixed conventions (issue #87)
+
+`group.rs` decides which dominant weights are representations of which
+connected compact group (central character trivial on the quotiented subgroup).
+Two entries below are *choices*, not facts; they are pinned here so they are
+not re-litigated.
+
+| Convention | What is pinned | Reference | Deviation from the reference |
+|---|---|---|---|
+| `D_r`, `r` odd: the `Z4` class | Generator `c = [ω_r]`, so `κ(λ) ≡ a_r − a_{r-1} + 2·Σ_{i odd ≤ r-2} aᵢ (mod 4)`, uniformly in `r`. Chosen to agree with `bcd::Irrep::dual` (`λ_r ↦ −λ_r`), so conjugation *is* negation of the class. | Slansky §5 p. 37 (general `D_n` class); Table 41 note (SO(10): adjoint `45 ↦ 0`, spinor `16 ↦ 1`, conjugate `16bar ↦ −1`, vector `10 ↦ 2`) $[13]$ | Slansky's uniform formula equals `+κ` for `r ≡ 1 (mod 4)` and `−κ` for `r ≡ 3 (mod 4)`. racah pins `φ(ω_r) = +1` for all odd `r`. This is the `Z4` automorphism `x ↦ −x`, i.e. a generator choice, not a discrepancy; Slansky's SO(10) note is the `r ≡ 1` instance of ours. |
+| `D_r`, `r` even: the two half-spin forms | Named by the class they **retain**: `DHalfSpinPlus` retains `[ω_r]` (admissible iff `a_{r-1} + t ≡ 0`), `DHalfSpinMinus` retains `[ω_{r-1}]` (iff `a_r + t ≡ 0`), where `t ≡ Σ_{i odd ≤ r-2} aᵢ`. | Slansky Table 36 note (SO(8)) $[13]$ | Slansky's `Ss` / `Sc` are accepted as documented **aliases**: `Ss(2r) = DHalfSpinPlus` (`ω_r ↦ s`), `Sc(2r) = DHalfSpinMinus` (`ω_{r-1} ↦ c`). A name based on the central element *killed* is not `r`-uniform: `Ann(z_{ω_r}) = {0, s₊}` for `r ≡ 0 (mod 4)` but `{0, s₋}` for `r ≡ 2 (mod 4)`, since `(ω_r, ω_r) = r/4`. Slansky himself calls the `D₄` labelling arbitrary. Only the `SO(2r)` row is `r`-safe, because `(ε₁,ε₁) = 1` for every `r`. |
+
+Slansky's tables themselves were not machine-readable in the source consulted;
+the §5 congruency paragraph and the table *notes* carry the citation, and both
+conventions are independently derived in the `group` module rustdoc.
+
 ## Verification oracles
 
 The oracles are independent of the code under test:
@@ -134,6 +150,11 @@ Every identifier below was verified against the publisher/preprint record.
     pp. 109–170.
     DOI: [10.1016/S1570-7954(06)80006-9](https://doi.org/10.1016/S1570-7954(06)80006-9);
     arXiv: [math/0211289](https://arxiv.org/abs/math/0211289).
+13. R. Slansky, "Group theory for unified model building," *Phys. Rep.* **79**,
+    1–128 (1981).
+    DOI: [10.1016/0370-1573(81)90092-2](https://doi.org/10.1016/0370-1573(81)90092-2).
+    Congruency classes: §5, p. 37; table notes for Table 36 (SO(8)) and
+    Table 41 (SO(10)).
 
 The port also follows the public conventions and F/R contraction wiring of
 TensorKitSectors (the categorical-symmetry layer of TensorKit), cited inline

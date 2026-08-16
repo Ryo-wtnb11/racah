@@ -9,6 +9,19 @@ value/gauge rule noted below.
 
 ### Added
 
+- **`racah::group` — root datum plus global form** (stage (a) of
+  [#87](https://github.com/Ryo-wtnb11/racah/issues/87)). `RootSystem`,
+  `GlobalForm`, `CenterSubgroup`, `GroupId` with fallible named constructors
+  (`GroupId::su/su_quotient/psu/sp/psp/spin/so/pso/half_spin_plus/
+  half_spin_minus`), and `GroupId::admits(&[i64])` — the central-character
+  predicate that says which dominant weights are representations of which
+  connected compact group. Ungated (pure integer arithmetic). `bcd`'s spinor
+  rejection is now the one call site of that predicate, and
+  `Series::root_system(r)` is the single bridge to the label-lattice type.
+  Conventions pinned in [`docs/references.md`](docs/references.md): the
+  `D_r`-odd `Z4` generator `[ω_r]`, and the `D_r`-even half-spin forms named
+  by the class they retain. **No coefficient value changes**; no `epoch` moves.
+
 - **Frozen gauge specification.** [`docs/gauge.md`](docs/gauge.md) and
   [`docs/gauge_soN.md`](docs/gauge_soN.md) are declared **normative**: the
   documents are the authority and the code implements them. `docs/gauge.md` also
