@@ -24,8 +24,11 @@
 //! [`cgc`](CanonicalCatalog::cgc) recursively materialize an irrep's
 //! canonical-parent chain as needed. The recursion is well-founded (§14 of the
 //! gauge doc): each parent is strictly smaller than its child in a fixed
-//! well-order over the exact irrep data, and the chain bottoms out at the two
-//! base cases (the trivial and defining reps), which are seeded at construction.
+//! well-order over the exact irrep data, and the chain bottoms out at the base
+//! cases: the trivial and defining reps, seeded at construction, and — for the
+//! `B`/`D` spinor class — the fundamental spinors, whose Clifford seeds
+//! (`docs/gauge_soN.md` §16) are built on demand, so a catalog only ever asked
+//! for tensor irreps never materializes one.
 //! QSpace's fixed-pass `dmax` enumeration (`clebsch.cc` bootstrap loop) is **not**
 //! ported as semantics — see §14.
 //!
@@ -45,6 +48,7 @@ use std::collections::HashMap;
 
 use num_bigint::BigInt;
 
+use super::seeds::spinor_seeds;
 use super::sweep::{align_block, decompose, Block, Generators, SweepError};
 use super::{defining_seed, directproduct, BcdError, Irrep, Series};
 
@@ -548,9 +552,15 @@ impl CanonicalCatalog {
         })
     }
 
-    /// Whether `c` is one of the two seeded base cases (trivial or defining),
-    /// whose stored basis is an S3.1 seed rather than a sweep and is therefore
-    /// exempt from the element-wise coherence guard.
+    /// Whether `c` is one of the two **QSpace-seeded** base cases (trivial or
+    /// defining), whose stored basis is the ported QSpace seed rather than a
+    /// descending-weight sweep and is therefore exempt from the element-wise
+    /// coherence guard.
+    ///
+    /// The spinor base cases (§16) are deliberately **not** exempt: their seed
+    /// is built directly in the sweep's descending-weight order, so a
+    /// rediscovered spinor block is coherent with the stored one and the guard
+    /// is meaningful there.
     fn is_base_case(&self, c: &Irrep) -> bool {
         Irrep::trivial(self.series, self.rank)
             .map(|t| &t == c)
@@ -634,12 +644,26 @@ fn gen_bytes(g: &Generators) -> usize {
 
 // ---- the canonical parent rule (docs/gauge_soN.md §14) ---------------------
 
-/// The number of boxes in an irrep's highest weight: `Σ_i |λ_i|` over the
-/// ε-basis partition. Strictly monotone under adding/removing a box, and — unlike
-/// `dim` — monotone in **every** coordinate including the D-series sign-carrying
-/// last part (see §14.1). The primary `≺` component.
+/// Whether `c` is a **fundamental spinor** — `ω_r` for `B_r`, `ω_{r-1}`/`ω_r`
+/// for `D_r` — i.e. one of the spinor base cases (§14.2, §16). These are
+/// exactly the spinor labels whose doubled weight is `(±1,…,±1)`: the
+/// `≺`-minimal irreps of the spinor class, and the only ones that carry a
+/// Clifford seed rather than a canonical parent.
+fn is_spinor_base(c: &Irrep) -> bool {
+    c.is_spinor() && c.two_partition().iter().all(|x| x.abs() == 1)
+}
+
+/// The **doubled** box count of an irrep's highest weight: `Σ_i |2λ_i|` over
+/// the ε-basis partition (§14.1). Strictly monotone under adding/removing a box
+/// (which moves it by 2), and — unlike `dim` — monotone in **every** coordinate
+/// including the D-series sign-carrying last part. The primary `≺` component.
+///
+/// Doubling is a uniform rescaling of the old `Σ|λ_i|`, so `≺` — and every
+/// parent chosen through it — is unchanged on the tensor irreps; what doubling
+/// buys is that a spinor's half-integer weight has an integer box count too
+/// (`box'(ω_r) = r`).
 fn box_count(c: &Irrep) -> i64 {
-    c.partition().iter().map(|x| x.abs()).sum()
+    c.two_partition().iter().map(|x| x.abs()).sum()
 }
 
 /// The `≺` sort key of an irrep: `(box_count, dim, dynkin)` (§14.1). Box count
@@ -719,32 +743,49 @@ fn canonical_parent(series: Series, rank: usize, c: &Irrep) -> Option<(Irrep, Ir
     best.map(|c| (c.a, c.b))
 }
 
-/// All tensor irreps `x` of `(series, rank)` with `x ≺ c`, sorted ascending by
-/// `(dim, dynkin)` — the order the pruning in [`canonical_parent`] relies on.
+/// The irreps `x` of `(series, rank)` with `x ≺ c` that are **admissible as
+/// parents of `c`** (§14.2, class-indexed candidate-set restriction), sorted
+/// ascending by `(dim, dynkin)` — the order the pruning in
+/// [`canonical_parent`] relies on.
 ///
-/// Enumerated by a depth-first walk over integer partitions `λ` (ε-basis,
-/// nonincreasing, `≥ 0`; the D series additionally emits the `λ_r < 0` chiral
-/// partner) bounded by **box count** `Σ|λ_i| ≤ box_count(c)`. Box count is
-/// monotone in every coordinate (including the D-series last part, where `dim`
-/// is not — the P1 fix), so the prune is exact for all three series. Every
-/// `x ≺ c` has `box_count(x) ≤ box_count(c)`, so the walk is a complete
-/// superset; the `retain` keeps exactly `{ x : x ≺ c }`. The set is finite
-/// because a bounded box count bounds the partition.
+/// **Class restriction (option (B) of issue #87 §5).** If `c` lies in the
+/// tensor sublattice of `P/Q`, the candidate set is restricted to the tensor
+/// sublattice; a spinor is never a parent of a tensor irrep, so every shipped
+/// `SO(N)`/`Sp(2N)` coefficient is unaffected by the arrival of `Spin(N)`. If
+/// `c` is a spinor, both classes are candidates (a spinor's parents are a
+/// spinor and a tensor irrep — no product of tensor irreps contains a spinor).
+///
+/// Enumerated by a depth-first walk over doubled weights `2λ` (ε-basis,
+/// nonincreasing, `≥ 0`, all of one parity; the D series additionally emits the
+/// `λ_r < 0` chiral partner) bounded by the doubled **box count**
+/// `Σ|2λ_i| ≤ box_count(c)`. Box count is monotone in every coordinate
+/// (including the D-series last part, where `dim` is not — the P1 fix), so the
+/// prune is exact for all three series. Every `x ≺ c` has
+/// `box_count(x) ≤ box_count(c)`, so the walk is a complete superset; the
+/// `retain` keeps exactly `{ x : x ≺ c }`.
 fn irreps_below(series: Series, rank: usize, c: &Irrep) -> Vec<Irrep> {
     let max_boxes = box_count(c);
     let key_c = prec_key(c);
     let mut out: Vec<Irrep> = Vec::new();
     let mut cur = vec![0i64; rank];
-    enum_partitions(series, rank, max_boxes, 0, 0, &mut cur, &mut out);
+    // Parity 0 = the tensor sublattice, parity 1 = the spinor class.
+    enum_partitions(series, rank, max_boxes, 0, 0, 0, &mut cur, &mut out);
+    if c.is_spinor() {
+        enum_partitions(series, rank, max_boxes, 1, 0, 0, &mut cur, &mut out);
+    }
     out.retain(|x| prec_key(x) < key_c);
     out.sort_by_key(|x| (x.dim(), x.dynkin()));
     out
 }
 
+/// Walk the doubled dominant weights of one class (`parity` 0 = tensor, 1 =
+/// spinor) with `Σ|2λ_i| ≤ max_boxes`.
+#[allow(clippy::too_many_arguments)]
 fn enum_partitions(
     series: Series,
     rank: usize,
     max_boxes: i64,
+    parity: i64,
     pos: usize,
     used: i64,
     cur: &mut Vec<i64>,
@@ -755,17 +796,17 @@ fn enum_partitions(
         return;
     }
     let upper = if pos == 0 { max_boxes } else { cur[pos - 1] };
-    let mut v = 0i64;
+    let mut v = parity;
     while v <= upper {
         // Prune on box count: monotone in v for every coordinate ⇒ safe break.
         if used + v > max_boxes {
             break;
         }
         cur[pos] = v;
-        enum_partitions(series, rank, max_boxes, pos + 1, used + v, cur, out);
-        v += 1;
+        enum_partitions(series, rank, max_boxes, parity, pos + 1, used + v, cur, out);
+        v += 2;
     }
-    cur[pos] = 0;
+    cur[pos] = parity;
 }
 
 /// Emit the (non-negative) partition `cur` as an irrep, and — for the D series
@@ -783,12 +824,12 @@ fn push_partition_irrep(series: Series, cur: &[i64], out: &mut Vec<Irrep>) {
     }
 }
 
-/// Construct an [`Irrep`] directly from an ε-basis partition `weight` (a
+/// Construct an [`Irrep`] directly from a doubled ε-basis weight `2λ` (a
 /// descendant module of `bcd` may build the private struct). The enumeration
-/// only ever produces valid integer dominant weights, so no validation is
+/// only ever produces valid dominant weights of the cover, so no validation is
 /// needed here.
-fn make_irrep(series: Series, weight: Vec<i64>) -> Irrep {
-    super::Irrep::from_weight(series, weight)
+fn make_irrep(series: Series, two_weight: Vec<i64>) -> Irrep {
+    super::Irrep::from_two_weight(series, two_weight)
 }
 
 // ---- recursive build into the staging buffer -------------------------------
@@ -823,6 +864,30 @@ fn build_into(
 ) -> Result<(), CatalogError> {
     if lookup(store, staged, c).is_some() {
         return Ok(()); // already committed or staged (includes the base cases)
+    }
+
+    // Spinor base case (§14.2, issue #54): the fundamental spinors are not in
+    // any product of already-materialized irreps — they carry their own S3.1
+    // Clifford seed. Seeded on demand rather than at construction, so a catalog
+    // that is only ever asked for tensor irreps builds no spinor matrices and
+    // its byte accounting is exactly what it always was.
+    if is_spinor_base(c) {
+        for (label, seed) in spinor_seeds(series, rank)? {
+            if Irrep::from_dynkin_in(&series.cover_group(rank), &label)? == *c {
+                // The Clifford seed is brought into the canonical frame by one
+                // pass of the §1–§8 sweep over its own carrier (§16). That is
+                // what makes a spinor base case behave exactly like any other
+                // catalog entry: every later rediscovery of `c` is produced by
+                // the same sweep, so the §15 coherence guard and the alignment
+                // apply to it unchanged.
+                let raw = Generators::from_seed(&seed);
+                let expected = std::collections::BTreeMap::from([(c.clone(), 1u32)]);
+                let decomp = decompose(&raw, &expected)?;
+                let gens = decomp.blocks()[0].generators().clone();
+                staged.push((c.clone(), gens));
+                return Ok(());
+            }
+        }
     }
 
     // Non-base c: its canonical parent exists (§14.4 existence argument). The
@@ -890,12 +955,15 @@ fn debug_assert_cartan_matches(block: &Block, stored: &Generators) {
     }
     let rank = stored.rank();
     let d = stored.dim();
-    let round = |x: f64| x.round() as i64;
+    // Compared at the doubled scale: a carrier with a spinor factor has
+    // half-integer Cartan eigenvalues, and `2·weight` is an integer for every
+    // irrep of the cover (§6, §16).
+    let round = |x: f64| (2.0 * x).round() as i64;
     let mut block_w: Vec<Vec<i64>> = (0..d)
         .map(|s| (0..rank).map(|j| round(block.weight(s, j))).collect())
         .collect();
     let mut stored_w: Vec<Vec<i64>> = (0..d)
-        .map(|s| (0..rank).map(|j| stored.cartan_diag(j)[s] as i64).collect())
+        .map(|s| (0..rank).map(|j| round(stored.cartan_diag(j)[s])).collect())
         .collect();
     block_w.sort_unstable();
     stored_w.sort_unstable();

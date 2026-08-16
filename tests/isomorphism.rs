@@ -267,3 +267,176 @@ fn wrong_so6_map_is_detected() {
         "wrong map must not accidentally agree"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The spinor image of the low-rank isomorphisms (issue #54, stage (b) of #87).
+//
+// The three label maps above were restricted to the tensor sublattice only
+// because `racah::bcd` rejected the spinor labels. With `Spin(N)` shipped the
+// same maps are defined on the **whole** weight lattice, and the isomorphism
+// oracles extend to it: these are the checks #54 names, now runnable.
+// ---------------------------------------------------------------------------
+
+use racah::bcd::BcdError;
+use racah::group::GroupId;
+
+/// `SU(4)` Dynkin `(a_1,a_2,a_3)` → `Spin(6)` Dynkin `(a_2,a_1,a_3)`, defined
+/// on the whole lattice: `a_1 + a_3` odd is the `D_3` spinor class, which is
+/// exactly the odd-`N`-ality (chiral) `SU(4)` class.
+fn su4_to_spin6(a: &[i64]) -> Bcd {
+    Bcd::from_dynkin_in(&GroupId::spin(6).unwrap(), &[a[1], a[0], a[2]]).expect("Spin(6) label")
+}
+
+/// `Sp(4)=C_2` Dynkin `(c_0,c_1)` → `Spin(5)` Dynkin `(c_1,c_0)`, whole
+/// lattice: `c_0` odd is the `B_2` spinor class.
+fn sp4_to_spin5(c: &[i64]) -> Bcd {
+    Bcd::from_dynkin_in(&GroupId::spin(5).unwrap(), &[c[1], c[0]]).expect("Spin(5) label")
+}
+
+/// `SU(4)` labels spanning **both** classes, including the fundamental `4` and
+/// its conjugate — the labels that were out of scope before `Spin(N)`.
+const SPIN6_LABELS: &[[i64; 3]] = &[
+    [1, 0, 0], // 4     = Spin(6) half-spinor
+    [0, 0, 1], // 4bar  = the other chirality
+    [0, 1, 0], // 6     vector
+    [1, 1, 0], // 20
+    [1, 0, 1], // 15    adjoint
+    [2, 0, 0], // 10
+    [0, 0, 2], // 10bar
+    [1, 1, 1], // 64
+];
+
+/// `Sp(4)` labels spanning both classes, including the fundamental `4` — the
+/// `Spin(5)` spinor.
+const SPIN5_LABELS: &[[i64; 2]] = &[
+    [1, 0], // 4  = Spin(5) spinor
+    [0, 1], // 5  vector
+    [2, 0], // 10 adjoint
+    [1, 1], // 16
+    [0, 2], // 14
+    [3, 0], // 20
+];
+
+/// `Spin(6) ≅ SU(4)`: the dimensions agree on the whole lattice, spinors
+/// included — `4 ↔ S_+`, `4̄ ↔ S_-`.
+#[test]
+fn spin6_su4_dimensions_agree_including_spinors() {
+    for a in SPIN6_LABELS {
+        let s = Sun::from_dynkin(a).unwrap();
+        let d = su4_to_spin6(a);
+        assert_eq!(s.dim(), d.dim(), "dim mismatch SU(4) {a:?} vs Spin(6)");
+    }
+    assert_eq!(su4_to_spin6(&[1, 0, 0]).dim(), 4u32.into());
+    assert!(su4_to_spin6(&[1, 0, 0]).is_spinor());
+}
+
+/// `Spin(6) ≅ SU(4)`: every ordered product agrees channel-for-channel and
+/// multiplicity-for-multiplicity across the whole lattice — the strongest
+/// available statement that the spinor fusion is right.
+#[test]
+fn spin6_su4_products_agree_including_spinors() {
+    for a in SPIN6_LABELS {
+        for b in SPIN6_LABELS {
+            let s = sun_channels(&Sun::from_dynkin(a).unwrap(), &Sun::from_dynkin(b).unwrap());
+            let d = bcd_channels(&su4_to_spin6(a), &su4_to_spin6(b));
+            let s_mapped: BTreeMap<Vec<i64>, u32> = s
+                .into_iter()
+                .map(|(k, v)| (su4_to_spin6(&k).dynkin(), v))
+                .collect();
+            assert_eq!(
+                s_mapped, d,
+                "product {a:?} x {b:?} disagrees SU(4) vs Spin(6)"
+            );
+        }
+    }
+}
+
+/// `Spin(6) ≅ SU(4)`: duality corresponds — `S_±` are exchanged, exactly as
+/// `4 ↔ 4̄`.
+#[test]
+fn spin6_su4_duals_agree_including_spinors() {
+    for a in SPIN6_LABELS {
+        let s = Sun::from_dynkin(a).unwrap();
+        assert_eq!(
+            su4_to_spin6(&s.dual().dynkin()).dynkin(),
+            su4_to_spin6(a).dual().dynkin(),
+            "dual mismatch SU(4) {a:?} vs Spin(6)"
+        );
+    }
+}
+
+/// `Spin(5) ≅ Sp(4)`: the dimensions agree on the whole lattice — the `Sp(4)`
+/// fundamental `4` **is** the `Spin(5)` spinor.
+#[test]
+fn spin5_sp4_dimensions_agree_including_spinors() {
+    for c in SPIN5_LABELS {
+        let cc = Bcd::from_dynkin(Series::C, c).unwrap();
+        let bb = sp4_to_spin5(c);
+        assert_eq!(cc.dim(), bb.dim(), "dim mismatch Sp(4) {c:?} vs Spin(5)");
+    }
+    assert_eq!(sp4_to_spin5(&[1, 0]).dim(), 4u32.into());
+    assert!(sp4_to_spin5(&[1, 0]).is_spinor());
+}
+
+/// `Spin(5) ≅ Sp(4)`: every ordered product agrees, spinor channels included.
+/// This contains the #87 §5 diagnostic `4 ⊗ 4 = 1 + 5 + 10` as one row.
+#[test]
+fn spin5_sp4_products_agree_including_spinors() {
+    for a in SPIN5_LABELS {
+        for b in SPIN5_LABELS {
+            let cc = bcd_channels(
+                &Bcd::from_dynkin(Series::C, a).unwrap(),
+                &Bcd::from_dynkin(Series::C, b).unwrap(),
+            );
+            let bb = bcd_channels(&sp4_to_spin5(a), &sp4_to_spin5(b));
+            let c_mapped: BTreeMap<Vec<i64>, u32> = cc
+                .into_iter()
+                .map(|(k, v)| (sp4_to_spin5(&k).dynkin(), v))
+                .collect();
+            assert_eq!(
+                c_mapped, bb,
+                "product {a:?} x {b:?} disagrees Sp(4) vs Spin(5)"
+            );
+        }
+    }
+}
+
+/// `Spin(5) ≅ Sp(4)`: the Frobenius–Schur indicators agree label-by-label.
+/// The two sides compute it from different root systems (`B_2`'s and `C_2`'s
+/// sums of positive coroots), so agreement is a real cross-check — and it is
+/// what makes the `Spin(5)` spinor come out quaternionic, matching the `Sp(4)`
+/// fundamental.
+#[test]
+fn spin5_sp4_frobenius_schur_agrees_including_spinors() {
+    for c in SPIN5_LABELS {
+        let cc = Bcd::from_dynkin(Series::C, c).unwrap();
+        let bb = sp4_to_spin5(c);
+        assert_eq!(
+            cc.frobenius_schur(),
+            bb.frobenius_schur(),
+            "FS mismatch Sp(4) {c:?} vs Spin(5)"
+        );
+    }
+    assert_eq!(sp4_to_spin5(&[1, 0]).frobenius_schur(), -1);
+}
+
+/// `Spin(3) ≅ SU(2)`: `B_1` is an excluded rank in [`racah::bcd`], so the
+/// isomorphism is delivered as a **form-aware redirect** rather than as a
+/// second code path — and the redirect now distinguishes the cover from the
+/// quotient, which is the whole point of the isomorphism (`Spin(3) = SU(2)`
+/// has half-integer `j`, `SO(3)` does not).
+#[test]
+fn spin3_su2_is_a_form_aware_low_rank_redirect() {
+    let spin3 = Bcd::from_dynkin_in(&GroupId::spin(3).unwrap(), &[1]);
+    assert!(matches!(
+        spin3,
+        Err(BcdError::ExcludedRank { rank: 1, redirect, .. })
+            if redirect == "use SU(2) instead"
+    ));
+    let so3 = Bcd::from_dynkin_in(&GroupId::so(3).unwrap(), &[1]);
+    assert!(matches!(
+        so3,
+        Err(BcdError::ExcludedRank { rank: 1, redirect, .. })
+            if redirect.contains("integer j")
+    ));
+}

@@ -62,7 +62,9 @@
 //!   Frobenius inner product used for the Cartan projection).
 
 use num_rational::Ratio;
-use num_traits::Zero;
+use num_traits::{One, Zero};
+
+use crate::group::GlobalForm;
 
 use super::{BcdError, Series};
 
@@ -82,6 +84,14 @@ pub struct Seed {
     sp: Vec<Vec<(usize, usize, i64)>>,
     /// `sz[i]` = the `dim`-length integer diagonal of the `i`-th Cartan op.
     sz: Vec<Vec<i64>>,
+    /// `Sz[i] = sz_scale · sz[i]`. `1` for every defining seed; `1/2` for the
+    /// spinor seeds, whose Cartan eigenvalues are half-integers.
+    sz_scale: Ratio<i64>,
+    /// `Sp[i] = √(sp_scale2[i]) · sp[i]`. `1` everywhere except the `B_r`
+    /// spinor seed's short-root generator, where it is `1/2` — see
+    /// [`spinor_seeds`] for why the scale is a square root and why that is the
+    /// only irrational entry in the layer.
+    sp_scale2: Vec<Ratio<i64>>,
 }
 
 impl Seed {
@@ -103,9 +113,26 @@ impl Seed {
     pub fn raising(&self) -> &[Vec<(usize, usize, i64)>] {
         &self.sp
     }
-    /// The Cartan generators `Sz[0..r]`, each as its `D`-length integer diagonal.
+    /// The Cartan generators `Sz[0..r]`, each as its `D`-length integer
+    /// diagonal of **records** — the operator is
+    /// [`cartan_scale`](Self::cartan_scale) times this.
     pub fn cartan(&self) -> &[Vec<i64>] {
         &self.sz
+    }
+
+    /// The common rational scale of the [`cartan`](Self::cartan) records:
+    /// `Sz[i] = cartan_scale · cartan()[i]`. `1` for every defining seed,
+    /// `1/2` for a spinor seed.
+    pub fn cartan_scale(&self) -> Ratio<i64> {
+        self.sz_scale
+    }
+
+    /// The **squared** rational scale of raising operator `i`:
+    /// `Sp[i] = √(raising_scale2(i)) · raising()[i]`. `1` for every defining
+    /// seed and for every long-root generator; `1/2` for the `B_r` spinor
+    /// seed's short-root generator.
+    pub fn raising_scale2(&self, i: usize) -> Ratio<i64> {
+        self.sp_scale2[i]
     }
 
     /// Test-only mutable access, for the mutation-sanity tests that corrupt one
@@ -152,7 +179,10 @@ pub fn defining_seed(series: Series, r: usize) -> Result<Seed, BcdError> {
         return Err(BcdError::ExcludedRank {
             series,
             rank: r,
-            redirect: series.low_rank_redirect(),
+            // The seed layer works on the **cover** (it is where the spinor
+            // base cases live), so the simply-connected redirect is the right
+            // one: `B_1 = Spin(3) ≅ SU(2)`, `D_2 = Spin(4) ≅ SU(2)×SU(2)`.
+            redirect: series.low_rank_redirect(GlobalForm::SimplyConnected),
         });
     }
     let seed = match series {
@@ -198,6 +228,8 @@ fn setup_spn(r: usize) -> Seed {
         dim: d,
         sp,
         sz,
+        sz_scale: Ratio::one(),
+        sp_scale2: vec![Ratio::one(); r],
     }
 }
 
@@ -229,6 +261,8 @@ fn setup_son(r: usize) -> Seed {
         dim: d,
         sp,
         sz,
+        sz_scale: Ratio::one(),
+        sp_scale2: vec![Ratio::one(); r],
     }
 }
 
@@ -260,7 +294,197 @@ fn setup_sen(r: usize) -> Seed {
         dim: d,
         sp,
         sz,
+        sz_scale: Ratio::one(),
+        sp_scale2: vec![Ratio::one(); r],
     }
+}
+
+// ---- spinor base cases (issue #54; docs/gauge_soN.md §16) ------------------
+
+/// The exact **spinor** base-case generator seeds of `series` at rank `r`, each
+/// paired with the Dynkin label of the irrep it carries — the second base case
+/// of the bootstrap (`docs/gauge_soN.md` §14.2, §16).
+///
+/// - `B_r`: one seed, the spinor `ω_r = (0,…,0,1)`, dimension `2^r`.
+/// - `D_r`: two seeds, the half-spinors `ω_{r-1}` and `ω_r`, dimension
+///   `2^{r-1}` each, returned in ascending Dynkin-label order.
+/// - `C_r`: none — `Sp(2r)` is simply connected, it has no spinor sector.
+///
+/// Returns [`BcdError::ExcludedRank`] for the low-rank isomorphisms, exactly as
+/// [`defining_seed`] does.
+///
+/// # The construction (normative: `docs/gauge_soN.md` §16)
+///
+/// The carrier is the fermionic Fock space of `r` modes — the Clifford module
+/// of `so(N)`. A basis state is an occupation string `n ∈ {0,1}^r` stored at
+/// index `m = Σ_k n_k 2^{k-1}` (mode `k` in bit `k-1`), and its ε-basis weight
+/// is `λ_k = n_k − ½`. The generators are the standard Jordan–Wigner fermion
+/// operators, placed on QSpace's node order (`Sp[i]` carries the simple root
+/// `α_{r-i}` for `i < r`, `α_r` for `i = r`; `Sz[j]` measures `λ_{r+1-j}`; see
+/// §7's `findMaxWeight` conversion):
+///
+/// ```text
+/// Sz[j] = n_{r+1-j} − ½
+/// Sp[i] = c†_{r-i} c_{r-i+1}        (i < r,  root ε_{r-i} − ε_{r-i+1})
+/// Sp[r] = c†_r / √2                 (B_r,    root ε_r)
+/// Sp[r] = c†_{r-1} c†_r             (D_r,    root ε_{r-1} + ε_r)
+/// ```
+///
+/// For `D_r` the generators are all fermion-number-even, so the Fock space
+/// splits into the two half-spin sectors by the parity of `Σ_k n_k`; each is
+/// listed in ascending `m`.
+///
+/// **The one irrational scale.** The module docs above record that no defining
+/// seed needs a `√2`. The `B_r` spinor seed does, and only there: QSpace's
+/// `Sp[r]` is normalized so that `[Sp_r, Sp_r†] = Sz_1 = ½ α_r^∨` (read off the
+/// defining seed, where the short-root string is a spin-1 triplet with matrix
+/// elements `√2`). In the spinor the same string is a doublet with matrix
+/// elements `1`, so the seed entry is `1/√2`. It is carried exactly as the
+/// squared rational scale [`Seed::raising_scale2`], which is all the
+/// self-check ever needs: the scale cancels in `[Sz_j, Sp_i] = d_{i,j} Sp_i`
+/// and enters `[Sp_i, Sp_i†] = Σ_k f_{i,k} Sz_k` only quadratically.
+pub fn spinor_seeds(series: Series, r: usize) -> Result<Vec<(Vec<i64>, Seed)>, BcdError> {
+    if r < series.min_rank() {
+        return Err(BcdError::ExcludedRank {
+            series,
+            rank: r,
+            redirect: series.low_rank_redirect(GlobalForm::SimplyConnected),
+        });
+    }
+    let mut out = match series {
+        Series::C => Vec::new(),
+        Series::B => vec![fock_seed(Series::B, r, None)],
+        Series::D => vec![
+            fock_seed(Series::D, r, Some(0)),
+            fock_seed(Series::D, r, Some(1)),
+        ],
+    };
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(out)
+}
+
+/// Annihilate mode `k` (1-based) in occupation string `m`, with the
+/// Jordan–Wigner sign `(-1)^{Σ_{l<k} n_l}`; `None` if the mode is empty.
+fn ann(m: usize, k: usize) -> Option<(usize, i64)> {
+    let bit = 1usize << (k - 1);
+    if m & bit == 0 {
+        return None;
+    }
+    let below = (m & (bit - 1)).count_ones();
+    Some((m ^ bit, if below.is_multiple_of(2) { 1 } else { -1 }))
+}
+
+/// Create mode `k` (1-based) in `m`, same sign rule; `None` if already filled.
+fn cre(m: usize, k: usize) -> Option<(usize, i64)> {
+    let bit = 1usize << (k - 1);
+    if m & bit != 0 {
+        return None;
+    }
+    let below = (m & (bit - 1)).count_ones();
+    Some((m | bit, if below.is_multiple_of(2) { 1 } else { -1 }))
+}
+
+/// Build the spinor seed on the Fock space of `r` modes, restricted to the
+/// fermion-parity `sector` when given (the two `D_r` half-spinors), and pair it
+/// with the Dynkin label of its highest weight.
+fn fock_seed(series: Series, r: usize, sector: Option<u32>) -> (Vec<i64>, Seed) {
+    // Carrier basis: the occupation strings of the sector, in the sweep's
+    // **descending-weight** order (§7) — the order every non-base generator set
+    // is produced in, so a rediscovered spinor block is coherent with this seed
+    // and the §15 coherence guard applies to it unchanged. That order is
+    // lexicographic on the Cartan columns read in reverse, i.e. descending in
+    // (λ_1, …, λ_r) = (n_1, …, n_r), which is descending in the bit-reversed
+    // occupation string. A spinor's weights are non-degenerate, so there are no
+    // ties and the tie-break rule never fires.
+    let mut states: Vec<usize> = (0..1usize << r)
+        .filter(|m| sector.is_none_or(|p| m.count_ones() % 2 == p))
+        .collect();
+    let rev_key = |m: &usize| -> std::cmp::Reverse<Vec<u8>> {
+        std::cmp::Reverse((1..=r).map(|k| ((m >> (k - 1)) & 1) as u8).rev().collect())
+    };
+    states.sort_by_key(rev_key);
+    let d = states.len();
+    let mut pos = vec![usize::MAX; 1usize << r];
+    for (p, &m) in states.iter().enumerate() {
+        pos[m] = p;
+    }
+
+    // Sz[j] = n_{r+1-j} − ½, stored as the record 2λ = 2n−1 with scale ½.
+    let sz: Vec<Vec<i64>> = (0..r)
+        .map(|j0| {
+            let bit = 1usize << (r - 1 - j0); // mode k = r-j0, i.e. bit k-1
+            states
+                .iter()
+                .map(|&m| if m & bit != 0 { 1 } else { -1 })
+                .collect()
+        })
+        .collect();
+
+    // Sp[i] on QSpace's node order.
+    let mut sp: Vec<Vec<(usize, usize, i64)>> = Vec::with_capacity(r);
+    let mut sp_scale2 = vec![Ratio::<i64>::one(); r];
+    for i in 1..=r {
+        let mut recs = Vec::new();
+        for (col, &m) in states.iter().enumerate() {
+            let acted = if i < r {
+                // c†_{r-i} c_{r-i+1}
+                ann(m, r - i + 1).and_then(|(m1, s1)| cre(m1, r - i).map(|(m2, s2)| (m2, s1 * s2)))
+            } else if series == Series::B {
+                // c†_r (times 1/√2, carried in the scale)
+                cre(m, r)
+            } else {
+                // c†_{r-1} c†_r
+                cre(m, r).and_then(|(m1, s1)| cre(m1, r - 1).map(|(m2, s2)| (m2, s1 * s2)))
+            };
+            if let Some((m2, sign)) = acted {
+                recs.push((pos[m2], col, sign));
+            }
+        }
+        recs.sort_unstable();
+        sp.push(recs);
+    }
+    if series == Series::B {
+        sp_scale2[r - 1] = Ratio::new(1, 2);
+    }
+
+    let seed = Seed {
+        series,
+        rank: r,
+        dim: d,
+        sp,
+        sz,
+        sz_scale: Ratio::new(1, 2),
+        sp_scale2,
+    };
+    (highest_weight_dynkin(&seed, &states, r), seed)
+}
+
+/// The Dynkin label of the seed's highest weight: the unique carrier state
+/// annihilated by every raising operator. Derived from the built matrices
+/// rather than asserted, so a mis-built seed cannot silently claim a label.
+///
+/// Panics only on an internal inconsistency (no unique highest-weight state),
+/// which is unreachable for an irreducible carrier — a loud invariant, in the
+/// sense of the guard inventory.
+fn highest_weight_dynkin(seed: &Seed, states: &[usize], r: usize) -> Vec<i64> {
+    let mut hw: Option<usize> = None;
+    for col in 0..states.len() {
+        if seed
+            .sp
+            .iter()
+            .all(|recs| !recs.iter().any(|&(_, c, _)| c == col))
+        {
+            assert!(hw.is_none(), "spinor seed carrier is not irreducible");
+            hw = Some(col);
+        }
+    }
+    let hw = hw.expect("an irreducible carrier has a highest-weight state");
+    let m = states[hw];
+    // 2λ_k = 2n_k − 1.
+    let two_lambda: Vec<i64> = (1..=r)
+        .map(|k| if m & (1usize << (k - 1)) != 0 { 1 } else { -1 })
+        .collect();
+    super::two_partition_to_dynkin(seed.series, &two_lambda)
 }
 
 // ---- commutator self-check (QSpace initCommRel / checkCommRel) ------------
@@ -329,8 +553,13 @@ pub fn check_commutators(seed: &Seed) -> Result<CommReport, BcdError> {
         if c.iter().all(|&x| x == 0) {
             return Err(viol("[Sp,Sp^dagger] has norm 0", i, i));
         }
-        // f_{i,k} = ⟨C, Sz_k⟩_F / ⟨Sz_k, Sz_k⟩_F  (Frobenius projection).
+        // f_{i,k} = ⟨C, Sz_k⟩_F / ⟨Sz_k, Sz_k⟩_F  (Frobenius projection). The
+        // projection is done on the integer **records**, so the residual below
+        // is exact and scale-free; the reported coefficient then carries the
+        // scales, `f = (g_i / s) · f_records` with `Sp_i = √g_i · sp_i` and
+        // `Sz_k = s · sz_k`.
         let c_diag: Vec<i64> = (0..d).map(|p| c[p * d + p]).collect();
+        let scale = seed.sp_scale2[i] / seed.sz_scale;
         cartan_coeffs[i] = seed
             .sz
             .iter()
@@ -350,6 +579,9 @@ pub fn check_commutators(seed: &Seed) -> Result<CommReport, BcdError> {
                 }
             }
         }
+        for f in cartan_coeffs[i].iter_mut() {
+            *f *= scale;
+        }
     }
 
     // (3) [Sz_j, Sp_i] = d_{i,j} Sp_i.
@@ -363,8 +595,10 @@ pub fn check_commutators(seed: &Seed) -> Result<CommReport, BcdError> {
             let bc = commutator(&szj, &sp_dense[i], d);
             // d from the first nonzero Sp_i entry (guaranteed to exist).
             let (r0, c0, v0) = seed.sp[i][0];
+            // On the integer records; the reported root component carries the
+            // Cartan scale (the `Sp` scale cancels between the two sides).
             let dz = Ratio::new(bc[r0 * d + c0], v0);
-            root_weights[i][j] = dz;
+            root_weights[i][j] = dz * seed.sz_scale;
             for row in 0..d {
                 for col in 0..d {
                     let res =

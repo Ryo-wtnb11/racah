@@ -26,7 +26,7 @@ fn weight_counts(a: &Irrep) -> (usize, usize) {
     let series = a.series();
     let mut distinct: HashSet<Vec<i64>> = HashSet::new();
     let mut total = 0usize;
-    for (mu, &m) in &a.weight_multiplicities() {
+    for (mu, &m) in &a.weight_multiplicities().expect("tensor irrep") {
         let orbit = weyl_orbit(series, mu);
         for w in &orbit {
             distinct.insert(w.clone());
@@ -443,6 +443,7 @@ fn coherence_residual_detects_degenerate_rotation() {
         dim: 2,
         sp: vec![raising([[0.0, 1.0], [0.0, 0.0]])],
         sz: vec![vec![0.0, 0.0]], // degenerate weight: rotation is a real gauge freedom
+        weight_denom: 1,
     };
     // Rotate the degenerate 2-space by 45°: Sp' = W Sp Wᵀ, weights unchanged.
     let c = std::f64::consts::FRAC_1_SQRT_2;
@@ -452,6 +453,7 @@ fn coherence_residual_detects_degenerate_rotation() {
         dim: 2,
         sp: vec![raising([[-c * c, c * c], [-c * c, c * c]])],
         sz: vec![vec![0.0, 0.0]],
+        weight_denom: 1,
     };
     let residual = canonical.coherence_residual(&rotated);
     assert!(

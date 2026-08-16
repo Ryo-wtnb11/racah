@@ -31,15 +31,75 @@ fn dynkin_partition_round_trip() {
 #[test]
 fn partition_is_nonincreasing_and_dominant() {
     // B_3 vector rep (1,0,0) → partition (1,0,0).
-    assert_eq!(irr(Series::B, &[1, 0, 0]).partition(), &[1, 0, 0]);
+    assert_eq!(
+        irr(Series::B, &[1, 0, 0]).partition().unwrap(),
+        vec![1, 0, 0]
+    );
     // C_2 fundamental (1,0) → (1,0); adjoint (2,0) → (2,0).
-    assert_eq!(irr(Series::C, &[1, 0]).partition(), &[1, 0]);
-    assert_eq!(irr(Series::C, &[2, 0]).partition(), &[2, 0]);
+    assert_eq!(irr(Series::C, &[1, 0]).partition().unwrap(), vec![1, 0]);
+    assert_eq!(irr(Series::C, &[2, 0]).partition().unwrap(), vec![2, 0]);
     // D_3 chiral (0,2,0) vs (0,0,2): opposite last-coordinate signs (chirality).
-    let p = irr(Series::D, &[0, 2, 0]).partition().to_vec();
-    let q = irr(Series::D, &[0, 0, 2]).partition().to_vec();
+    let p = irr(Series::D, &[0, 2, 0]).partition().unwrap();
+    let q = irr(Series::D, &[0, 0, 2]).partition().unwrap();
     assert_eq!(p, vec![1, 1, -1]);
     assert_eq!(q, vec![1, 1, 1]);
+}
+
+/// `from_dynkin_in` rejects a group it does not implement, and a label whose
+/// length disagrees with the group's rank — the two ill-posed inputs the
+/// form-aware constructor adds (issue #87 §6).
+#[test]
+fn from_dynkin_in_rejects_a_foreign_group_and_a_wrong_length_label() {
+    use crate::group::{GlobalForm, GroupId, RootSystem};
+    let a3 = GroupId {
+        root_system: RootSystem::A(3),
+        form: GlobalForm::SimplyConnected,
+    };
+    assert_eq!(
+        Irrep::from_dynkin_in(&a3, &[1, 0, 0]),
+        Err(BcdError::UnsupportedRootSystem {
+            root_system: RootSystem::A(3)
+        })
+    );
+    assert_eq!(
+        Irrep::from_dynkin_in(&GroupId::spin(7).unwrap(), &[1, 0]),
+        Err(BcdError::RankMismatch {
+            expected: 3,
+            got: 2
+        })
+    );
+    assert_eq!(
+        Irrep::from_dynkin_in(&GroupId::spin(7).unwrap(), &[]),
+        Err(BcdError::EmptyLabel)
+    );
+}
+
+/// The `redirect` of an excluded low rank names the right SU(2) statement for
+/// the **requested form** (issue #87 Q3): the cover is plain SU(2), the
+/// quotient is its integer-`j` (resp. `j₁+j₂ ∈ ℤ`) sublattice.
+#[test]
+fn low_rank_redirect_is_form_aware() {
+    use crate::group::GroupId;
+    let redirect = |g, d: &[i64]| match Irrep::from_dynkin_in(&g, d) {
+        Err(BcdError::ExcludedRank { redirect, .. }) => redirect,
+        other => panic!("expected ExcludedRank, got {other:?}"),
+    };
+    assert_eq!(
+        redirect(GroupId::spin(3).unwrap(), &[1]),
+        "use SU(2) instead"
+    );
+    assert_eq!(
+        redirect(GroupId::so(3).unwrap(), &[2]),
+        "use SU(2) with integer j only instead"
+    );
+    assert_eq!(
+        redirect(GroupId::spin(4).unwrap(), &[0, 0]),
+        "use SU(2)×SU(2) instead"
+    );
+    assert_eq!(
+        redirect(GroupId::so(4).unwrap(), &[0, 0]),
+        "use SU(2)×SU(2) with j₁+j₂ integer instead"
+    );
 }
 
 // ---- guards (issue #15 inventory) ----------------------------------------
@@ -230,6 +290,7 @@ fn weight_multiplicities_sum_to_dim() {
         let s = irr(series, &d);
         let total: u64 = s
             .weight_multiplicities()
+            .expect("tensor irrep")
             .iter()
             .map(|(mu, &m)| m * weyl_orbit(series, mu).len() as u64)
             .sum();
@@ -246,7 +307,10 @@ fn adjoint_has_rank_zero_weight() {
     // The adjoint of SO(5) (B_2 (0,2)) has the zero weight with multiplicity =
     // rank = 2.
     let s = irr(Series::B, &[0, 2]);
-    assert_eq!(s.weight_multiplicities().get(&vec![0, 0]), Some(&2));
+    assert_eq!(
+        s.weight_multiplicities().unwrap().get(&vec![0, 0]),
+        Some(&2)
+    );
 }
 
 // ---- fundamental products (independent anchors) --------------------------

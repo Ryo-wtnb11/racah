@@ -68,6 +68,13 @@ Both are value-affecting gauge choices and therefore part of this contract.
 - An irrep `c` is labelled by its integer Dynkin label `a = (a_0,…,a_{r-1})`,
   matching `bcd::Irrep::from_dynkin` (whose label↔partition maps are pinned in
   `src/bcd.rs`).
+- The bootstrap works in the **cover** `Spin(2r+1)` / `Sp(2r)` / `Spin(2r)`, so
+  the label set is the full dominant weight lattice: the **tensor** class
+  (integer ε-basis `λ`) and, for `B`/`D`, the **spinor** class (half-integer
+  `λ`, issue #54). Weights are carried doubled (`2λ`, integral in both classes,
+  the crate's `dj = 2j` convention). A *global form* — which class a caller may
+  ask for — is a restriction of the label set applied at construction
+  (`crate::group`, issue #87 §2); it never changes a coefficient value.
 - The CGC of a coupled multiplet is the isometry `V`, a real `d1·d2 × d3`
   column-major matrix; each column is one coupled state.
 
@@ -242,11 +249,18 @@ R.Sp[i] = Vᵀ (Sp_prod[i] V),      R.Sz[j] = Vᵀ (Sz_prod[j] V).
 
 Each `R.Sz[j]` must be **diagonal** within `EPS_VERIFY` (QSpace
 `isDiagMatrix(eps2)`, `:274`) — else `SweepError::NonDiagonalCartan`. Its
-diagonal entries are the states' Cartan eigenvalues; they are **integers** (each
-column of `V` is a definite-weight state), and are snapped to the nearest
-integer (**FixRational**, integer-target only; QSpace
-`FixRational(...,4)`, `:282`). A value farther than `FIXRATIONAL_TOL` from an
-integer is `SweepError::NonIntegerWeight`. The `d3 × r` matrix of snapped
+diagonal entries are the states' Cartan eigenvalues, and are snapped to the
+nearest point of the carrier's **weight grid** (**FixRational**, QSpace
+`FixRational(...,4)`, `:282`). A value farther than `FIXRATIONAL_TOL` from a
+grid point is `SweepError::NonIntegerWeight`.
+
+The grid is `1/denom` with `denom = 1` for a carrier built entirely from tensor
+irreps — each column of `V` is then a definite-weight state with an **integer**
+eigenvalue, exactly as before — and `denom = 2` once a spinor factor is present,
+whose Cartan eigenvalues are half-integers (§16). `denom` is a property of the
+generator set: `1` for the trivial and defining seeds, `2` for a spinor seed,
+and the maximum of the two factors' for a product. A pure-tensor product
+therefore keeps the strict integer gate unchanged. The `d3 × r` matrix of snapped
 eigenvalues is the block's weight table `Z` (row = state, column = Cartan op).
 
 The projected generators are gated by the S3.1 commutator relations, evaluated
@@ -287,8 +301,13 @@ this permutation (`clebsch_aux.cc:295-301 @ dd2cc7e`).
   `i = 0…⌊(r-1)/2⌋-1`.
 - **`D_r` (SEN, `:1018-1031`):** as `B_r` but with `x = qm_0 + qm_1`.
 
-The resulting Dynkin label constructs `bcd::Irrep::from_dynkin`; an invalid label
-is `SweepError::InvalidDiscoveredLabel` (unreachable for a faithful sweep).
+The resulting Dynkin label constructs `bcd::Irrep::from_dynkin_in` **in the
+cover** (`GlobalForm::SimplyConnected`); an invalid label is
+`SweepError::InvalidDiscoveredLabel` (unreachable for a faithful sweep). The
+`B_r` conversion's `x = 2·qm_0` and the `D_r` conversion's `x = qm_0 + qm_1`
+already return an integer `a_{r-1}` from half-integer eigenvalues, which is
+exactly the spinor label; nothing in this section changes for the spinor class,
+and a product of tensor irreps only ever discovers tensor labels.
 
 QSpace's `r > 9` upper-rank guard (`:983,993,1004,1021`) is a fixed-buffer build
 artifact, **not** a mathematical constraint — **N/A** here (same disposition as
@@ -468,9 +487,15 @@ Define the total order `≺` on the tensor irreps of a fixed `(series, rank)` by
 **box count first**:
 
 ```
-box(c)  = Σ_i |λ_i|                              (number of ε-basis boxes)
+box(c)  = Σ_i |2λ_i|                             (doubled ε-basis box count)
 c₁ ≺ c₂ ⟺ ( box(c₁), dim(c₁), dynkin(c₁) ) <lex ( box(c₂), dim(c₂), dynkin(c₂) )
 ```
+
+The box count is **doubled** so that it is an integer for a spinor's
+half-integer weight as well (`box(V) = 2`, `box(ω_r) = r`, and "remove a box" is
+`box ↦ box − 2`). Doubling is a uniform rescaling of the earlier `Σ_i |λ_i|`, so
+`≺` restricted to the tensor irreps — and therefore every parent it selects
+there — is **unchanged**.
 
 i.e. compare the box count first, then the exact Weyl dimension, then the integer
 Dynkin label read left to right. All three components are exact S3.0 data; no
@@ -500,13 +525,34 @@ Well-foundedness is what makes the on-demand recursion (§14.3) terminate.
 
 ### 14.2 The canonical parent
 
-The two **base cases** are the `≺`-minimal irreps and carry generators directly,
-not from any product:
+The **base cases** are the `≺`-minimal irreps of each class of `P/Q` and carry
+generators directly, not from any product:
 
 - the **trivial** rep (dim 1): all generators zero on a 1-dimensional carrier;
-- the **defining** rep `(1,0,…,0)`: the exact S3.1 seed (`src/bcd/seeds.rs`).
+- the **defining** rep `(1,0,…,0)`: the exact S3.1 seed (`src/bcd/seeds.rs`);
+- the **fundamental spinors** (`B`/`D` only): `ω_r` for `B_r`, and `ω_{r-1}`,
+  `ω_r` for `D_r` — the Clifford seeds of §16. They are `≺`-minimal in the
+  spinor class, and they are base cases of necessity rather than of
+  convenience: a spinor lies in no tensor power of `V`, so no product of
+  already-materialized irreps can produce one.
 
-They are seeded into the catalog at construction. Every other (`non-base`) irrep
+The trivial and defining reps are seeded into the catalog at construction; a
+spinor base case is seeded the first time it is asked for, so a catalog that is
+only ever asked for tensor irreps builds no spinor matrices at all.
+
+**Candidate-set restriction (class-indexed).** Let `[c] ∈ P/Q` be the central
+class of `c`. If `[c]` lies in the **tensor sublattice** (`{0}` for `B_r`/`C_r`,
+`{0, v}` for `D_r`), the candidate set of condition 1 below is further
+restricted to irreps of the tensor sublattice. Otherwise it is the full
+`≺`-below set of the cover. Consequently the frame of a tensor irrep is computed
+**without reference to any spinor irrep**. This is a deliberate restriction, not
+a consequence of `≺`; it is what makes a coefficient a function of the irrep
+alone and not of the form it was queried through, and it is what keeps
+`epoch = 1` across issue #54. (The alternative — letting the parent search range
+over the whole cover — is a genuine spec correction: the measured `Spin(5)`
+diagnostic of issue #87 shows the `SO(5)` adjoint's canonical parent moving from
+`(V,V)`, pair key `dim_a+dim_b = 10`, to `(4,4)`, pair key `8`. It is parked as
+its own optional, epoch-bumping change.) Every other (`non-base`) irrep
 `c` has a **canonical parent pair** `(a, b)`, defined as the minimum, under the
 **pair order**
 
@@ -591,6 +637,17 @@ dim 10, and a dim-first order would wrongly exclude it). The defining rep has
 self-dual), so `c ∈ V ⊗ b`. Thus `(V, b)` satisfies conditions 1–2, and the
 candidate set is non-empty. The actual canonical parent is the `key`-minimum over
 this non-empty finite set, which may be a more balanced pair than `(V, b)`. ∎
+
+**Spinor branch.** For a spinor `c` that is not a base case, write
+`λ = μ + ω` with `ω` the fundamental spinor of `c`'s chirality and `μ` a
+non-zero integer partition (this is what "not a base case" means: `box(c) > r`).
+Removing one box from `μ` gives a dominant spinor `b` with
+`box(b) = box(c) − 2 < box(c)`, so `b ≺ c`; and `box(V) = 2 ≤ box(c) − r < box(c)`
+for every rank in scope, so `V ≺ c`. `V` is in `c`'s candidate set because the
+restriction clause above does not apply to a spinor `c`. By Frobenius
+reciprocity (`V` self-dual, as in the tensor argument) `c ∈ V ⊗ b`, so `(V, b)`
+is admissible and the candidate set is non-empty. The `≺`-minimal spinors are
+exactly the base cases of §14.2. ∎
 
 The search is finite and computable from S3.0 alone: enumerate the finite set
 `{ x : x ≺ c }` (contained in the irreps with `box(x) ≤ box(c)`, obtained by a
@@ -784,3 +841,107 @@ mixing is **not** further canonicalized here: the F/R self-consistency gates and
 gauge-invariant isotypic projector `P = Σ_μ C_μ C_μᵀ` are both invariant under it,
 and a full canonical multiplicity gauge is left to the S3.5 fitted-unitary harness.
 This is the one alignment freedom this rung deliberately does not pin.
+
+---
+
+## 16. The spinor base cases (`Spin(N)`, issue #54)
+
+Sections 1–15 fix the gauge of everything the bootstrap *computes*. This section
+fixes the remaining input: the generator matrices of the second base case, the
+fundamental spinors, which no product can produce. Every choice below is
+value-affecting and therefore part of the frozen contract; the pinned values are
+in `tests/gauge_golden.rs` (`Spin(5)`, `Spin(6)`, `Spin(7)`, `Spin(10)` CGC and
+a `Spin(6)` F block). Implementation: `src/bcd/seeds.rs::spinor_seeds`.
+
+`C_r = Sp(2r)` is simply connected and has no spinor sector; this section is
+about `B_r` and `D_r` only.
+
+### 16.1 Carrier and index order
+
+The carrier is the **fermionic Fock space of `r` modes** — the Clifford module
+of `so(N)`. A basis state is an occupation string `n ∈ {0,1}^r`, and its ε-basis
+weight is
+
+```
+λ_k = n_k − ½                     (k = 1…r)
+```
+
+so the `2^r` states carry exactly the `2^r` weights `(±½,…,±½)`, each once.
+
+- **`B_r`**: the whole Fock space, dimension `2^r`, is the irreducible spinor
+  `ω_r`.
+- **`D_r`**: the generators below are all fermion-number-**even**, so the Fock
+  space splits by the parity of `Σ_k n_k` into the two half-spinors, dimension
+  `2^{r-1}` each. The even sector's highest weight is `ω_r` for `r` even and
+  `ω_{r-1}` for `r` odd (the odd sector's is the other one); the seed derives
+  its label from the built matrices — the unique state annihilated by every
+  raising operator — rather than asserting it.
+
+**State order (gauge).** The states of the carrier (of the sector, for `D_r`)
+are listed in the sweep's **descending-weight order** of §7: lexicographic on
+the Cartan columns read in reverse, i.e. descending in `(λ_1,…,λ_r)`, i.e.
+descending in the bit-reversed occupation string. A spinor's weights are
+non-degenerate, so there are no ties and §7's tie-break never fires.
+
+This is a deliberate difference from the two QSpace-ported base cases, whose
+state order is QSpace's `Setup_*` order and is *not* descending-weight. Building
+the spinor seed in the sweep's own order means a spinor rediscovered inside a
+product presents the same frame as the stored seed, so the §15 coherence guard
+and the intertwiner alignment apply to a spinor base case exactly as they do to
+any non-base irrep — it is not exempted from them.
+
+### 16.2 Generators
+
+With `c_k`, `c_k†` the Jordan–Wigner fermion operators of mode `k`
+(`c_k|n⟩ = (−1)^{Σ_{l<k} n_l} n_k |n − e_k⟩`, and the adjoint for `c_k†`), on
+QSpace's node order (`Sp[i]` carries the simple root `α_{r-i}` for `i < r` and
+`α_r` for `i = r`; `Sz[j]` measures `λ_{r+1-j}` — the order §7's Dynkin
+conversion inverts):
+
+```
+Sz[j] = n_{r+1-j} − ½
+Sp[i] = c†_{r-i} c_{r-i+1}        (i < r,   root ε_{r-i} − ε_{r-i+1})
+Sp[r] = c†_r / √2                 (B_r,     root ε_r)
+Sp[r] = c†_{r-1} c†_r             (D_r,     root ε_{r-1} + ε_r)
+```
+
+The Jordan–Wigner sign convention is part of the gauge: it fixes the sign of
+every seed entry, hence of every spinor coefficient downstream.
+
+**The `1/√2`.** `src/bcd/seeds.rs` records that no *defining* seed needs an
+irrational entry. The `B_r` spinor seed does, in exactly one generator, and the
+value is forced rather than chosen: QSpace's short-root `Sp[r]` satisfies
+`[Sp_r, Sp_r†] = Sz_1 = ½ α_r^∨` — read off the defining seed, where the
+`α_r`-string is a spin-1 triplet with matrix elements `√2` and QSpace's entries
+are `1`. In the spinor the same string is a doublet with matrix elements `1`, so
+the entry must be `1/√2`. It is stored as the exact **squared** rational scale
+`Seed::raising_scale2`, which keeps the self-check exact: the scale cancels in
+`[Sz_j, Sp_i] = d_{i,j} Sp_i` and enters `[Sp_i, Sp_i†] = Σ_k f_{i,k} Sz_k` only
+quadratically. The Cartan scale `½` is carried the same way.
+
+### 16.3 Verification gate
+
+A spinor seed is gated by the **same** exact `check_commutators` as a defining
+seed (`BcdError::CommutatorViolation`), and additionally by the fact that the
+structure constants it derives are properties of the algebra, not of the
+representation: `f_{i,k}` and `d_{i,j}` must equal the defining seed's, exactly.
+`tests/spin.rs::spinor_seed_structure_constants_match_the_defining_seed` is that
+gate. Before entering the catalog, the seed is passed through one §1–§8 sweep
+over its own carrier, which is what puts it in the canonical frame §16.1
+describes.
+
+### 16.4 Fingerprint
+
+`bcd_authority_fingerprint()` gains **no new tag** and its `epoch` stays `1`.
+
+The tag list is normative and its bytes are contractually stable: the
+fingerprint "changes exactly with a specification correction" (`src/bcd.rs`,
+consumer contract). Adding a `spinor=` tag would change the bytes without a
+specification correction, and would force every consumer holding persisted
+`SO(N)`/`Sp(2N)` coefficients — every one of which is byte-identical across this
+change — to treat them as invalid. Nothing an earlier version could produce
+moves, and no earlier version could produce a spinor coefficient at all, so the
+existing bytes remain a truthful answer to the question the fingerprint exists
+to answer ("was this derived data produced under the same conventions?"). A
+later change to §16 *would* move spinor values, and that is an ordinary
+epoch-bumping specification correction at that time.

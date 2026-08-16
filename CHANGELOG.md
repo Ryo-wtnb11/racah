@@ -7,7 +7,45 @@ value/gauge rule noted below.
 
 ## [Unreleased]
 
+### Changed
+
+- **`BcdError::ExcludedRank::redirect` is form-aware** (stage (b) of #87, Q3):
+  the low-rank isomorphism is an isomorphism of *groups*, so `Spin(3)` now
+  redirects to `"use SU(2) instead"` while `SO(3)` redirects to `"use SU(2)
+  with integer j only instead"` (likewise `Spin(4)`/`SO(4)`). Diagnostic strings
+  only; no coefficient value changes.
+- **`bcd::Irrep::partition` returns `Option<Vec<i64>>`** and
+  `bcd::Irrep::weight_multiplicities` returns `Option<…>`, both `None` on a
+  spinor irrep, whose ε-basis weights are half-integers. The always-exact
+  doubled forms are `two_partition` / `two_weight_multiplicities`.
+
 ### Added
+
+- **`Spin(N)` — the spinor irreps of the `B`/`D` covers**
+  ([#54](https://github.com/Ryo-wtnb11/racah/issues/54), stage (b) of
+  [#87](https://github.com/Ryo-wtnb11/racah/issues/87)). `Irrep::from_dynkin_in`
+  takes a `GroupId`, so `GroupId::spin(N)` admits the spinor labels that
+  `SO(N)` rejects; their dimensions, duals, Frobenius–Schur indicators, fusion,
+  CGC and F/R are produced by the same bootstrap. Three parts:
+  - `bcd::Irrep` now stores the **doubled** ε-basis weight `2λ`, so a spinor's
+    half-integer highest weight is exact (`Irrep::two_partition`,
+    `Irrep::is_spinor`; `Irrep::partition` returns `Option`, `None` on a
+    spinor, and `Irrep::weight_multiplicities` likewise, with
+    `two_weight_multiplicities` always available).
+  - `bcd::spinor_seeds` — the second base case: the Clifford/Fock generator
+    seeds for `ω_r` (`B_r`) and `ω_{r-1}`, `ω_r` (`D_r`), gated by the same
+    exact `check_commutators`, specified in
+    [`docs/gauge_soN.md`](docs/gauge_soN.md) §16 and pinned by new
+    `tests/gauge_golden.rs` rows (`Spin(5)`, `Spin(6)`, `Spin(7)`, `Spin(10)`).
+  - The canonical-parent candidate set is **class-indexed** (§14.2): a tensor
+    irrep's parents are searched in the tensor sublattice only. **Every shipped
+    `SO(N)`/`Sp(2N)` coefficient is byte-identical** and the `bcd` `epoch` stays
+    at `1`; `bcd_authority_fingerprint()` gains no tag (§16.4 states why).
+
+  Oracles in `tests/isomorphism.rs` and `tests/spin.rs`: `Spin(6) ≅ SU(4)` and
+  `Spin(5) ≅ Sp(4)` now agree on the **whole** weight lattice (dimensions,
+  duals, every ordered product, Frobenius–Schur), and `Spin(3) ≅ SU(2)` is the
+  form-aware low-rank redirect.
 
 - **`racah::group` — root datum plus global form** (stage (a) of
   [#87](https://github.com/Ryo-wtnb11/racah/issues/87)). `RootSystem`,
