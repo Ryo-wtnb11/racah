@@ -1,5 +1,37 @@
-//! Bounded, thread-safe evaluation cache for 3j/6j symbols, keyed by canonical
-//! Regge classes.
+//! Bounded, thread-safe coefficient caches, and the process-local policy that
+//! bounds them.
+//!
+//! Coefficient generation is the expensive step, so `racah` caches: the base
+//! SU(2) tiers (3j, 6j, derived-F) keyed by canonical Regge classes, and — with
+//! `cgc-gen` — five generated tiers (SU(N) product / CGC / F, B/C/D CGC / F).
+//! Every tier is process-global, FIFO, and independently bounded.
+//!
+//! # What a consumer needs from this module
+//!
+//! - **A ceiling.** [`BASE_CACHE_MAX_BYTES`] (192 MiB) and
+//!   [`GENERATED_CACHE_MAX_BYTES`] (640 MiB + 128 KiB) are the documented sums
+//!   of the per-tier retained-entry charge caps. They bound *cache-owned entry
+//!   charge*, not RSS.
+//! - **A smaller ceiling, if you want one.** [`configure_cache_budgets`],
+//!   once, before first use. Shrink-only.
+//! - **Observation.** [`base_cache_stats`] / [`generated_cache_stats`].
+//! - **Release.** [`trim_to`] (one tier, oldest first) and [`reset`] (all
+//!   tiers). Both act on process-global state, so **a library must not call
+//!   them** — exactly one component in a process owns that policy.
+//!
+//! ```
+//! use racah::cache::{base_cache_stats, BASE_CACHE_MAX_BYTES};
+//!
+//! let _ = racah::wigner_6j(2, 2, 2, 2, 2, 2);
+//! let stats = base_cache_stats();
+//! assert!(stats.total().bytes <= BASE_CACHE_MAX_BYTES);
+//! ```
+//!
+//! The task-oriented version is in the [User Guide].
+//!
+//! [User Guide]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/user-guide/resources.md
+//!
+//! # Why a cache at all
 //!
 //! In the tensor-network consumption pattern the same small labels recur many
 //! thousands of times, so a warm hit should cost a hash lookup rather than a
@@ -302,6 +334,38 @@ fn effective_budgets_in(cell: &OnceLock<CoefficientCacheBudgets>) -> &Coefficien
 }
 
 /// Configure one shrink-only coefficient-cache policy for this process.
+///
+/// Call this **once, before any coefficient call or policy observation**. The
+/// compiled defaults are also the maximum accepted caps, so a policy can only
+/// shrink retention, never grow it. A zero cap evaluates normally but retains
+/// nothing; [`CoefficientCacheBudgets::disabled`] zeroes every compiled tier.
+/// [`reset`] clears entries and counters without changing this policy. There
+/// are no presets, environment variables, or runtime reconfiguration.
+///
+/// # Errors
+///
+/// - [`CacheBudgetError::AlreadyInitialized`] if the policy was already fixed —
+///   by an earlier call, or by first use of any cache, which installs the
+///   defaults.
+/// - [`CacheBudgetError::ExceedsMaximum`] if any requested cap exceeds the
+///   compiled maximum for that tier.
+/// - [`CacheBudgetError::AggregateOverflow`] if the requested caps do not sum
+///   within `usize`.
+///
+/// ```
+/// use racah::cache::{
+///     cache_budgets, configure_cache_budgets, CoefficientCacheBudgets,
+///     CoefficientCacheTier,
+/// };
+///
+/// let budgets = CoefficientCacheBudgets::default()
+///     .with_limit(CoefficientCacheTier::SixJ, 1 << 20); // 1 MiB of 6j
+/// configure_cache_budgets(budgets).unwrap();
+/// assert_eq!(cache_budgets().limit(CoefficientCacheTier::SixJ), 1 << 20);
+///
+/// // One-shot: a second call is rejected.
+/// assert!(configure_cache_budgets(budgets).is_err());
+/// ```
 pub fn configure_cache_budgets(budgets: CoefficientCacheBudgets) -> Result<(), CacheBudgetError> {
     validate_budgets(budgets)?;
     configure_budgets_in(&CACHE_BUDGETS, budgets)

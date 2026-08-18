@@ -221,6 +221,35 @@ fn require_catalog_family(cat: &CanonicalCatalog, labels: &[&Irrep]) -> Result<(
 /// derived-f64 B/C/D F tier
 /// (the derived-f64 B/C/D F cache (`cache::cache_bcd_f`)) on the plain six-label key.
 ///
+/// # Returns
+///
+/// An [`FBlock`]: a dense rank-4 `f64` array, **row-major** over
+/// `[μ, ν, κ, λ]`, with axis lengths `[N^e_ab, N^d_ec, N^f_bc, N^d_af]` — one
+/// axis per vertex, in the order listed above. Read [`FBlock::dims`] for those
+/// lengths, [`FBlock::at`]`(mu, nu, kappa, lambda)` for one element,
+/// [`FBlock::data`] for the flat buffer. The axis order matches the
+/// TensorKitSectors `GenericFusion` convention, so no permutation is needed to
+/// hand a block to a consumer expecting that layout. In a multiplicity-free
+/// situation all four lengths are 1 and the block holds a single scalar at
+/// `at(0, 0, 0, 0)`.
+///
+/// All six labels must belong to `cat`'s `(series, rank)`. Layout is identical
+/// to the SU(N) surface, [`crate::sun::f_symbol`].
+///
+/// ```
+/// use racah::bcd::{f_symbol, CanonicalCatalog, Irrep, Series};
+///
+/// let mut cat = CanonicalCatalog::new(Series::C, 2).unwrap(); // Sp(4) = C_2
+/// let triv = Irrep::trivial(Series::C, 2).unwrap();
+/// let five = Irrep::from_dynkin(Series::C, &[0, 1]).unwrap(); // the 5
+/// let ten = Irrep::from_dynkin(Series::C, &[2, 0]).unwrap();  // the adjoint 10
+///
+/// // With `a` trivial the F-move is the identity.
+/// let block = f_symbol(&mut cat, &triv, &five, &five, &ten, &five, &ten).unwrap();
+/// assert_eq!(block.dims(), [1, 1, 1, 1]);
+/// assert!((block.at(0, 0, 0, 0) - 1.0).abs() < 1e-9);
+/// ```
+///
 /// # Errors
 ///
 /// - [`FrError::Catalog`] wrapping [`CatalogError::WrongGroup`] if any label is
@@ -279,6 +308,12 @@ pub fn f_symbol(
 // ---------------------------------------------------------------------------
 
 /// The B/C/D R-symbol $R^{ab}_c$ as a dense $N^c_{ab} \times N^c_{ba}$ matrix.
+///
+/// # Returns
+///
+/// An [`RBlock`], row-major, `N^c_ab × N^c_ba`: [`RBlock::dim`] is `N^c_ab`,
+/// [`RBlock::at`]`(mu, nu)` reads one element. Same layout as
+/// [`crate::sun::r_symbol`]. Uncached — a single sparse join of two CGC.
 ///
 /// # Errors
 ///

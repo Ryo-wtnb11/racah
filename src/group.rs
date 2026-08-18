@@ -407,6 +407,19 @@ impl GroupId {
     ///
     /// Admissibility is closed under fusion and duality, so this only needs
     /// calling at construction.
+    ///
+    /// ```
+    /// use racah::group::GroupId;
+    ///
+    /// let psu3 = GroupId::psu(3).unwrap();     // SU(3)/Z_3
+    /// assert!(psu3.admits(&[1, 1]));           // the adjoint 8: triality 0
+    /// assert!(!psu3.admits(&[1, 0]));          // the fundamental 3: triality 1
+    ///
+    /// let spin5 = GroupId::spin(5).unwrap();
+    /// let so5 = GroupId::so(5).unwrap();
+    /// assert!(spin5.admits(&[0, 1]));          // the Dirac spinor
+    /// assert!(!so5.admits(&[0, 1]));           // SO(5) has no spinor irreps
+    /// ```
     pub fn admits(&self, dynkin: &[i64]) -> bool {
         let r = self.root_system.rank();
         if dynkin.len() != r || dynkin.iter().any(|&a| a < 0) {

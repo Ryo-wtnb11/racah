@@ -9,6 +9,21 @@ value/gauge rule noted below.
 
 ### Added
 
+- **Documentation reorganized into five layers** with a top-level index
+  ([`docs/README.md`](docs/README.md)). New task-oriented **User Guide**
+  (`docs/user-guide/`): getting started, representations, choosing a group,
+  fusion, Clebsch–Gordan, recoupling (F/R), and numerical behaviour/resources.
+  New `docs/developer/` index; the coefficient-cache audit and trade-off
+  documents and their raw JSONL moved there, marked non-user-facing. The README
+  is roughly 60% shorter: the provider contract, cache contract, layering
+  diagram, kernel routing and verification-strategy prose moved to the User
+  Guide, the crate rustdoc and the developer docs rather than being duplicated.
+  Rustdoc gained per-item examples and explicit **Returns** sections stating
+  array shapes, axis order and multiplicity-index meaning for the CGC / F / R
+  surfaces; `tests/doc_examples.rs` compiles and runs every code block in the
+  README and the guide. Documentation only — no API, convention, gauge or
+  coefficient value changes.
+
 - **`sun::Irrep::from_dynkin_in(&GroupId, &[i64])`** — the `A`-series
   form-aware constructor, matching `bcd::Irrep::from_dynkin_in`
   ([#87](https://github.com/Ryo-wtnb11/racah/issues/87)). `SU(N)/Z_k` (`k | N`)

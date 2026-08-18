@@ -5,6 +5,12 @@
 > It may contain errors — check it against the code and tests rather than
 > trusting it blindly.
 
+**Role in the documentation set.** Provenance, not usage: the map from a
+`racah` symbol to the reference implementation it was ported from, plus the
+bibliography. For learning the library see the
+[User Guide](user-guide/README.md); documentation map:
+[`docs/README.md`](README.md).
+
 `racah` is a faithful port: nearly every coefficient it computes traces to a
 named production implementation or a standard result. This page collects that
 provenance in one place — what was taken, from which reference at which version,

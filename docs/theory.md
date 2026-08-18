@@ -7,6 +7,10 @@
 > [`docs/gauge_soN.md`](gauge_soN.md) remain the frozen authority for every
 > basis, phase, ordering and normalization convention.
 
+**Role in the documentation set.** Mathematics, not usage. For learning the
+library see the [User Guide](user-guide/README.md); documentation map:
+[`docs/README.md`](README.md).
+
 The theory material is a self-contained mathematical note covering the objects
 `racah` computes — compact groups and highest weights, Gelfand–Tsetlin bases and
 the B/C/D generator bootstrap, Clebsch–Gordan coefficients with their

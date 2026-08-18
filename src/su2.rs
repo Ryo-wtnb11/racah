@@ -1,11 +1,44 @@
-//! Exact SU(2) recoupling coefficients: Wigner 3j, 6j, Clebsch-Gordan, and the
-//! canonical Regge key for 6j symbols.
+//! Exact SU(2) recoupling coefficients: Wigner 3j, 6j, Clebsch-Gordan, F, R,
+//! the Frobenius-Schur indicator, and the canonical Regge key for 6j symbols.
 //!
 //! All spins are in the doubled ("twice") convention: `dj = 2j` as `u32`,
-//! `dm = 2m` as `i32`. Non-admissible label combinations return the exact zero
-//! value (never an error and never a panic), matching the reference-crate
-//! semantics. Values are computed as big-rational Racah sums and carried as
-//! [`SignedSqrtRational`] until a single final rounding to `f64`.
+//! `dm = 2m` as `i32`. So `2` is spin 1 and `1` is spin 1/2; every label stays
+//! an exact integer and every admissibility rule is integer arithmetic.
+//!
+//! ```
+//! use racah::su2::{clebsch_gordan, wigner_6j, Su2Irrep};
+//!
+//! // <1/2 +1/2, 1/2 -1/2 | 0 0> = 1/sqrt(2), in doubled labels.
+//! let cg = clebsch_gordan(1, 1, 1, -1, 0, 0);
+//! assert!((cg.to_f64() - 0.5f64.sqrt()).abs() < 1e-15);
+//!
+//! // {1 1 1; 1 1 1} = 1/6.
+//! assert!((wigner_6j(2, 2, 2, 2, 2, 2).to_f64() - 1.0 / 6.0).abs() < 1e-14);
+//!
+//! // 1/2 (x) 1/2 = 0 (+) 1.
+//! let half = Su2Irrep::new(1);
+//! let channels: Vec<u32> = half.fusion(half).unwrap().map(|s| s.dj()).collect();
+//! assert_eq!(channels, vec![0, 2]);
+//! ```
+//!
+//! # Two surfaces: infallible and checked
+//!
+//! The infallible functions ([`wigner_3j`], [`wigner_6j`], [`clebsch_gordan`],
+//! [`su2_f_symbol`], [`su2_r_symbol`]) return the exact zero value for a
+//! non-admissible label combination — never an error, never a panic — matching
+//! the reference-crate semantics. Values are computed as big-rational Racah
+//! sums and carried as [`SignedSqrtRational`] until a single final rounding to
+//! `f64`.
+//!
+//! The `*_checked` twins ([`wigner_3j_checked`] &c.) instead return
+//! `Err(`[`Su2Error::NotAdmissible`]`)` for a forbidden label set, so an
+//! *accidental* zero of an admissible coupling (`Ok(0)`) is finally
+//! distinguishable from a forbidden one. Both paths share one admissibility
+//! predicate and can never disagree.
+//!
+//! See the [User Guide] for the task-oriented version of all of this.
+//!
+//! [User Guide]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/user-guide/README.md
 
 use num_rational::Ratio;
 
@@ -84,6 +117,16 @@ fn check_6j_admissible(
 /// so no compensation is needed). A label too large to key ([`ReggeError::
 /// Overflow`]) or non-admissible falls through to the uncached engine, which is
 /// the single source of truth for the value.
+///
+/// ```
+/// use racah::wigner_6j;
+///
+/// // All spins 1 (dj = 2): {1 1 1; 1 1 1} = 1/6.
+/// assert!((wigner_6j(2, 2, 2, 2, 2, 2).to_f64() - 1.0 / 6.0).abs() < 1e-14);
+///
+/// // A violated triangle is exact zero, not an error.
+/// assert_eq!(wigner_6j(2, 2, 20, 2, 2, 2).to_f64(), 0.0);
+/// ```
 pub fn wigner_6j(dj1: u32, dj2: u32, dj3: u32, dj4: u32, dj5: u32, dj6: u32) -> SignedSqrtRational {
     match canonical_regge_6j(dj1, dj2, dj3, dj4, dj5, dj6) {
         Ok(key) => {
@@ -284,6 +327,19 @@ fn wigner_3j_uncached(
 /// Composed exactly from [`wigner_3j`] via the standard relation
 /// $CG = (-1)^{-j_1+j_2-m_3}\, \sqrt{2 j_3 + 1}\; (j_1\, j_2\, j_3;\, m_1\, m_2\, -m_3)$
 /// (multiply the radicand by `dj3+1`, adjust the sign) — no recomputation.
+///
+/// Argument order interleaves each factor with its projection:
+/// `(dj1, dm1, dj2, dm2, dj3, dm3)`, all doubled. Returns exact zero for a
+/// non-admissible coupling; see [`clebsch_gordan_checked`] to distinguish that
+/// from an accidental zero.
+///
+/// ```
+/// use racah::clebsch_gordan;
+///
+/// // <1/2 +1/2, 1/2 -1/2 | 0 0> = 1/sqrt(2).
+/// let cg = clebsch_gordan(1, 1, 1, -1, 0, 0);
+/// assert!((cg.to_f64() - 0.5f64.sqrt()).abs() < 1e-15);
+/// ```
 pub fn clebsch_gordan(
     dj1: u32,
     dm1: i32,
@@ -315,6 +371,14 @@ pub fn clebsch_gordan(
 ///
 /// (TensorKitSectors tugbK `src/irreps/su2irrep.jl:Rsymbol`: `Nsymbol(...) ||
 /// return 0; iseven(sa.j+sb.j-sc.j) ? 1 : -1`.)
+///
+/// ```
+/// use racah::su2_r_symbol;
+///
+/// assert_eq!(su2_r_symbol(1, 1, 0), -1.0); // 1/2 (x) 1/2 -> 0
+/// assert_eq!(su2_r_symbol(1, 1, 2), 1.0);  // 1/2 (x) 1/2 -> 1
+/// assert_eq!(su2_r_symbol(1, 1, 4), 0.0);  // forbidden triangle
+/// ```
 pub fn su2_r_symbol(dj1: u32, dj2: u32, dj3: u32) -> f64 {
     if !triangle_ok(dj1, dj2, dj3) {
         return 0.0;
@@ -333,6 +397,13 @@ pub fn su2_r_symbol(dj1: u32, dj2: u32, dj3: u32) -> f64 {
 /// (half-integer `j`, `-1`) self-duality. In doubled units `2j = dj`, so the
 /// phase is simply the parity of `dj`. (TensorKitSectors self-dual convention;
 /// see the generic `frobeniusschur` and `SU2Irrep` `dual(s) = s`.)
+///
+/// ```
+/// use racah::su2_frobenius_schur;
+///
+/// assert_eq!(su2_frobenius_schur(2), 1.0);  // spin 1: real/orthogonal
+/// assert_eq!(su2_frobenius_schur(1), -1.0); // spin 1/2: pseudo-real/symplectic
+/// ```
 pub fn su2_frobenius_schur(dj: u32) -> f64 {
     if dj.is_multiple_of(2) {
         1.0
@@ -394,6 +465,18 @@ fn f_symbol_exact(
 /// caches for the same reason): the exact 6j tier (#5) owns the *value*; this
 /// tier owns the *presentation*. The two never disagree because the f64 here is
 /// derived from that same exact value, never independently.
+///
+/// Multiplicity-free: SU(2) has `N^c_ab <= 1`, so the F-symbol is a scalar
+/// rather than the rank-4 block the generated families return. Non-admissible
+/// labels give exact `0.0`; see [`su2_f_symbol_checked`].
+///
+/// ```
+/// use racah::su2_f_symbol;
+///
+/// // F^{1/2 1/2 1/2}_{1/2}[0, 0] — all labels doubled.
+/// let f = su2_f_symbol(1, 1, 1, 1, 0, 0);
+/// assert!((f + 0.5).abs() < 1e-14);
+/// ```
 pub fn su2_f_symbol(dj1: u32, dj2: u32, dj3: u32, dj4: u32, dj5: u32, dj6: u32) -> f64 {
     // Key on the 6j class actually evaluated, {dj1 dj2 dj5 / dj3 dj4 dj6}, plus
     // the two determinants that class does NOT carry (dimension factor, phase).
@@ -1013,6 +1096,16 @@ impl std::error::Error for Su2Error {}
 /// Checked [`wigner_6j`]: `Ok(value)` for an admissible label set (the value may
 /// be an accidental zero), else [`Su2Error::NotAdmissible`].
 ///
+/// ```
+/// use racah::su2::{wigner_6j_checked, Su2Error};
+///
+/// assert!(wigner_6j_checked(2, 2, 2, 2, 2, 2).is_ok());
+/// assert!(matches!(
+///     wigner_6j_checked(2, 2, 20, 2, 2, 2),
+///     Err(Su2Error::NotAdmissible(_))
+/// ));
+/// ```
+///
 /// Admissibility is the same four-triangle predicate the infallible engine
 /// gates on (`check_6j_admissible`); on success the value is delegated to
 /// [`wigner_6j`] unchanged.
@@ -1123,7 +1216,7 @@ pub fn su2_r_symbol_checked(dj1: u32, dj2: u32, dj3: u32) -> Result<f64, Su2Erro
 ///   bumped by hand — and only — when `docs/gauge.md` §12 is corrected in a way
 ///   that alters a returned coefficient value, its normalization, or the
 ///   canonical convention it is expressed in. That is the event class the
-///   crate's contract declares breaking (README, "Exactness contract", point 4
+///   crate's contract declares breaking (crate docs, "Exactness contract"
 ///   "Specified values"; the rules themselves are `docs/gauge.md` §12), so
 ///   "fingerprint changed ⇔ specification correction" is one reviewable
 ///   invariant. Adding the `cg` and `fs` tags keeps `epoch=1`: the fingerprint
@@ -1154,7 +1247,7 @@ pub fn su2_r_symbol_checked(dj1: u32, dj2: u32, dj3: u32) -> Result<f64, Su2Erro
 ///
 /// - `model=bigrational-round-once` — the exact evaluation model: values are
 ///   big-rational sums carried as [`SignedSqrtRational`] with a single final
-///   rounding to `f64` (module docs above; README "Exactness contract",
+///   rounding to `f64` (module docs above; crate docs "Exactness contract",
 ///   "compute in rationals, round once").
 /// - `3j=condon-shortley` — the 3j sign convention ([`wigner_3j`] docs,
 ///   "Condon-Shortley phase").
