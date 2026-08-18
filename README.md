@@ -144,7 +144,7 @@ These are complementary, not competing: the Gelfand–Tsetlin construction is
 fundamentally SU(N)-specific, while QSpace's generator-based decomposition is
 the only production reference that generates SO(N) and Sp(2N). For the
 representation-theory background behind these objects, see
-[`docs/theory.md`](docs/theory.md).
+[`docs/theory.tex`](docs/theory.tex) (built: [`docs/theory.pdf`](docs/theory.pdf)).
 
 ## What it computes
 
@@ -214,7 +214,7 @@ a linear-algebra stack.
 
 The construction per family is forced by the group's branching structure, not
 chosen for convenience (the full argument is in
-[`docs/theory.md`](docs/theory.md) §5):
+[`docs/theory.tex`](docs/theory.tex) §5):
 
 - **SU(2)** — closed forms exist (Racah), so the 3j/6j/CGC/F/R are evaluated
   directly in exact big-rational arithmetic with a single final rounding; there
@@ -552,7 +552,9 @@ checked representation layer, and cache resource contract — is described under
 
 - Python bindings (PyO3 + maturin, `cgc-gen` always on, import name `racah`):
   [`racah-py/README.md`](racah-py/README.md).
-- Theory primer (the objects the API computes): [`docs/theory.md`](docs/theory.md).
+- Theory note (the objects the API computes, with the prior literature cited):
+  [`docs/theory.tex`](docs/theory.tex) — built to [`docs/theory.pdf`](docs/theory.pdf),
+  which GitHub renders in blob view. [`docs/theory.md`](docs/theory.md) is a pointer.
 - Porting provenance and bibliography: [`docs/references.md`](docs/references.md).
 - Gauge specification (frozen, normative — see [Gauge](#gauge)):
   [`docs/gauge.md`](docs/gauge.md) (base SU(2) and SU(N)),

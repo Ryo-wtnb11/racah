@@ -48,14 +48,14 @@
 //!
 //! # Further reading
 //!
-//! - [`docs/theory.md`] — a light primer on the objects this API computes
+//! - [`docs/theory.pdf`] — a self-contained note on the objects this API computes
 //!   (irreps, fusion multiplicities, CGC and gauge, recoupling, the two
 //!   constructions, the exactness contract).
 //! - [`docs/references.md`] — porting provenance (`file:symbol`-level) and the
 //!   verified bibliography.
 //! - [`docs/gauge.md`] / [`docs/gauge_soN.md`] — the gauge specifications.
 //!
-//! [`docs/theory.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/theory.md
+//! [`docs/theory.pdf`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/theory.pdf
 //! [`docs/references.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/references.md
 //! [`docs/gauge.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/gauge.md
 //! [`docs/gauge_soN.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/gauge_soN.md

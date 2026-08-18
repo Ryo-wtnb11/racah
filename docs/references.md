@@ -42,7 +42,7 @@ intermediate $U(1)$ charge at each step separates copies the $SU$ chain alone
 would repeat), so states of an $SU(N)$ irrep are labelled uniquely by
 Gelfand–Tsetlin patterns and the ladder operators have exact closed-form matrix
 elements $[1]$. That closed form is what makes a direct, exact CGC construction
-possible, and it is $SU(N)$-specific (see [`docs/theory.md`](theory.md) §5).
+possible, and it is $SU(N)$-specific (see [`docs/theory.tex`](theory.tex) §5).
 
 | Implementation area (`file::symbol`) | Reference (project, version, `file:symbol`) | What was taken | Why this reference / algorithm | Deviations |
 |---|---|---|---|---|
@@ -63,7 +63,7 @@ implementation exists. So the
 whole $B/C/D$ set is built by a generator bootstrap — defining-rep seeds, tensor
 products, numeric highest-weight decomposition, harvest, recurse — which needs
 almost no family-specific structure. Its price, a procedurally-defined gauge, is
-pinned by [`docs/gauge_soN.md`](gauge_soN.md). See [`docs/theory.md`](theory.md) §5.
+pinned by [`docs/gauge_soN.md`](gauge_soN.md). See [`docs/theory.tex`](theory.tex) §5.
 
 | Implementation area (`file::symbol`) | Reference (project, version, `file:symbol`) | What was taken | Why this reference / algorithm | Deviations |
 |---|---|---|---|---|
@@ -161,7 +161,45 @@ Every identifier below was verified against the publisher/preprint record.
     DOI: [10.1016/0370-1573(81)90092-2](https://doi.org/10.1016/0370-1573(81)90092-2).
     Congruency classes: §5, p. 37; table notes for Table 36 (SO(8)) and
     Table 41 (SO(10)).
+14. T. Bröcker, T. tom Dieck, *Representations of Compact Lie Groups*, Graduate
+    Texts in Mathematics **98**, Springer (1985). ISBN 978-3-540-13678-1.
+    DOI: [10.1007/978-3-662-12918-0](https://doi.org/10.1007/978-3-662-12918-0).
+    Haar averaging and complete reducibility (§II.1–II.4), Peter–Weyl and Schur
+    orthogonality (§III.3), the Frobenius–Schur indicator (§II.6).
+15. G. E. Baird, L. C. Biedenharn, "On the Representations of the Semisimple Lie
+    Groups. II," *J. Math. Phys.* **4**, 1449–1466 (1963).
+    DOI: [10.1063/1.1703926](https://doi.org/10.1063/1.1703926).
+    The explicit closed-form matrix elements of the $\mathfrak{gl}_N$ generators
+    in the Gelfand–Tsetlin basis, which the SU(N) construction consumes.
+16. E. P. Wigner, *Group Theory and its Application to the Quantum Mechanics of
+    Atomic Spectra*, Academic Press (1959). The Wigner–Eckart framework and the
+    3j symmetry structure underlying the SU(2) closed forms.
+17. P. Etingof, S. Gelaki, D. Nikshych, V. Ostrik, *Tensor Categories*,
+    Mathematical Surveys and Monographs **205**, AMS (2015).
+    ISBN 978-1-4704-2024-6.
+    DOI: [10.1090/surv/205](https://doi.org/10.1090/surv/205).
+    The fusion-category axioms: pentagon (§2.1), hexagon (§8.1).
+18. A. Kitaev, "Anyons in an exactly solved model and beyond," *Ann. Phys.*
+    **321**, 2–111 (2006).
+    DOI: [10.1016/j.aop.2005.10.005](https://doi.org/10.1016/j.aop.2005.10.005);
+    arXiv: [cond-mat/0506438](https://arxiv.org/abs/cond-mat/0506438).
+    Appendix E: the index-carrying F / R / Frobenius–Schur conventions in the
+    form this crate's conventions follow.
+19. TensorKitSectors.jl, the categorical-symmetry layer of TensorKit.
+    <https://github.com/QuantumKitHub/TensorKitSectors.jl>. The pinned
+    convention oracle for the F/R contraction wiring and axis order
+    (`sectors.jl:Fsymbol_from_fusiontensor`), the pentagon/hexagon index
+    conventions (`sectors.jl:pentagon_equation`, `hexagon_equation`), and the
+    SU(2) F/R/Frobenius–Schur conventions (`irreps/su2irrep.jl`) — cited at
+    `file:symbol` level in the tables above.
+20. N. Bourbaki, *Lie Groups and Lie Algebras, Chapters 4–6*, Elements of
+    Mathematics, Springer (2002). ISBN 978-3-540-42650-9.
+    DOI: [10.1007/978-3-540-89394-3](https://doi.org/10.1007/978-3-540-89394-3).
+    Simple-root numbering (Plates I–IX), which fixes the order of the Dynkin
+    label tuple in the API; Ch. VIII §7 for the Frobenius–Schur indicator
+    $(-1)^{\langle\lambda,\,2\rho^\vee\rangle}$ of a self-dual highest weight.
 
-The port also follows the public conventions and F/R contraction wiring of
-TensorKitSectors (the categorical-symmetry layer of TensorKit), cited inline
-above as `sectors.jl:symbol`.
+Entries 14–20 are cited by the theory note ([`docs/theory.tex`](theory.tex)),
+whose bibliography uses this numbering; entries 1–13 are cited by both. The
+port also follows the public conventions and F/R contraction wiring of
+TensorKitSectors ($[19]$), cited inline above as `sectors.jl:symbol`.
