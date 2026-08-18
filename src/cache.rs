@@ -950,6 +950,18 @@ mod cgc_cache {
     use std::sync::{Arc, LazyLock};
 
     /// Canonical cache key: the three irrep labels.
+    ///
+    /// **No [`GroupId`](crate::group::GroupId), deliberately** (issue #87 §8).
+    /// A global form gates *which* highest weights may be requested; it never
+    /// changes a coefficient of a weight that survives. Admissibility is
+    /// enforced once, at construction, by
+    /// [`GroupId::admits`](crate::group::GroupId::admits), so every `Irrep` that
+    /// reaches this tier is already a genuine representation of whichever form
+    /// asked for it — and two forms sharing a weight *must* share the entry,
+    /// since they share the basis, ordering, phase and gauge authority. Adding
+    /// the form to the key would only duplicate identical tensors. An
+    /// inadmissible weight cannot reach the cache at all: no `Irrep` for it is
+    /// ever constructed.
     pub(crate) type CgcKey = (Irrep, Irrep, Irrep);
 
     impl CacheCharge for Arc<Cgc> {
@@ -1144,6 +1156,18 @@ mod bcd_cgc_cache {
     use std::sync::{Arc, LazyLock};
 
     /// Canonical cache key: the three B/C/D irrep labels.
+    ///
+    /// **No [`GroupId`](crate::group::GroupId), deliberately** (issue #87 §8).
+    /// A global form gates *which* highest weights may be requested; it never
+    /// changes a coefficient of a weight that survives. Admissibility is
+    /// enforced once, at construction, by
+    /// [`GroupId::admits`](crate::group::GroupId::admits), so every `Irrep` that
+    /// reaches this tier is already a genuine representation of whichever form
+    /// asked for it — and two forms sharing a weight *must* share the entry,
+    /// since they share the basis, ordering, phase and gauge authority. Adding
+    /// the form to the key would only duplicate identical tensors. An
+    /// inadmissible weight cannot reach the cache at all: no `Irrep` for it is
+    /// ever constructed.
     pub(crate) type BcdCgcKey = (Irrep, Irrep, Irrep);
 
     impl CacheCharge for Arc<CatalogCgc> {

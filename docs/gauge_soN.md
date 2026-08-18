@@ -1,5 +1,12 @@
 # SO(N)/Sp(2N) decomposition-sweep gauge specification
 
+> **AI-generated, for agentic coding.** This document was written by an AI agent
+> as reference material for AI agents (and humans) working on this repository,
+> and its prose may contain errors. Its **gauge values are not commentary**:
+> they are the frozen normative specification of racah's conventions, verified
+> by the golden tests. Code follows this document — where the two disagree, the
+> code is the bug.
+
 This document specifies the **gauge** of the SO(N)/Sp(2N) Clebsch–Gordan
 isometries and projected generators produced by `racah::bcd`'s decomposition
 sweep (`src/bcd/sweep.rs`, Layer S3.2) — the deterministic rules that fix the

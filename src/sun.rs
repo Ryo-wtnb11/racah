@@ -34,6 +34,28 @@
 //! subtracting `λ_N`. The Dynkin labels `aᵢ = λᵢ − λᵢ₊₁` (all `≥ 0`) are
 //! derivable via [`Irrep::dynkin`](crate::sun::Irrep::dynkin).
 //!
+//! # Published object and global form (issues #87, #54)
+//!
+//! The object is the set of finite-dimensional linear representations of a
+//! **connected compact group** with root system `A_{N-1}`. Which group is named
+//! by a [`GroupId`](crate::group::GroupId), and the only thing the choice
+//! changes is *which highest weights are admissible* — never a coefficient
+//! value.
+//!
+//! - [`Irrep::from_dynkin`](crate::sun::Irrep::from_dynkin) is the simply
+//!   connected form `SU(N)`: every dominant integral weight. Unchanged.
+//! - [`Irrep::from_dynkin_in`](crate::sun::Irrep::from_dynkin_in) takes the
+//!   group explicitly, so the central quotients `SU(N)/Z_k` (`k | N`) and
+//!   `PSU(N) = SU(N)/Z_N` are available: a weight is admitted iff its
+//!   `N`-ality `Σ i·aᵢ ≡ 0 (mod k)`. `PSU(3)` admits the adjoint `[1,1]` and
+//!   rejects the fundamental `[1,0]`.
+//!
+//! The `N`-ality rule lives once, in
+//! [`GroupId::admits`](crate::group::GroupId::admits); this module only calls
+//! it. There is exactly one GT/CGC/F/R engine, and an [`Irrep`](crate::sun::Irrep)
+//! stores no global form: two forms that share a weight share its basis
+//! ordering, phases, normalization, gauge and cache entries.
+//!
 //! # Example
 //!
 //! Irreps are built from Dynkin labels (length `N-1`). This computes an
@@ -89,6 +111,37 @@ pub enum SunError {
     },
     /// A Dynkin label with a negative component.
     NegativeDynkin {
+        /// The offending Dynkin label.
+        dynkin: Vec<i64>,
+    },
+    /// A [`GroupId`](crate::group::GroupId) whose root system is not an `A_r`,
+    /// passed to [`Irrep::from_dynkin_in`].
+    UnsupportedRootSystem {
+        /// The offending root system.
+        root_system: crate::group::RootSystem,
+    },
+    /// The Dynkin label passed to [`Irrep::from_dynkin_in`] has a different
+    /// length than the rank of the group's root system.
+    LabelRankMismatch {
+        /// The group's rank `N-1`.
+        expected: usize,
+        /// The label length.
+        got: usize,
+    },
+    /// A valid dominant integral highest weight of `SU(N)` that the requested
+    /// global form does not admit: its central character is non-trivial on the
+    /// quotiented-out subgroup `Γ ⊆ Z_N`. For `SU(N)/Z_k` this is exactly
+    /// `N`-ality `Σ i·aᵢ ≢ 0 (mod k)`; for `PSU(N)` (`k = N`) it is non-zero
+    /// `N`-ality.
+    ///
+    /// A global-form violation, kept distinct from
+    /// [`SunError::NegativeDynkin`] / [`SunError::LabelRankMismatch`] (invalid
+    /// labels) and from the generation/verification gates. The rule itself
+    /// lives once, in [`GroupId::admits`](crate::group::GroupId::admits) —
+    /// `sun` does not reimplement it.
+    NotAdmissible {
+        /// The group whose global form rejected the weight.
+        group: crate::group::GroupId,
         /// The offending Dynkin label.
         dynkin: Vec<i64>,
     },
@@ -172,6 +225,21 @@ impl fmt::Display for SunError {
             SunError::NotNonincreasing { weight } => {
                 write!(f, "SU(N) weight is not nonincreasing: {weight:?}")
             }
+            SunError::UnsupportedRootSystem { root_system } => write!(
+                f,
+                "root system {root_system} is not an A_r: SU(N) labels need A(N-1)"
+            ),
+            SunError::LabelRankMismatch { expected, got } => write!(
+                f,
+                "Dynkin label of length {got} for a rank-{expected} group"
+            ),
+            SunError::NotAdmissible { group, dynkin } => write!(
+                f,
+                "Dynkin label {dynkin:?} is a dominant integral weight of SU(N) but not a \
+                 representation of {group:?}: its N-ality is non-trivial on the \
+                 quotiented-out subgroup of the center — construct it through \
+                 Irrep::from_dynkin (the simply connected form)"
+            ),
             SunError::NegativeDynkin { dynkin } => {
                 write!(f, "SU(N) Dynkin label has a negative component: {dynkin:?}")
             }
@@ -356,6 +424,63 @@ impl Irrep {
         Ok(Irrep {
             weight: w.into_boxed_slice(),
         })
+    }
+
+    /// Construct from the `N-1` Dynkin labels of `group` — the form-aware
+    /// constructor (issue #87 §6), the `A`-series analogue of
+    /// [`bcd::Irrep::from_dynkin_in`](crate::bcd::Irrep::from_dynkin_in).
+    ///
+    /// `group.root_system` must be `A(N-1)` and `dynkin.len()` must equal its
+    /// rank. A weight the global form does not admit — i.e. one whose central
+    /// character is non-trivial on the quotiented-out `Γ ⊆ Z_N` — is
+    /// [`SunError::NotAdmissible`].
+    ///
+    /// The returned [`Irrep`] carries **no** record of the global form: it is
+    /// representation data, and every coefficient of an admissible weight comes
+    /// from the one SU(N) Gelfand–Tsetlin engine. `SU(N)`, `SU(N)/Z_k` and
+    /// `PSU(N)` share basis, ordering, phases, normalization, gauge and cache
+    /// entries; the form only gates *which* weights may be asked for.
+    /// [`Irrep::from_dynkin`] is exactly this constructor at
+    /// `GroupId::su(dynkin.len() + 1)`.
+    ///
+    /// ```
+    /// use racah::sun::Irrep;
+    /// use racah::group::GroupId;
+    ///
+    /// let psu3 = GroupId::psu(3).unwrap();
+    /// // The adjoint (8) has zero 3-ality and is a genuine PSU(3) rep.
+    /// let adjoint = Irrep::from_dynkin_in(&psu3, &[1, 1]).unwrap();
+    /// assert_eq!(adjoint, Irrep::from_dynkin(&[1, 1]).unwrap());
+    ///
+    /// // The fundamental (3) is not: PSU(3) has no triality-1 representation.
+    /// assert!(Irrep::from_dynkin_in(&psu3, &[1, 0]).is_err());
+    /// ```
+    pub fn from_dynkin_in(group: &crate::group::GroupId, dynkin: &[i64]) -> Result<Self, SunError> {
+        let r = match group.root_system {
+            crate::group::RootSystem::A(r) => r,
+            other => return Err(SunError::UnsupportedRootSystem { root_system: other }),
+        };
+        if dynkin.len() != r {
+            return Err(SunError::LabelRankMismatch {
+                expected: r,
+                got: dynkin.len(),
+            });
+        }
+        if dynkin.iter().any(|&a| a < 0) {
+            return Err(SunError::NegativeDynkin {
+                dynkin: dynkin.to_vec(),
+            });
+        }
+        // The central-character condition, one implementation, in
+        // `crate::group` (issue #87 §2). `sun` must not restate the N-ality
+        // rule.
+        if !group.admits(dynkin) {
+            return Err(SunError::NotAdmissible {
+                group: *group,
+                dynkin: dynkin.to_vec(),
+            });
+        }
+        Self::from_dynkin(dynkin)
     }
 
     /// The trivial (vacuum) SU(N) irrep — the all-zero weight of length `N`.

@@ -1,5 +1,10 @@
 # Coefficient-cache audit
 
+> **AI-generated, for agentic coding.** This document was written by an AI agent
+> as reference material for AI agents (and humans) working on this repository.
+> It may contain errors — check it against the code and tests rather than
+> trusting it blindly.
+
 Revision `65f923657c28f0e6fbc91658313927520527f43b`; `cgc-gen`; crate-internal workload, so consumer revision is N/A. Measured with `rustc 1.96.0 (ac68faa2)`, macOS/aarch64, release test binary, and the test-only wrapper around `System`.
 
 Run:

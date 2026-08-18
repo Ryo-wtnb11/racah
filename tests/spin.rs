@@ -137,14 +137,14 @@ fn spinor_labels_are_admissible_only_in_the_cover() {
             assert!(
                 matches!(
                     Irrep::from_dynkin_in(&GroupId::so(n).unwrap(), &label),
-                    Err(BcdError::SpinorLabel { .. })
+                    Err(BcdError::NotAdmissible { .. })
                 ),
                 "SO({n}) must reject {label:?}"
             );
             assert!(
                 matches!(
                     Irrep::from_dynkin(series, &label),
-                    Err(BcdError::SpinorLabel { .. })
+                    Err(BcdError::NotAdmissible { .. })
                 ),
                 "the published constructor must still reject {label:?}"
             );

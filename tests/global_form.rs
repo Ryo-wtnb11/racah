@@ -307,7 +307,7 @@ mod against_bcd {
                     let admitted = group.admits(&label);
                     match (&built, admitted) {
                         (Ok(_), true) => {}
-                        (Err(BcdError::SpinorLabel { .. }), false) => {}
+                        (Err(BcdError::NotAdmissible { .. }), false) => {}
                         other => panic!(
                             "series {series:?} rank {r} label {label:?}: {other:?} \
                              disagrees with admits = {admitted}"
@@ -456,4 +456,487 @@ fn sweep(r: usize, cap: i64) -> Vec<Vec<i64>> {
             .collect();
     }
     out
+}
+
+// ---------------------------------------------------------------------------
+// `sun` in the global-form model (issue #87 §1)
+// ---------------------------------------------------------------------------
+
+/// The A-series form-aware constructor, mirroring `bcd::Irrep::from_dynkin_in`.
+#[cfg(feature = "cgc-gen")]
+mod sun_forms {
+    use super::*;
+    use racah::sun::{Irrep, SunError};
+
+    /// `N`-ality `Σ i·aᵢ`, computed here independently of the library so the
+    /// tests are not checking `group::admits` against itself.
+    fn nality(dynkin: &[i64]) -> i64 {
+        dynkin
+            .iter()
+            .enumerate()
+            .map(|(i, &a)| (i as i64 + 1) * a)
+            .sum()
+    }
+
+    /// (1) `SU(N)` is simply connected: every dominant integral weight is a
+    /// representation, through either constructor.
+    #[test]
+    fn su_n_accepts_every_dominant_integral_weight() {
+        for n in 2..=5usize {
+            let su = GroupId::su(n).unwrap();
+            for label in sweep(n - 1, 3) {
+                let via_form = Irrep::from_dynkin_in(&su, &label).expect("SU(N) admits everything");
+                assert_eq!(via_form, Irrep::from_dynkin(&label).unwrap());
+            }
+        }
+    }
+
+    /// (2) `PSU(N)` rejects every non-zero `N`-ality, and (3) accepts the
+    /// adjoint. The rejection is the global-form error, not a label error.
+    #[test]
+    fn psu_n_rejects_nonzero_nality_and_accepts_the_adjoint() {
+        for n in 2..=5usize {
+            let psu = GroupId::psu(n).unwrap();
+            for label in sweep(n - 1, 4) {
+                let built = Irrep::from_dynkin_in(&psu, &label);
+                let zero_nality = nality(&label).rem_euclid(n as i64) == 0;
+                match (&built, zero_nality) {
+                    (Ok(_), true) => {}
+                    (Err(SunError::NotAdmissible { group, dynkin }), false) => {
+                        assert_eq!(*group, psu);
+                        assert_eq!(dynkin, &label);
+                    }
+                    other => panic!("PSU({n}) on {label:?}: {other:?}"),
+                }
+            }
+            // The adjoint is (1,0,…,0,1) for N ≥ 3, (2) for N = 2 — always
+            // zero N-ality, and every group with this algebra has it.
+            let mut adjoint = vec![0i64; n - 1];
+            adjoint[0] += 1;
+            adjoint[n - 2] += 1;
+            assert_eq!(nality(&adjoint).rem_euclid(n as i64), 0);
+            assert!(Irrep::from_dynkin_in(&psu, &adjoint).is_ok());
+        }
+        // The stated example: PSU(3) takes the adjoint 8, not the fundamental 3.
+        let psu3 = GroupId::psu(3).unwrap();
+        assert!(Irrep::from_dynkin_in(&psu3, &[1, 1]).is_ok());
+        assert!(matches!(
+            Irrep::from_dynkin_in(&psu3, &[1, 0]),
+            Err(SunError::NotAdmissible { .. })
+        ));
+        assert!(matches!(
+            Irrep::from_dynkin_in(&psu3, &[0, 1]),
+            Err(SunError::NotAdmissible { .. })
+        ));
+    }
+
+    /// (4) `SU(N)/Z_k` needs `k | N`, and then admits exactly `N`-ality
+    /// `≡ 0 (mod k)`.
+    #[test]
+    fn su_quotient_divisibility_condition() {
+        assert!(matches!(
+            GroupId::su_quotient(6, 4),
+            Err(GroupError::NotACenterSubgroup { n: 6, k: 4 })
+        ));
+        for (n, k) in [(4usize, 2usize), (6, 2), (6, 3), (6, 6), (4, 1)] {
+            let g = GroupId::su_quotient(n, k).unwrap();
+            for label in sweep(n - 1, 3) {
+                let ok = nality(&label).rem_euclid(k as i64) == 0;
+                assert_eq!(
+                    Irrep::from_dynkin_in(&g, &label).is_ok(),
+                    ok,
+                    "SU({n})/Z{k} on {label:?}"
+                );
+            }
+        }
+    }
+
+    /// (5) `from_dynkin` is untouched: still SU(N), still the same object, and
+    /// still the same errors.
+    #[test]
+    fn from_dynkin_is_unchanged_and_equals_the_simply_connected_form() {
+        for n in 2..=5usize {
+            let su = GroupId::su(n).unwrap();
+            for label in sweep(n - 1, 3) {
+                let a = Irrep::from_dynkin(&label).unwrap();
+                let b = Irrep::from_dynkin_in(&su, &label).unwrap();
+                assert_eq!(a, b);
+                assert_eq!(a.weight(), b.weight());
+                assert_eq!(a.dynkin(), b.dynkin());
+                assert_eq!(a.rank(), n);
+            }
+        }
+        assert!(matches!(
+            Irrep::from_dynkin(&[-1, 0]),
+            Err(SunError::NegativeDynkin { .. })
+        ));
+        assert_eq!(Irrep::from_dynkin(&[]).unwrap(), Irrep::trivial(1).unwrap());
+    }
+
+    /// (6) Global-form validation is a gate, not a transform: the GT data of a
+    /// weight admissible in a quotient is bit-identical to the cover's.
+    #[test]
+    fn global_form_validation_does_not_alter_gt_data() {
+        let su3 = GroupId::su(3).unwrap();
+        let psu3 = GroupId::psu(3).unwrap();
+        for label in sweep(2, 4).into_iter().filter(|l| psu3.admits(l)) {
+            let cover = Irrep::from_dynkin_in(&su3, &label).unwrap();
+            let quotient = Irrep::from_dynkin_in(&psu3, &label).unwrap();
+            assert_eq!(cover, quotient);
+            assert_eq!(cover.dim(), quotient.dim());
+            assert_eq!(cover.dual(), quotient.dual());
+            assert_eq!(cover.patterns(), quotient.patterns());
+            assert_eq!(cover.creation(), quotient.creation());
+            assert_eq!(cover.annihilation(), quotient.annihilation());
+        }
+    }
+
+    /// The constructor's own guards, distinct from a form violation.
+    #[test]
+    fn from_dynkin_in_rejects_a_foreign_root_system_and_a_wrong_length_label() {
+        assert!(matches!(
+            Irrep::from_dynkin_in(&GroupId::so(7).unwrap(), &[1, 0, 0]),
+            Err(SunError::UnsupportedRootSystem {
+                root_system: RootSystem::B(3)
+            })
+        ));
+        assert!(matches!(
+            Irrep::from_dynkin_in(&GroupId::su(3).unwrap(), &[1, 0, 0]),
+            Err(SunError::LabelRankMismatch {
+                expected: 2,
+                got: 3
+            })
+        ));
+        assert!(matches!(
+            Irrep::from_dynkin_in(&GroupId::su(3).unwrap(), &[-1, 0]),
+            Err(SunError::NegativeDynkin { .. })
+        ));
+    }
+
+    /// A1 stays consistent: `SU(2)` is `A_1` simply connected, `PSU(2) = SO(3)`
+    /// is its even-Dynkin (integer-spin) sublattice — the same statement the
+    /// `B_1` low-rank redirect makes.
+    #[test]
+    fn a1_semantics_agree_with_the_su2_layer() {
+        let psu2 = GroupId::psu(2).unwrap();
+        for dj in 0..8i64 {
+            assert_eq!(
+                Irrep::from_dynkin_in(&psu2, &[dj]).is_ok(),
+                dj % 2 == 0,
+                "PSU(2) = SO(3) admits integer spin only: dj={dj}"
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The admissibility error is generic, not spinor-specific (issue #87 §2)
+// ---------------------------------------------------------------------------
+
+/// (9) `PSp(2N)` has no spinors at all — `C_r` is simply connected — yet it
+/// rejects weights. The error must be the generic global-form violation, and
+/// must name the group that did the rejecting.
+#[cfg(feature = "cgc-gen")]
+#[test]
+fn psp_rejection_uses_the_generic_not_admissible_error() {
+    use racah::bcd::{BcdError, Irrep};
+    let psp6 = GroupId::psp(6).unwrap();
+    match Irrep::from_dynkin_in(&psp6, &[1, 0, 0]) {
+        Err(BcdError::NotAdmissible { group, dynkin }) => {
+            assert_eq!(group, psp6);
+            assert_eq!(dynkin, vec![1, 0, 0]);
+            let msg = BcdError::NotAdmissible { group, dynkin }.to_string();
+            assert!(
+                !msg.to_lowercase().contains("spinor"),
+                "PSp(6) rejection must not talk about spinors: {msg}"
+            );
+        }
+        other => panic!("expected NotAdmissible, got {other:?}"),
+    }
+    // The half-spin and PSO forms reject tensor classes for the same reason.
+    for (group, label) in [
+        (GroupId::pso(8).unwrap(), vec![1, 0, 0, 0]), // the vector of SO(8)
+        (GroupId::half_spin_plus(8).unwrap(), vec![1, 0, 0, 0]),
+    ] {
+        assert!(matches!(
+            Irrep::from_dynkin_in(&group, &label),
+            Err(BcdError::NotAdmissible { .. })
+        ));
+    }
+    // And the spinor case still lands in the same variant.
+    assert!(matches!(
+        Irrep::from_dynkin_in(&GroupId::so(7).unwrap(), &[0, 0, 1]),
+        Err(BcdError::NotAdmissible { .. })
+    ));
+}
+
+// ---------------------------------------------------------------------------
+// GroupId construction invariants (issue #87 §4)
+// ---------------------------------------------------------------------------
+
+/// The public fields let a caller build a root datum whose quotient subgroup is
+/// not in the root system's center. That is not a hazard: such a group admits
+/// nothing, so both form-aware constructors reject every label with the
+/// ordinary not-admissible error. This is why `GroupId` stays a plain record
+/// (no `try_new`, no private fields).
+#[test]
+fn nonsensical_root_datum_admits_nothing() {
+    let nonsense = [
+        (RootSystem::A(3), CenterSubgroup::DVector),
+        (RootSystem::A(3), CenterSubgroup::Z2),
+        (RootSystem::B(3), CenterSubgroup::Zk(2)),
+        (RootSystem::C(3), CenterSubgroup::DFull),
+        (RootSystem::D(4), CenterSubgroup::Z4), // Z4 is the r-odd center
+        (RootSystem::D(5), CenterSubgroup::DHalfSpinPlus), // r odd has no half-spin form
+        (RootSystem::E6, CenterSubgroup::Zk(3)),
+        (RootSystem::A(3), CenterSubgroup::Zk(3)), // 3 ∤ 4
+    ];
+    for (root_system, sub) in nonsense {
+        let g = GroupId {
+            root_system,
+            form: GlobalForm::Quotient(sub),
+        };
+        for label in sweep(root_system.rank(), 3) {
+            assert!(
+                !g.admits(&label),
+                "{g:?} must admit nothing, but took {label:?}"
+            );
+        }
+        // Both form-aware constructors inherit the rejection.
+        #[cfg(feature = "cgc-gen")]
+        {
+            let zero = vec![0i64; root_system.rank()];
+            assert!(racah::sun::Irrep::from_dynkin_in(&g, &zero).is_err());
+            assert!(racah::bcd::Irrep::from_dynkin_in(&g, &zero).is_err());
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cross-global-form coefficient identity (issue #87 §3)
+// ---------------------------------------------------------------------------
+
+/// The invariant this whole design rests on: for a `λ` admissible in **both**
+/// the cover and a quotient, the published coefficient data are *identical* —
+/// same values, same basis ordering, same multiplicity-axis ordering, same
+/// cache entry. A global form gates the request; it never forks the engine.
+///
+/// Equality here is **literal** (`==` on `f64` / on the entry vectors), not a
+/// tolerance: the code path is shared, so any difference at all would mean a
+/// second engine had appeared.
+#[cfg(feature = "cgc-gen")]
+mod cross_form_coefficients {
+    use super::*;
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    fn hash_of<T: Hash>(v: &T) -> u64 {
+        let mut h = DefaultHasher::new();
+        v.hash(&mut h);
+        h.finish()
+    }
+
+    /// (11) `Spin(N)` and `SO(N)` on their common tensor representations.
+    #[test]
+    fn spin_and_so_share_tensor_coefficient_data() {
+        use racah::bcd::{CanonicalCatalog, Irrep, Series};
+
+        // (matrix dim, series, rank, vector label, a label in vector ⊗ vector)
+        let cases = [
+            (5usize, Series::B, 2usize, vec![1i64, 0], vec![0i64, 2]), // SO(5) 5, 10
+            (6, Series::D, 3, vec![1, 0, 0], vec![0, 1, 1]),           // SO(6) 6, 15
+        ];
+        for (n, series, r, v_label, c_label) in cases {
+            let spin = GroupId::spin(n).unwrap();
+            let so = GroupId::so(n).unwrap();
+            // Both labels are tensor classes: admissible in cover and quotient.
+            for l in [&v_label, &c_label] {
+                assert!(spin.admits(l) && so.admits(l), "{n}: {l:?}");
+            }
+
+            let cover_v = Irrep::from_dynkin_in(&spin, &v_label).unwrap();
+            let quot_v = Irrep::from_dynkin_in(&so, &v_label).unwrap();
+            let cover_c = Irrep::from_dynkin_in(&spin, &c_label).unwrap();
+            let quot_c = Irrep::from_dynkin_in(&so, &c_label).unwrap();
+
+            // Representation data, hence the cache key, is form-free.
+            assert_eq!(cover_v, quot_v);
+            assert_eq!(cover_c, quot_c);
+            assert_eq!(hash_of(&cover_v), hash_of(&quot_v));
+            assert_eq!(
+                hash_of(&(cover_v.clone(), cover_v.clone(), cover_c.clone())),
+                hash_of(&(quot_v.clone(), quot_v.clone(), quot_c.clone())),
+                "the CGC cache key is (Irrep, Irrep, Irrep) — no GlobalForm in it"
+            );
+
+            let mut cat = CanonicalCatalog::new(series, r).unwrap();
+            let cover = cat.cgc(&cover_v, &cover_v, &cover_c).unwrap();
+            let quot = cat.cgc(&quot_v, &quot_v, &quot_c).unwrap();
+            assert_eq!(cover.multiplicity(), quot.multiplicity());
+            assert_eq!(cover.copy_shape(), quot.copy_shape());
+            assert_eq!(cover.data(), quot.data(), "SO({n}) vs Spin({n}) CGC data");
+            for mu in 0..cover.multiplicity() {
+                assert_eq!(cover.copy(mu), quot.copy(mu), "multiplicity axis {mu}");
+            }
+
+            // The F-symbol built on top of them agrees bit for bit too.
+            let triv = Irrep::trivial(series, r).unwrap();
+            let f_cover = racah::bcd::f_symbol(
+                &mut cat, &triv, &cover_v, &cover_v, &cover_c, &cover_v, &cover_c,
+            )
+            .unwrap();
+            let f_quot =
+                racah::bcd::f_symbol(&mut cat, &triv, &quot_v, &quot_v, &quot_c, &quot_v, &quot_c)
+                    .unwrap();
+            assert_eq!(f_cover.dims(), f_quot.dims());
+            let [d0, d1, d2, d3] = f_cover.dims();
+            for i in 0..d0 {
+                for j in 0..d1 {
+                    for k in 0..d2 {
+                        for l in 0..d3 {
+                            assert_eq!(f_cover.at(i, j, k, l), f_quot.at(i, j, k, l));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// (12) `SU(3)` and `PSU(3)` on their common representations: the adjoint
+    /// (a multiplicity-2 channel, so the multiplicity-axis ordering is tested)
+    /// and a second nontrivial one, the decuplet.
+    #[test]
+    fn su_and_psu_share_coefficient_data() {
+        use racah::sun::{cgc, f_symbol, Irrep};
+
+        let su3 = GroupId::su(3).unwrap();
+        let psu3 = GroupId::psu(3).unwrap();
+        let adj = vec![1i64, 1];
+        let ten = vec![3i64, 0];
+        let tenbar = vec![0i64, 3];
+
+        // 8 ⊗ 8 → 8 (multiplicity 2), and 10 ⊗ 10bar → 8.
+        let channels = [
+            (adj.clone(), adj.clone(), adj.clone()),
+            (ten.clone(), tenbar.clone(), adj.clone()),
+        ];
+        for (a, b, c) in channels {
+            for l in [&a, &b, &c] {
+                assert!(psu3.admits(l), "{l:?} must be a PSU(3) rep");
+            }
+            let cov = |l: &[i64]| Irrep::from_dynkin_in(&su3, l).unwrap();
+            let quo = |l: &[i64]| Irrep::from_dynkin_in(&psu3, l).unwrap();
+            assert_eq!(cov(&a), quo(&a));
+            assert_eq!(
+                hash_of(&(cov(&a), cov(&b), cov(&c))),
+                hash_of(&(quo(&a), quo(&b), quo(&c))),
+                "the SU(N) CGC cache key carries no GlobalForm"
+            );
+
+            let cover = cgc(&cov(&a), &cov(&b), &cov(&c)).unwrap();
+            let quot = cgc(&quo(&a), &quo(&b), &quo(&c)).unwrap();
+            assert_eq!(cover.multiplicity(), quot.multiplicity());
+            assert_eq!(cover.dims(), quot.dims());
+            assert_eq!(cover.nnz(), quot.nnz());
+            assert_eq!(
+                cover.entries(),
+                quot.entries(),
+                "SU(3) vs PSU(3) CGC entries for {a:?} ⊗ {b:?} → {c:?}"
+            );
+        }
+        assert!(
+            cgc(
+                &Irrep::from_dynkin(&adj).unwrap(),
+                &Irrep::from_dynkin(&adj).unwrap(),
+                &Irrep::from_dynkin(&adj).unwrap()
+            )
+            .unwrap()
+            .multiplicity()
+                == 2,
+            "8 ⊗ 8 → 8 is the multiplicity-2 channel this test wants"
+        );
+
+        // An F-symbol over the common reps agrees bit for bit.
+        let triv = Irrep::trivial(3).unwrap();
+        let f = |g: &GroupId| {
+            let i = |l: &[i64]| Irrep::from_dynkin_in(g, l).unwrap();
+            f_symbol(&triv, &i(&adj), &i(&adj), &i(&adj), &i(&adj), &i(&adj)).unwrap()
+        };
+        let (fc, fq) = (f(&su3), f(&psu3));
+        assert_eq!(fc.dims(), fq.dims());
+        let [d0, d1, d2, d3] = fc.dims();
+        for i in 0..d0 {
+            for j in 0..d1 {
+                for k in 0..d2 {
+                    for l in 0..d3 {
+                        assert_eq!(fc.at(i, j, k, l), fq.at(i, j, k, l));
+                    }
+                }
+            }
+        }
+    }
+
+    /// (13)/(14) The cache is shared where it should be and cannot be a bypass
+    /// where it should not be.
+    ///
+    /// Warming the cover's entry for a weight the quotient does not admit gives
+    /// the quotient no way to reach it: there is no `Irrep` for an inadmissible
+    /// weight, so there is no key with which to read the entry. Validation is at
+    /// construction, strictly before any cache is touched.
+    #[test]
+    fn an_inadmissible_rep_cannot_reach_the_cache_through_the_quotient_api() {
+        use racah::sun::{cgc, Irrep, SunError};
+
+        let su3 = GroupId::su(3).unwrap();
+        let psu3 = GroupId::psu(3).unwrap();
+        let three = Irrep::from_dynkin_in(&su3, &[1, 0]).unwrap();
+        let threebar = Irrep::from_dynkin_in(&su3, &[0, 1]).unwrap();
+        let adj = Irrep::from_dynkin_in(&su3, &[1, 1]).unwrap();
+
+        // Populate the cover's entry for 3 ⊗ 3bar → 8.
+        let warm = cgc(&three, &threebar, &adj).unwrap();
+        assert!(warm.nnz() > 0);
+
+        // The quotient still cannot name the fundamental — before, and after.
+        for label in [[1i64, 0], [0, 1], [2, 0], [0, 2]] {
+            assert!(matches!(
+                Irrep::from_dynkin_in(&psu3, &label),
+                Err(SunError::NotAdmissible { .. }),
+            ));
+        }
+        // And a warm entry for a *shared* weight is genuinely shared: the
+        // quotient's request returns the identical data.
+        let again = cgc(
+            &Irrep::from_dynkin_in(&psu3, &[1, 1]).unwrap(),
+            &Irrep::from_dynkin_in(&psu3, &[1, 1]).unwrap(),
+            &Irrep::from_dynkin_in(&psu3, &[1, 1]).unwrap(),
+        )
+        .unwrap();
+        let cover_again = cgc(&adj, &adj, &adj).unwrap();
+        assert_eq!(again.entries(), cover_again.entries());
+    }
+
+    /// The same bypass argument on the B/D side: `SO(N)` cannot reach a spinor
+    /// entry warmed by `Spin(N)`.
+    #[test]
+    fn so_cannot_reach_a_spin_only_entry() {
+        use racah::bcd::{BcdError, CanonicalCatalog, Irrep, Series};
+
+        let spin5 = GroupId::spin(5).unwrap();
+        let so5 = GroupId::so(5).unwrap();
+        let spinor = Irrep::from_dynkin_in(&spin5, &[0, 1]).unwrap();
+        let vector = Irrep::from_dynkin_in(&spin5, &[1, 0]).unwrap();
+        let mut cat = CanonicalCatalog::new(Series::B, 2).unwrap();
+        // Warm a channel involving the spinor.
+        cat.cgc(&spinor, &spinor, &vector).unwrap();
+        // SO(5) still has no spinor label to key it with.
+        assert!(matches!(
+            Irrep::from_dynkin_in(&so5, &[0, 1]),
+            Err(BcdError::NotAdmissible { .. })
+        ));
+        assert!(matches!(
+            Irrep::from_dynkin(Series::B, &[0, 1]),
+            Err(BcdError::NotAdmissible { .. })
+        ));
+    }
 }

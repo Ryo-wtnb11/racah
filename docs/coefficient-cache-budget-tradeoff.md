@@ -1,5 +1,10 @@
 # Coefficient-cache budget tradeoff
 
+> **AI-generated, for agentic coding.** This document was written by an AI agent
+> as reference material for AI agents (and humans) working on this repository.
+> It may contain errors — check it against the code and tests rather than
+> trusting it blindly.
+
 This release-only, fresh-process pressure trace measures revision
 `52d3732b1263e40b7bd095c08e0bfa214c5d127f` on macOS/aarch64 with rustc
 1.96.0. Five fresh processes were recorded per mode:

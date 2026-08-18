@@ -7,7 +7,35 @@ value/gauge rule noted below.
 
 ## [Unreleased]
 
+### Added
+
+- **`sun::Irrep::from_dynkin_in(&GroupId, &[i64])`** — the `A`-series
+  form-aware constructor, matching `bcd::Irrep::from_dynkin_in`
+  ([#87](https://github.com/Ryo-wtnb11/racah/issues/87)). `SU(N)/Z_k` (`k | N`)
+  and `PSU(N)` now restrict the admissible highest weights by `N`-ality; the
+  rule itself stays in `GroupId::admits` and `sun` does not restate it.
+  `from_dynkin` is unchanged and remains the simply connected `SU(N)`. **No
+  coefficient value, basis ordering, phase, normalization or fingerprint
+  moves**: a global form gates which weights may be requested, and every
+  admissible weight goes through the one Gelfand–Tsetlin engine and the same
+  (form-free) cache entry.
+
 ### Changed
+
+- **BREAKING (error variant renamed): `BcdError::SpinorLabel` is now
+  `BcdError::NotAdmissible { group: GroupId, dynkin: Vec<i64> }`**
+  ([#87](https://github.com/Ryo-wtnb11/racah/issues/87)). The old name was
+  mathematically misleading: the variant is returned whenever
+  `group.admits(dynkin)` is false, and `PSp(2r)`, `PSO(2r)` and the two
+  half-spin forms all reject *non-spinor* weights through it — `C_r` has no
+  spinor sector at all. It now carries the rejecting `GroupId` rather than just
+  the `Series`. Pre-1.0, no deprecation shim: the variant is renamed outright,
+  and the meaning is exactly "a dominant integral highest weight of the cover
+  that is not a genuine representation of the selected global form", kept
+  distinct from the invalid-label, rank, excluded-rank, generation and
+  verification errors.
+- `SunError` gains `NotAdmissible`, `UnsupportedRootSystem` and
+  `LabelRankMismatch` for the new `sun::Irrep::from_dynkin_in` guards.
 
 - **BREAKING (gauge specification correction, B/D coefficient values move):
   the B/D defining-rep base case is re-framed into the sweep's descending-weight
