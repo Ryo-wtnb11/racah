@@ -18,8 +18,14 @@ available out of the box. CGC/F/R arrays come back as NumPy `float64` arrays.
 
 ## Installation
 
-**Not on PyPI.** Until a release is published there, install from a checkout
-(needs a Rust stable toolchain and Python ≥ 3.12):
+From [PyPI](https://pypi.org/project/racah-py/) (Python ≥ 3.12; prebuilt
+abi3 wheels for linux-x86_64 and macos-arm64):
+
+```sh
+pip install racah-py
+```
+
+Or from a checkout (needs a Rust stable toolchain):
 
 ```sh
 git clone https://github.com/Ryo-wtnb11/racah
@@ -37,9 +43,8 @@ pip install --no-index --find-links dist racah-py
 ```
 
 CI ([`wheels.yml`](../.github/workflows/wheels.yml)) builds `abi3-py312` wheels
-for linux-x86_64 and macos-arm64 on every tag and on manual dispatch; they are
-uploaded as workflow artifacts, not published. One wheel per platform covers
-CPython ≥ 3.12.
+for linux-x86_64 and macos-arm64; `py-v*` tags/releases publish them to PyPI.
+One wheel per platform covers CPython ≥ 3.12.
 
 ## Quick start
 

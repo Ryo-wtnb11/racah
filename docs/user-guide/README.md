@@ -26,6 +26,7 @@ conventions of returned values, see [`../gauge.md`](../gauge.md) and
 | 5 | [Clebsch–Gordan coefficients](clebsch-gordan.md) | What `cgc` returns, index conventions, the multiplicity axis. |
 | 6 | [Recoupling: F- and R-symbols](recoupling.md) | What F and R mean, when you need them, block shapes and axis order. |
 | 7 | [Numerical behaviour and resources](resources.md) | Exact vs generated values, caches and how to bound them, gauge and reproducibility. |
+| 8 | [Python bindings](python.md) | `pip install racah-py`, the NumPy array shapes and multiplicity axes, the fingerprint contract, the typed-stub API reference. |
 
 ## Five-minute path
 
@@ -42,3 +43,4 @@ object you need. Everything else is reference.
 | Spin(N) — spinor irreps | [Choosing a group § Spin(N)](groups.md#spinn-when-you-need-spinors) |
 | Sp(2N) | [Choosing a group § Sp(2N) naming](groups.md#sp2n-naming-rank-and-the-defining-dimension) |
 | PSU(N), SU(N)/Z_k, SO vs Spin | [Choosing a group § Global forms](groups.md#global-forms-and-admissibility) |
+| From Python — `racah-py`, NumPy arrays | [Python bindings](python.md) |
