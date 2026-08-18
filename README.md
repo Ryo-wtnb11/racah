@@ -182,7 +182,8 @@ algorithms of three production references, one per family (full provenance in
 
 Why each family gets a different algorithm — and why that choice is forced by
 the group's branching structure rather than chosen for convenience — is argued
-in [`docs/theory.pdf`](docs/theory.pdf) §5.
+in [`docs/theory.pdf`](docs/theory.pdf) §8, and the classification each family
+comes from is §3–§5.
 
 ## Exactness and gauge
 

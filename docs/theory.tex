@@ -41,8 +41,9 @@
 \newcommand{\refsmd}{\href{https://github.com/Ryo-wtnb11/racah/blob/main/docs/references.md}{\code{docs/references.md}}}
 
 \title{\textbf{The representation theory \code{racah} computes}\\[0.3em]
-\large A self-contained note on irreps, Clebsch--Gordan coefficients,\\
-recoupling, gauge, and global forms}
+\large A self-contained note built on the Killing--Cartan classification:\\
+groups and global forms, irreps, Clebsch--Gordan coefficients,\\
+recoupling, and gauge}
 \author{The \code{racah} project \\ \small\url{https://github.com/Ryo-wtnb11/racah}}
 \date{}
 
@@ -71,7 +72,11 @@ This note deliberately does not restate their numeric values.
 \noindent
 \code{racah} computes the coefficient data of the fusion category of
 finite-dimensional unitary representations of a connected compact simple Lie
-group: irrep labels and dimensions, dualities and Frobenius--Schur indicators,
+group. The note starts from the Killing--Cartan classification of the simple
+Lie algebras --- $A_r$, $B_r$, $C_r$, $D_r$, $G_2$, $F_4$, $E_6$, $E_7$, $E_8$
+--- derives the compact groups and their global forms from it, and then defines
+the coefficients: irrep labels and dimensions, dualities and Frobenius--Schur
+indicators,
 fusion multiplicities, Clebsch--Gordan coefficients, and the recoupling
 ($F$) and braiding ($R$) symbols, for $SU(2)$, $SU(N)$, $Spin(N)/SO(N)$,
 $Sp(2N)$ and their central quotients. This note defines each of those objects,
@@ -95,7 +100,7 @@ three questions, in order:
 
 \begin{enumerate}[label=(\roman*),leftmargin=2.2em]
   \item \textbf{What is the object?} A definition, with every symbol defined
-    before use (Sections~\ref{sec:compact}--\ref{sec:global}).
+    before use (Sections~\ref{sec:classification}--\ref{sec:pentagon}).
   \item \textbf{What does the literature already establish about it?} The
     prior results the implementation depends on, stated as facts with
     attribution. These are gathered in the section where they are used and
@@ -104,6 +109,18 @@ three questions, in order:
     free choice, the choice is stated here as an equation or a rule, and the
     normative document holding the frozen values is named.
 \end{enumerate}
+
+\paragraph{The classification is the spine.} The note is built on the
+Killing--Cartan classification, not on a list of groups. Section~\ref{sec:classification}
+states the classification and draws the nine Dynkin diagrams;
+Section~\ref{sec:global} turns each family into a compact simply connected
+group with a known centre, and each subgroup of that centre into a global
+form; Section~\ref{sec:racah} then says which entries of the classification
+\code{racah} actually computes for and by which code path. Everything after
+that --- highest weights, bases, fusion, CGC, $F$ and $R$ --- refers back to
+those three sections rather than re-deriving where the families come from.
+This mirrors the crate: \code{group::RootSystem} carries all nine families and
+\code{group::GroupId} is a root system paired with a global form.
 
 \paragraph{Two constructions, two normative documents.} The crate has three
 coefficient engines but only two constructions. $SU(2)$ is evaluated from
@@ -114,8 +131,13 @@ explains why the branching structure of each family forces the choice.
 \paragraph{Citation numbering.} Numbered citations $[n]$ in this note use the
 \emph{same numbering} as \refsmd{}, which additionally carries the
 \code{file:symbol}-level port provenance. Entries $[1]$--$[13]$ are that
-document's bibliography verbatim; $[14]$--$[20]$ are added here for results
-this note states that \refsmd{} did not previously need to source.
+document's bibliography verbatim; $[14]$--$[21]$ are added here for results
+this note states that \refsmd{} did not previously need to source. Every
+\textbf{Fact} and every mathematical table row carries a numbered citation
+with section-level precision; the tables of Section~\ref{sec:racah} are the
+one exception, and cite this repository's own normative documents and tests
+instead, because they state facts about the crate rather than about
+mathematics.
 
 %======================================================================
 \section{Notation}
@@ -162,6 +184,486 @@ what the API calls those axes.}
 Inner products $(\cdot,\cdot)$ on $\mathfrak{h}^*$ are the ones induced by the
 Killing form; $\langle\lambda,\alpha^\vee\rangle = 2(\lambda,\alpha)/(\alpha,\alpha)$.
 Overlines denote complex conjugation, daggers Hermitian adjoints.
+
+%======================================================================
+\section{The classification of the simple Lie algebras}
+\label{sec:classification}
+%======================================================================
+
+Every group \code{racah} computes for is a compact form of one entry in a
+finite classification, and the crate's type system is a transcription of that
+classification: \code{racah::group::RootSystem} has exactly nine variants,
+one per family. This section states the classification, draws its diagrams in
+the numbering the API uses, and records the rank conventions that make the
+list irredundant. It is the backbone the rest of the note hangs off.
+
+\subsection{Root systems, Cartan matrices, Dynkin diagrams}
+
+Let $\g$ be a finite-dimensional complex Lie algebra. It is \emph{simple} if
+it is non-abelian and has no proper non-zero ideal, and \emph{semisimple} if
+it is a direct sum of simple ideals. Fix a Cartan subalgebra
+$\mathfrak{h}\subset\g$ (a maximal self-normalising abelian subalgebra of
+semisimple elements); its dimension is the \emph{rank} $r$. The adjoint action
+of $\mathfrak{h}$ decomposes $\g$ into root spaces, giving the root system
+$\Phi\subset\mathfrak{h}^*$, and a choice of positive system fixes the simple
+roots $\Delta=\{\alpha_1,\dots,\alpha_r\}$ (Notation, Section~2). The
+\emph{Cartan matrix} is
+\begin{equation}\label{eq:cartan}
+  A_{ij} \;=\; \langle \alpha_j, \alpha_i^\vee\rangle
+        \;=\; \frac{2(\alpha_i,\alpha_j)}{(\alpha_i,\alpha_i)}
+        \;\in\;\ZZ,
+  \qquad A_{ii}=2,\quad A_{ij}\le 0 \ (i\neq j).
+\end{equation}
+The \emph{Dynkin diagram} of $\g$ is the graph on $r$ nodes with
+$A_{ij}A_{ji}\in\{0,1,2,3\}$ edges between nodes $i\neq j$, decorated --- when
+the two roots have different lengths --- with an arrow pointing from the long
+root towards the short one. The diagram determines $A$, $A$ determines $\g$
+up to isomorphism, and $\g$ is simple exactly when its diagram is connected
+(Humphreys $[8]$ \S11.1--\S11.2 for the Cartan matrix and the diagram,
+\S14.2 for the isomorphism theorem; Bourbaki $[20]$ Ch.~VI \S1.5, \S4.1).
+
+\begin{theorem}[Killing--Cartan classification]\label{thm:kc}
+A complex simple Lie algebra is isomorphic to exactly one of
+\[
+  A_r\ (r\ge 1),\quad B_r\ (r\ge 2),\quad C_r\ (r\ge 3),\quad D_r\ (r\ge 4),
+  \quad G_2,\quad F_4,\quad E_6,\quad E_7,\quad E_8,
+\]
+with the Dynkin diagrams of Section~\ref{sec:diagrams}. Equivalently: the
+connected Dynkin diagrams are exactly those nine shapes. Humphreys $[8]$
+\S11.4 (Theorem) with the proof of \S11.4--\S11.5 and the existence
+half in \S12.1; Bourbaki $[20]$ Ch.~VI \S4.2 (Theorem~3) and Plates I--IX;
+Fulton--Harris $[7]$ \S21.1.
+\end{theorem}
+
+The first four are the \emph{classical} families --- they are the ones with a
+uniform matrix description, and the only ones \code{racah} computes
+coefficients for --- and the last five are the \emph{exceptional} algebras.
+
+\subsection{The nine diagrams, in Bourbaki numbering}
+\label{sec:diagrams}
+
+Nodes are drawn $\circ$ and labelled underneath with their Bourbaki index; the
+index order is exactly the order of the Dynkin label tuple $(a_1,\dots,a_r)$
+that the API accepts and returns (Convention~\ref{conv:labelling}). A double
+or triple bond carries an arrow pointing at the \emph{short} root.
+
+\medskip
+\noindent
+\begin{tabular}{@{}l@{\hspace{2em}}l@{}}
+$A_r$, $r\ge 1$ &
+  $\underset{1}{\circ}\!-\!\underset{2}{\circ}\!-\!\cdots\!-\!\underset{r-1}{\circ}\!-\!\underset{r}{\circ}$ \\[1.1em]
+$B_r$, $r\ge 2$ &
+  $\underset{1}{\circ}\!-\!\underset{2}{\circ}\!-\!\cdots\!-\!\underset{r-1}{\circ}\Rightarrow\underset{r}{\circ}$ \\[1.1em]
+$C_r$, $r\ge 3$ &
+  $\underset{1}{\circ}\!-\!\underset{2}{\circ}\!-\!\cdots\!-\!\underset{r-1}{\circ}\Leftarrow\underset{r}{\circ}$ \\[1.1em]
+$G_2$ &
+  $\underset{1}{\circ}\Rrightarrow\underset{2}{\circ}$ \\[1.1em]
+$F_4$ &
+  $\underset{1}{\circ}\!-\!\underset{2}{\circ}\Rightarrow\underset{3}{\circ}\!-\!\underset{4}{\circ}$ \\
+\end{tabular}
+
+\medskip
+\noindent
+$D_r$, $r\ge 4$ --- a chain of $r-2$ nodes forking into two:
+\[
+  \begin{array}{ccccccc}
+    &&&&& \underset{r-1}{\circ} \\[-0.15em]
+    &&&& \diagup && \\[-0.35em]
+    \underset{1}{\circ} & \!-\! & \cdots & \!-\! & \underset{r-2}{\circ} && \\[-0.35em]
+    &&&& \diagdown && \\[-0.15em]
+    &&&&& \underset{r}{\circ}
+  \end{array}
+\]
+
+\noindent
+$E_8$ --- a chain of seven nodes with node $2$ attached to node $4$:
+\[
+  \begin{array}{ccccccccccccc}
+    &&&& \overset{2}{\circ} &&&&&&&& \\[-0.4em]
+    &&&& | &&&&&&&& \\[-0.2em]
+    \underset{1}{\circ} & \!-\! & \underset{3}{\circ} & \!-\! & \underset{4}{\circ} & \!-\! &
+    \underset{5}{\circ} & \!-\! & \underset{6}{\circ} & \!-\! & \underset{7}{\circ} & \!-\! &
+    \underset{8}{\circ}
+  \end{array}
+\]
+$E_7$ is the subdiagram on nodes $\{1,\dots,7\}$ and $E_6$ the subdiagram on
+$\{1,\dots,6\}$ --- deleting node $8$, then node $7$, from the tail of the
+chain (Bourbaki $[20]$ Plates V--VII).
+
+\subsection{Why the rank conventions start where they do}
+\label{sec:coincidences}
+
+The rank bounds in Theorem~\ref{thm:kc} are not arbitrary: at low rank the
+diagram shapes coincide, and without the bounds the list would repeat itself.
+The coincidences are exactly
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Diagram coincidence & Algebra isomorphism & Group statement \\
+\midrule
+$A_1 = B_1 = C_1$ & $\su(2)\cong\so(3)\cong\symp(2)$ & $SU(2)\cong Spin(3)\cong Sp(2)$ \\
+$B_2 = C_2$ & $\so(5)\cong\symp(4)$ & $Spin(5)\cong Sp(4)$ \\
+$D_2 = A_1\times A_1$ & $\so(4)\cong\su(2)\oplus\su(2)$ & $Spin(4)\cong SU(2)\times SU(2)$ \\
+$D_3 = A_3$ & $\so(6)\cong\su(4)$ & $Spin(6)\cong SU(4)$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+$D_2$ is the only one of the four that is not simple at all: its diagram is
+disconnected, so $\so(4)$ is semisimple but not simple, and the theorem does
+not apply to it. Each line is a diagram identity first --- read off the shapes
+above at $r=1,2,3$ --- and the algebra and group statements follow from
+Theorem~\ref{thm:kc} and Fact~\ref{fact:compactform}. Bourbaki $[20]$
+Ch.~VI \S4.4 and the Plates I--IV remarks (the identifications of low-rank
+systems); Fulton--Harris $[7]$ \S18 (the classical algebras, where the same
+isomorphisms are exhibited on the defining representations).
+
+\begin{remark}[What the code does with the coincidences]
+\label{rem:lowrank}
+\code{racah} takes the coincidences seriously in the $B/C/D$ bootstrap but
+does \emph{not} adopt Bourbaki's irredundant bounds verbatim, because a
+constructor is named after a \emph{group}, not a diagram. The bootstrap family
+key \code{bcd::Series} enforces $r\ge 2$ for $B$ and $C$ and $r\ge 3$ for $D$:
+the genuinely duplicated low ranks $B_1$, $C_1$, $D_2$ are rejected with a
+per-global-form redirect ($Spin(3)\cong SU(2)$, $Sp(2)\cong SU(2)$,
+$Spin(4)\cong SU(2)\times SU(2)$, and for the quotients $SO(3)$/$PSp(2)$ =
+integer $j$ only, $SO(4)$ = $j_1+j_2$ integer), while $C_2$ and $D_3$ are
+\emph{kept} --- $Sp(4)$ and $SO(6)$ are groups a caller legitimately asks for
+by name, and the bootstrap builds them directly rather than routing the caller
+through $Spin(5)$ or $SU(4)$. Nothing downstream depends on the redundancy
+being removed: the two presentations of the same group give the same
+coefficients up to the relabelling, and only the label conventions differ.
+API: \code{bcd::Series::min\_rank}, \code{bcd::Series::low\_rank\_redirect}.
+\end{remark}
+
+\begin{remark}[Rank versus matrix dimension]
+Two integers are in play and they are not the same. $r$ is the rank --- the
+number of Dynkin labels. $N$ is the matrix dimension of the defining
+representation. The \code{GroupId} constructors take $N$
+(\code{GroupId::so(7)}, \code{GroupId::sp(6)}) and convert:
+$SU(N)\leftrightarrow A_{N-1}$, $Spin(2r+1)\leftrightarrow B_r$,
+$Sp(2r)\leftrightarrow C_r$, $Spin(2r)\leftrightarrow D_r$. Weight tuples are
+always indexed by $r$.
+\end{remark}
+
+%======================================================================
+\section{From algebras to compact groups, and to global forms}
+\label{sec:global}
+%======================================================================
+
+Theorem~\ref{thm:kc} classifies complex \emph{algebras}. \code{racah} computes
+for \emph{compact groups}, and the passage from one to the other is two steps,
+neither of them unique in the naive sense: first a compact real form and its
+simply connected cover, then a quotient by a subgroup of the centre.
+
+\subsection{Step one: the compact simply connected group}
+\label{sec:compactforms}
+
+\begin{fact}[Compact real forms and their covers]\label{fact:compactform}
+Every complex simple Lie algebra $\g$ has a compact real form
+$\mathfrak{k}\subset\g$, unique up to conjugation, and there is a unique
+connected simply connected compact Lie group $G_{\mathrm{sc}}$ with Lie algebra
+$\mathfrak{k}$. Its centre is finite, and
+\begin{equation}\label{eq:centre}
+  Z(G_{\mathrm{sc}}) \;\cong\; P/Q ,
+\end{equation}
+the weight lattice modulo the root lattice --- a finite abelian group read
+straight off the Cartan matrix \eqref{eq:cartan}, since $Q$ is spanned by the
+simple roots and $P$ by the fundamental weights. Existence and
+conjugacy-uniqueness of the compact real form: Knapp $[21]$ Theorem~6.11 and
+Corollary~6.20. The centre: Br\"ocker--tom Dieck $[14]$ \S V.7;
+Humphreys $[8]$ \S13.1 for the $P/Q$ computation itself.
+\end{fact}
+
+Applying \eqref{eq:centre} family by family gives the table this note and the
+crate both rest on. It is the dictionary between the classification and the
+group names in the API.
+
+\begin{center}
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+Family & Compact simply connected $G_{\mathrm{sc}}$ & $Z(G_{\mathrm{sc}})\cong P/Q$ & Adjoint form $G_{\mathrm{sc}}/Z$ \\
+\midrule
+$A_{N-1}$, $N\ge 2$ & $SU(N)$      & $\ZZ_N$ & $PSU(N)$ \\
+$B_r$, $r\ge 2$     & $Spin(2r+1)$ & $\ZZ_2$ & $SO(2r+1)=PSO(2r+1)$ \\
+$C_r$, $r\ge 2$     & $Sp(2r)$     & $\ZZ_2$ & $PSp(2r)$ \\
+$D_r$, $r$ odd      & $Spin(2r)$   & $\ZZ_4$ & $PSO(2r)$ \\
+$D_r$, $r$ even     & $Spin(2r)$   & $\ZZ_2\times\ZZ_2$ & $PSO(2r)$ \\
+$G_2$               & $G_2$        & $1$     & $G_2$ \\
+$F_4$               & $F_4$        & $1$     & $F_4$ \\
+$E_6$               & $E_6$        & $\ZZ_3$ & $E_6/\ZZ_3$ \\
+$E_7$               & $E_7$        & $\ZZ_2$ & $E_7/\ZZ_2$ \\
+$E_8$               & $E_8$        & $1$     & $E_8$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+\emph{Sources for the table.} Each $P/Q$ is tabulated system by system in
+Bourbaki $[20]$ Plates I--IX (the plate for each family lists $P/Q$ and the
+fundamental weights); the identification with $Z(G_{\mathrm{sc}})$ is
+Fact~\ref{fact:compactform}. The $D_r$ split is the arithmetic of the plate
+for $D_r$: $P/Q$ is generated by $[\omega_1]$, $[\omega_{r-1}]$,
+$[\omega_r]$ with $2[\omega_r] = [\omega_1]$ when $r$ is odd (so the group is
+cyclic of order $4$) and $2[\omega_r]=0$ when $r$ is even (so it is
+$\ZZ_2\times\ZZ_2$) --- the parity dependence traces to
+$(\omega_r,\omega_r)=r/4$. The congruency classes of every family are also
+tabulated by Slansky $[13]$ \S5.
+
+\medskip
+\noindent
+Three families ($G_2$, $F_4$, $E_8$) have trivial centre, so for them
+``simply connected'' and ``adjoint'' name the same group and there is no
+global-form question to ask at all. These centres are recorded in the
+\code{RootSystem} variant docs and are the reason the exceptional variants
+carry no admissibility logic (Section~\ref{sec:racah}).
+
+\subsection{Step two: global forms are centre quotients}
+
+Everything the rest of this note computes is stated for a group, but a root
+system names only an algebra. $\so(N)$ is the algebra of both $Spin(N)$ and
+$SO(N)=Spin(N)/\ZZ_2$; $\su(N)$ is the algebra of $SU(N)$, of $SU(N)/\ZZ_k$ for
+every $k\mid N$, and of $PSU(N)=SU(N)/\ZZ_N$. These groups have the same
+Lie-algebra representation theory and differ in exactly one respect: which
+dominant integral weights are genuine representations \emph{of the group}.
+
+
+\begin{fact}[Classification of connected compact forms]\label{fact:forms}
+Let $G_{\mathrm{sc}}$ be the simply connected compact group with a given root
+system. Then $Z(G_{\mathrm{sc}}) \cong P/Q$, every connected compact group with
+that root system is $G_\Gamma = G_{\mathrm{sc}}/\Gamma$ for a subgroup
+$\Gamma\subseteq Z(G_{\mathrm{sc}})$, and
+\begin{equation}\label{eq:admis}
+  \Irr(G_\Gamma)
+  \;=\; \bigl\{\, \lambda\in P^+ \;:\; \chi_\lambda\big|_\Gamma = 1 \,\bigr\},
+\end{equation}
+where the \emph{central character} $\chi_\lambda$ depends on $\lambda$ only
+through its class $[\lambda]\in P/Q$. $[7]$ \S23; the congruency classes are
+tabulated by Slansky $[13]$ \S5.
+\end{fact}
+
+The class $[\lambda]\in P/Q$ is the \emph{$N$-ality} / congruency class, and
+for the series \code{racah} implements it is an explicit linear form in the
+Dynkin labels.
+
+\paragraph{$A_{r}$, $r=N-1$: $P/Q\cong\ZZ_N$.} The class is the $N$-ality
+\begin{equation}\label{eq:nality}
+  t(\lambda) \;\equiv\; \sum_{i=1}^{N-1} i\,a_i \pmod N ,
+\end{equation}
+and for $\Gamma = \ZZ_k$ with $k\mid N$ the admissibility condition
+\eqref{eq:admis} reads $t(\lambda)\equiv 0 \pmod k$. So $PSU(3)=SU(3)/\ZZ_3$
+admits the adjoint $\mathbf{8}$ and rejects the fundamental $\mathbf{3}$.
+
+\paragraph{$B_r$: $P/Q\cong\ZZ_2$.} The class is $a_r \bmod 2$ --- exactly the
+tensor/spinor split described in Section~\ref{sec:bcd}. $Spin(2r+1)$ admits all
+$\lambda\in P^+$; $SO(2r+1)$ admits those with $a_r$ even.
+
+\paragraph{$C_r$: $P/Q\cong\ZZ_2$.} The class is
+$a_1+a_3+a_5+\cdots \bmod 2$. $Sp(2r)$ admits all $\lambda\in P^+$;
+$PSp(2r)=Sp(2r)/\ZZ_2$ admits those with $a_1+a_3+\cdots$ even.
+
+\paragraph{$D_r$: $P/Q\cong\ZZ_4$ ($r$ odd) or $\ZZ_2\times\ZZ_2$ ($r$ even).}
+This is the rich case, and it is where a convention has to be pinned rather
+than derived, because naming a form requires choosing a generator of the
+centre.
+
+One condition is uniform in $r$: the \emph{vector} (tensor) sublattice
+$\{0,v\}\subset P/Q$ is always a $\ZZ_2$, and quotienting by it gives
+\begin{equation}\label{eq:so2r}
+  SO(2r):\qquad a_{r-1} + a_r \;\equiv\; 0 \pmod 2 ,
+\end{equation}
+for every $r$ --- this is the tensor/spinor split described in
+Section~\ref{sec:bcd},
+and it is $r$-uniform because $(\varepsilon_1,\varepsilon_1)=1$ for every $r$.
+The remaining forms depend on the parity of $r$.
+
+For $r$ odd the class is valued in $\ZZ_4$, and \code{racah} fixes the
+generator $c=[\omega_r]$, so that
+\begin{equation}\label{eq:d4class}
+  \kappa(\lambda) \;\equiv\;
+    a_r - a_{r-1} + 2\!\!\sum_{\substack{i \ \mathrm{odd} \\ i \le r-2}}\!\! a_i
+  \pmod 4 .
+\end{equation}
+This choice makes conjugation \emph{be} negation of the class, matching
+$\code{bcd::Irrep::dual}$ ($\lambda_r\mapsto-\lambda_r$). Slansky's uniform
+formula $[13]$ \S5 equals $+\kappa$ for $r\equiv 1 \pmod 4$ and $-\kappa$ for
+$r\equiv 3\pmod 4$; the difference is the $\ZZ_4$ automorphism $x\mapsto -x$,
+i.e. a generator choice, not a discrepancy.
+
+so \eqref{eq:so2r} is the $\kappa\equiv 0\pmod 2$ subgroup, and $PSO(2r)$ (the
+full $\ZZ_4$ quotient) is $\kappa\equiv 0 \pmod 4$. There are no half-spin
+forms for $r$ odd: $\ZZ_4$ has only one subgroup of order $2$.
+
+For $r$ even the class is valued in $\ZZ_2\times\ZZ_2$, which has three
+subgroups of order $2$, so alongside $Spin(2r)$ (all $\lambda$), $SO(2r)$
+\eqref{eq:so2r} and $PSO(2r)$ (the full quotient) there are two
+\emph{half-spin} forms. Writing
+$t \equiv \sum_{i\ \mathrm{odd},\, i\le r-2} a_i \pmod 2$ and
+$p \equiv a_{r-1}+t$, $q \equiv a_r + t \pmod 2$:
+\[
+  \text{half-spin}_+:\ p \equiv 0;\qquad
+  \text{half-spin}_-:\ q \equiv 0;\qquad
+  PSO(2r):\ p \equiv q \equiv 0 \pmod 2 .
+\]
+A half-spin form admits one chirality of spinor but \emph{not} the vector
+representation (which has $p=q=1$). The two half-spin forms are named for the
+class they \emph{retain}, not the central element they kill: a
+kill-based name is not uniform in $r$, because $(\omega_r,\omega_r)=r/4$ makes
+the annihilator of $z_{\omega_r}$ differ between $r\equiv0$ and $r\equiv2
+\pmod 4$. Slansky's $S_s/S_c$ are accepted as documented aliases. \refsmd{}
+carries this convention with its full justification.
+
+\subsection{Two consequences the implementation relies on}
+
+\begin{proposition}[Admissibility is a construction-time predicate]
+The class map $P^+\to P/Q$, $\lambda\mapsto[\lambda]$, is the restriction of a
+group homomorphism, so $[\lambda+\mu]=[\lambda]+[\mu]$ and
+$[-w_0\lambda]=-[\lambda]$. Hence the admissible set of \eqref{eq:admis} is
+closed under fusion and under duality: it never needs re-checking on a fusion
+output.
+\end{proposition}
+
+\begin{proposition}[A global form deletes irreps; it never changes a coefficient]
+\label{prop:samecoeff}
+Let $\lambda$ be admissible for both $G_\Gamma$ and $G_{\Gamma'}$. The
+representations of $G_\Gamma$ and $G_{\Gamma'}$ with highest weight $\lambda$
+have the same carrier, the same $\g$-action, and hence the same CGC, $F$, $R$
+and $\varkappa$ \emph{in the same basis}: the choice of $\Gamma$ never enters
+their computation. Consequently the coefficient caches are keyed on irrep
+labels with \emph{no global form in the key}, and two forms sharing an irrep
+must share the cache entry.
+\end{proposition}
+
+\begin{sloppypar}
+API: \code{racah::group} --- \code{RootSystem}, \code{GlobalForm},
+\code{CenterSubgroup}, \code{GroupId}, and the predicate
+\code{GroupId::admits}; the form-aware constructors
+\code{sun::Irrep::from\_dynkin\_in} and \code{bcd::Irrep::from\_dynkin\_in}
+(the plain \code{from\_dynkin} constructors keep their historically published
+groups).
+\end{sloppypar}
+
+\begin{remark}[Scope]
+Connected compact groups only. $O(N)$ and $Pin(N)$ are not central quotients of
+a simply connected group --- they are disconnected extensions --- and are out
+of scope; so is any non-compact real form.
+\end{remark}
+
+%======================================================================
+\section{What \code{racah} implements, against the classification}
+\label{sec:racah}
+%======================================================================
+
+Sections~\ref{sec:classification} and~\ref{sec:global} describe every simple
+compact group. \code{racah} does not compute for all of them. This section is
+the correspondence table --- which entry of the classification is served by
+which code path, and what happens at the entries that are not served. It cites
+the repository's own normative documents and tests rather than the literature:
+these are facts about this crate, not about mathematics.
+
+\begin{center}
+\small
+\begin{tabular}{@{}p{2.1cm}p{2.5cm}p{3.1cm}p{5.4cm}@{}}
+\toprule
+Family & Groups & Engine & Where it lives \\
+\midrule
+$A_1$ & $SU(2)$, $SO(3)$ &
+  closed forms (Section~\ref{sec:su2}) &
+  \code{su2}; exact $3j$/$6j$; gauge \gaugemd{} \\
+$A_{N-1}$ & $SU(N)$, $SU(N)/\ZZ_k$, $PSU(N)$ &
+  Gelfand--Tsetlin (Section~\ref{sec:gt}) &
+  \code{sun}; gauge \gaugemd{} \\
+$B_r$ & $Spin(2r+1)$, $SO(2r+1)$ &
+  generator bootstrap (Section~\ref{sec:bcd}) &
+  \code{bcd}, \code{Series::B}; gauge \gaugeson{} \\
+$C_r$ & $Sp(2r)$, $PSp(2r)$ &
+  generator bootstrap &
+  \code{bcd}, \code{Series::C}; gauge \gaugeson{} \\
+$D_r$ & $Spin(2r)$, $SO(2r)$, $PSO(2r)$, half-spin &
+  generator bootstrap &
+  \code{bcd}, \code{Series::D}; gauge \gaugeson{} \\
+$G_2$, $F_4$, $E_6$, $E_7$, $E_8$ & --- &
+  none &
+  \code{RootSystem} variants only \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Two types, two jobs.} \code{RootSystem} is the
+\emph{label-lattice} type: it carries all nine families of
+Theorem~\ref{thm:kc}, it fixes the rank (hence the length of the Dynkin tuple)
+and the lattice $P/Q$ (hence the congruences of
+Section~\ref{sec:global}). \code{bcd::Series} is the \emph{bootstrap-family}
+key: it exists only where a defining-representation seed and a canonical
+catalogue exist, so it has exactly three variants $B$, $C$, $D$. The single
+bridge is \code{bcd::Series::root\_system}; neither type is an alias of the
+other. $A$-series labels are not a \code{Series} at all --- they go through
+\code{sun::Irrep} (and $A_1$ through \code{su2}).
+
+\paragraph{A group is a root system plus a global form.} The whole of
+\code{GroupId} is
+\begin{align*}
+  \code{GroupId} \;&=\; \code{RootSystem} \;\times\; \code{GlobalForm}, \\
+  \code{GlobalForm} \;&\in\; \{\,\code{SimplyConnected}\,\}\cup
+                        \{\,\code{Quotient}(\Gamma) : \Gamma\subseteq Z\,\},
+\end{align*}
+which is exactly Fact~\ref{fact:forms}: the classification supplies the first
+factor, the centre supplies the second. The named constructors are the
+ergonomic surface, and they take the matrix dimension, not the rank
+(all are associated functions of \code{GroupId}, and the prefix is dropped in
+the table):
+
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Constructor & Group & Root datum \\
+\midrule
+\code{su(n)}              & $SU(n)$        & $A_{n-1}$, \code{SimplyConnected} \\
+\code{su\_quotient(n,k)}  & $SU(n)/\ZZ_k$, $k\mid n$ & $A_{n-1}$, \code{Zk(k)} \\
+\code{psu(n)}             & $PSU(n)$       & $A_{n-1}$, \code{Zk(n)} \\
+\code{spin(n)}            & $Spin(n)$      & $B_{(n-1)/2}$ or $D_{n/2}$, \code{SimplyConnected} \\
+\code{so(n)}              & $SO(n)$        & $B_{(n-1)/2}$ + \code{Z2}, or $D_{n/2}$ + \code{DVector} \\
+\code{pso(n)}             & $PSO(n)$       & $B$ + \code{Z2}; $D_r$ + \code{Z4} ($r$ odd), \code{DFull} ($r$ even) \\
+\code{sp(m)}              & $Sp(m)$        & $C_{m/2}$, \code{SimplyConnected} \\
+\code{psp(m)}              & $PSp(m)$       & $C_{m/2}$, \code{Z2} \\
+\code{half\_spin\_plus(n)}  & $Ss(n)$, $4\mid n$ & $D_{n/2}$, \code{DHalfSpinPlus} \\
+\code{half\_spin\_minus(n)} & $Sc(n)$, $4\mid n$ & $D_{n/2}$, \code{DHalfSpinMinus} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{sloppypar}
+\paragraph{Which form the coefficient engines publish.} A construction engine
+works in the \emph{cover} --- the bootstrap needs the spinor seeds, so its
+internal catalogue is over $Spin(2r+1)$, $Sp(2r)$, $Spin(2r)$ --- while the
+labels a query \emph{publishes} are cut down to a chosen default form:
+$SO(2r+1)$ for $B$, $Sp(2r)$ for $C$, $SO(2r)$ for $D$. The form-aware
+constructors \code{sun::Irrep::from\_dynkin\_in} and
+\code{bcd::Irrep::from\_dynkin\_in} take a \code{GroupId} explicitly; the plain
+\code{from\_dynkin} constructors keep those historically published defaults.
+API: \code{bcd::Series::cover\_group}, \code{bcd::Series::published\_group}.
+\end{sloppypar}
+
+\paragraph{The exceptionals are placeholders, and provably inert.}
+$G_2$, $F_4$, $E_6$, $E_7$, $E_8$ exist as \code{RootSystem} variants so that
+the type transcribes Theorem~\ref{thm:kc} completely --- rank and centre are
+recorded, nothing else. There is no coefficient engine and no congruence
+logic: \code{GroupId::admits} answers \code{true} for
+\code{SimplyConnected} (the cover admits every dominant integral weight, which
+needs no family-specific arithmetic) and \code{false} for \emph{every}
+quotient, including the mathematically real ones such as $E_6/\ZZ_3$. That is
+not a silent wrong answer but the deliberate fail-closed behaviour of
+Section~\ref{sec:global}: a group with no admissible weights has no irreps, so
+both form-aware constructors reject every label with the ordinary
+not-admissible error. It is pinned by the test
+\code{tests/global\_form.rs::nonsensical\_root\_datum\_admits\_nothing}, which
+sweeps labels for a list of impossible root data --- $E_6$ with
+$\ZZ_3$ among them --- and asserts that nothing is admitted.
+
 
 %======================================================================
 \section{Compact groups and their irreducible representations}
@@ -243,7 +745,7 @@ weight space, annihilated by every raising operator $e_{\alpha_i}$.
 Humphreys $[8]$ \S20--21; $[7]$ \S14.
 \end{fact}
 
-\begin{convention}[Labelling]
+\begin{convention}[Labelling]\label{conv:labelling}
 \code{racah} accepts and returns irreps as Dynkin label tuples
 $(a_1,\dots,a_r)$ in \textbf{Bourbaki numbering} $[20]$ (so, e.g., for $B_r$
 the short simple root is $\alpha_r$ and $a_r$ is the spinor label). Internally
@@ -434,6 +936,7 @@ count rather than dimension is the primary key, is \gaugeson{} \S14.1--14.2.
 \end{convention}
 
 \subsection{$SU(2)$: closed forms}
+\label{sec:su2}
 
 For $SU(2)$ nothing is constructed. The $3j$, $6j$, CGC, $F$ and $R$ all have
 closed-form single-sum expressions --- the Racah calculus $[5]$, with the
@@ -908,138 +1411,6 @@ Section~\ref{sec:exact} against the pinned reference implementations.
 \end{remark}
 
 %======================================================================
-\section{Global forms: which group, not which algebra}
-\label{sec:global}
-%======================================================================
-
-Everything above is stated for a group, but a root system names only an
-algebra. $\so(N)$ is the algebra of both $Spin(N)$ and
-$SO(N)=Spin(N)/\ZZ_2$; $\su(N)$ is the algebra of $SU(N)$, of $SU(N)/\ZZ_k$ for
-every $k\mid N$, and of $PSU(N)=SU(N)/\ZZ_N$. These groups have the same
-Lie-algebra representation theory and differ in exactly one respect: which
-dominant integral weights are genuine representations \emph{of the group}.
-
-\begin{fact}[Classification of connected compact forms]\label{fact:forms}
-Let $G_{\mathrm{sc}}$ be the simply connected compact group with a given root
-system. Then $Z(G_{\mathrm{sc}}) \cong P/Q$, every connected compact group with
-that root system is $G_\Gamma = G_{\mathrm{sc}}/\Gamma$ for a subgroup
-$\Gamma\subseteq Z(G_{\mathrm{sc}})$, and
-\begin{equation}\label{eq:admis}
-  \Irr(G_\Gamma)
-  \;=\; \bigl\{\, \lambda\in P^+ \;:\; \chi_\lambda\big|_\Gamma = 1 \,\bigr\},
-\end{equation}
-where the \emph{central character} $\chi_\lambda$ depends on $\lambda$ only
-through its class $[\lambda]\in P/Q$. $[7]$ \S23; the congruency classes are
-tabulated by Slansky $[13]$ \S5.
-\end{fact}
-
-The class $[\lambda]\in P/Q$ is the \emph{$N$-ality} / congruency class, and
-for the series \code{racah} implements it is an explicit linear form in the
-Dynkin labels.
-
-\paragraph{$A_{r}$, $r=N-1$: $P/Q\cong\ZZ_N$.} The class is the $N$-ality
-\begin{equation}\label{eq:nality}
-  t(\lambda) \;\equiv\; \sum_{i=1}^{N-1} i\,a_i \pmod N ,
-\end{equation}
-and for $\Gamma = \ZZ_k$ with $k\mid N$ the admissibility condition
-\eqref{eq:admis} reads $t(\lambda)\equiv 0 \pmod k$. So $PSU(3)=SU(3)/\ZZ_3$
-admits the adjoint $\mathbf{8}$ and rejects the fundamental $\mathbf{3}$.
-
-\paragraph{$B_r$: $P/Q\cong\ZZ_2$.} The class is $a_r \bmod 2$ --- exactly the
-tensor/spinor split of Section~\ref{sec:bcd}. $Spin(2r+1)$ admits all
-$\lambda\in P^+$; $SO(2r+1)$ admits those with $a_r$ even.
-
-\paragraph{$C_r$: $P/Q\cong\ZZ_2$.} The class is
-$a_1+a_3+a_5+\cdots \bmod 2$. $Sp(2r)$ admits all $\lambda\in P^+$;
-$PSp(2r)=Sp(2r)/\ZZ_2$ admits those with $a_1+a_3+\cdots$ even.
-
-\paragraph{$D_r$: $P/Q\cong\ZZ_4$ ($r$ odd) or $\ZZ_2\times\ZZ_2$ ($r$ even).}
-This is the rich case, and it is where a convention has to be pinned rather
-than derived, because naming a form requires choosing a generator of the
-centre.
-
-One condition is uniform in $r$: the \emph{vector} (tensor) sublattice
-$\{0,v\}\subset P/Q$ is always a $\ZZ_2$, and quotienting by it gives
-\begin{equation}\label{eq:so2r}
-  SO(2r):\qquad a_{r-1} + a_r \;\equiv\; 0 \pmod 2 ,
-\end{equation}
-for every $r$ --- this is the tensor/spinor split of Section~\ref{sec:bcd},
-and it is $r$-uniform because $(\varepsilon_1,\varepsilon_1)=1$ for every $r$.
-The remaining forms depend on the parity of $r$.
-
-For $r$ odd the class is valued in $\ZZ_4$, and \code{racah} fixes the
-generator $c=[\omega_r]$, so that
-\begin{equation}\label{eq:d4class}
-  \kappa(\lambda) \;\equiv\;
-    a_r - a_{r-1} + 2\!\!\sum_{\substack{i \ \mathrm{odd} \\ i \le r-2}}\!\! a_i
-  \pmod 4 .
-\end{equation}
-This choice makes conjugation \emph{be} negation of the class, matching
-$\code{bcd::Irrep::dual}$ ($\lambda_r\mapsto-\lambda_r$). Slansky's uniform
-formula $[13]$ \S5 equals $+\kappa$ for $r\equiv 1 \pmod 4$ and $-\kappa$ for
-$r\equiv 3\pmod 4$; the difference is the $\ZZ_4$ automorphism $x\mapsto -x$,
-i.e. a generator choice, not a discrepancy.
-
-so \eqref{eq:so2r} is the $\kappa\equiv 0\pmod 2$ subgroup, and $PSO(2r)$ (the
-full $\ZZ_4$ quotient) is $\kappa\equiv 0 \pmod 4$. There are no half-spin
-forms for $r$ odd: $\ZZ_4$ has only one subgroup of order $2$.
-
-For $r$ even the class is valued in $\ZZ_2\times\ZZ_2$, which has three
-subgroups of order $2$, so alongside $Spin(2r)$ (all $\lambda$), $SO(2r)$
-\eqref{eq:so2r} and $PSO(2r)$ (the full quotient) there are two
-\emph{half-spin} forms. Writing
-$t \equiv \sum_{i\ \mathrm{odd},\, i\le r-2} a_i \pmod 2$ and
-$p \equiv a_{r-1}+t$, $q \equiv a_r + t \pmod 2$:
-\[
-  \text{half-spin}_+:\ p \equiv 0;\qquad
-  \text{half-spin}_-:\ q \equiv 0;\qquad
-  PSO(2r):\ p \equiv q \equiv 0 \pmod 2 .
-\]
-A half-spin form admits one chirality of spinor but \emph{not} the vector
-representation (which has $p=q=1$). The two half-spin forms are named for the
-class they \emph{retain}, not the central element they kill: a
-kill-based name is not uniform in $r$, because $(\omega_r,\omega_r)=r/4$ makes
-the annihilator of $z_{\omega_r}$ differ between $r\equiv0$ and $r\equiv2
-\pmod 4$. Slansky's $S_s/S_c$ are accepted as documented aliases. \refsmd{}
-carries this convention with its full justification.
-
-\subsection{Two consequences the implementation relies on}
-
-\begin{proposition}[Admissibility is a construction-time predicate]
-The class map $P^+\to P/Q$, $\lambda\mapsto[\lambda]$, is the restriction of a
-group homomorphism, so $[\lambda+\mu]=[\lambda]+[\mu]$ and
-$[-w_0\lambda]=-[\lambda]$. Hence the admissible set of \eqref{eq:admis} is
-closed under fusion and under duality: it never needs re-checking on a fusion
-output.
-\end{proposition}
-
-\begin{proposition}[A global form deletes irreps; it never changes a coefficient]
-\label{prop:samecoeff}
-Let $\lambda$ be admissible for both $G_\Gamma$ and $G_{\Gamma'}$. The
-representations of $G_\Gamma$ and $G_{\Gamma'}$ with highest weight $\lambda$
-have the same carrier, the same $\g$-action, and hence the same CGC, $F$, $R$
-and $\varkappa$ \emph{in the same basis}: the choice of $\Gamma$ never enters
-their computation. Consequently the coefficient caches are keyed on irrep
-labels with \emph{no global form in the key}, and two forms sharing an irrep
-must share the cache entry.
-\end{proposition}
-
-\begin{sloppypar}
-API: \code{racah::group} --- \code{RootSystem}, \code{GlobalForm},
-\code{CenterSubgroup}, \code{GroupId}, and the predicate
-\code{GroupId::admits}; the form-aware constructors
-\code{sun::Irrep::from\_dynkin\_in} and \code{bcd::Irrep::from\_dynkin\_in}
-(the plain \code{from\_dynkin} constructors keep their historically published
-groups).
-\end{sloppypar}
-
-\begin{remark}[Scope]
-Connected compact groups only. $O(N)$ and $Pin(N)$ are not central quotients of
-a simply connected group --- they are disconnected extensions --- and are out
-of scope; so is any non-compact real form.
-\end{remark}
-
-%======================================================================
 \section{What is exact, and what is verification-gated}
 \label{sec:exact}
 %======================================================================
@@ -1093,7 +1464,7 @@ comparison goes through the gauge-invariant projector
 from QSpace's in documented, enumerated ways (\gaugeson{}).
 
 %======================================================================
-\begin{thebibliography}{20}
+\begin{thebibliography}{21}
 
 \bibitem{alex} A. Alex, M. Kalus, A. Huckleberry, J. von Delft,
 ``A numerical algorithm for the explicit calculation of $SU(N)$ and
@@ -1219,7 +1590,18 @@ Chapters 4--6}, Elements of Mathematics, Springer (2002).
 ISBN 978-3-540-42650-9.
 \href{https://doi.org/10.1007/978-3-540-89394-3}{doi:10.1007/978-3-540-89394-3}.
 \emph{Added for this note:} the simple-root numbering (Plates I--IX) that fixes
-the order of the Dynkin label tuple in the API.
+the order of the Dynkin label tuple in the API; Ch.~VI \S4 (Theorem~3 and the
+plates) for the Killing--Cartan classification, the nine Dynkin diagrams, the
+low-rank identifications (\S4.4), and the tabulated $P/Q$ of each family.
+
+\bibitem{knapp} A. W. Knapp, \emph{Lie Groups Beyond an Introduction},
+2nd ed., Progress in Mathematics \textbf{140}, Birkh\"auser (2002).
+ISBN 978-0-8176-4259-4.
+\href{https://doi.org/10.1007/978-1-4757-2453-0}{doi:10.1007/978-1-4757-2453-0}.
+\emph{Added for this note:} existence of a compact real form of a complex
+semisimple Lie algebra (Theorem~6.11) and its uniqueness up to conjugacy
+(Corollary~6.20) --- the step from the classification of algebras to the
+compact groups \code{racah} computes for.
 
 \end{thebibliography}
 
