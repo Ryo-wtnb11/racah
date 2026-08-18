@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/Ryo-wtnb11/racah/actions/workflows/ci.yml/badge.svg)](https://github.com/Ryo-wtnb11/racah/actions/workflows/ci.yml)
 [![wheels](https://github.com/Ryo-wtnb11/racah/actions/workflows/wheels.yml/badge.svg)](https://github.com/Ryo-wtnb11/racah/actions/workflows/wheels.yml)
+[![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Ryo-wtnb11/racah/badges/badge.json)](https://github.com/Ryo-wtnb11/racah/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/Ryo-wtnb11/racah/graph/badge.svg)](https://codecov.io/gh/Ryo-wtnb11/racah)
 [![crates.io](https://img.shields.io/crates/v/racah.svg)](https://crates.io/crates/racah)
 [![docs.rs](https://img.shields.io/docsrs/racah)](https://docs.rs/racah)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
