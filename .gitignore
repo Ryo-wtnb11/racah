@@ -8,3 +8,9 @@ Cargo.lock
 /racah-py/.venv/
 __pycache__/
 .pytest_cache/
+
+# LaTeX build artifacts (docs/theory.tex); the built theory.pdf IS committed.
+docs/*.aux
+docs/*.log
+docs/*.out
+docs/*.toc

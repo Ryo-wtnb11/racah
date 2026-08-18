@@ -16,10 +16,10 @@
 //! recurse), not by Gelfand–Tsetlin: the symplectic chain `Sp(2r) ⊃ Sp(2r-2)`
 //! is not multiplicity-free, so no GT-type basis with practical closed-form
 //! ladder elements exists (and the multiplicity-free SO chains have no
-//! production-viable closed forms either). See [`docs/theory.md`] §5 for the
+//! production-viable closed forms either). See [`docs/theory.pdf`] §5 for the
 //! rationale and [`docs/references.md`] for the port provenance.
 //!
-//! [`docs/theory.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/theory.md
+//! [`docs/theory.pdf`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/theory.pdf
 //! [`docs/references.md`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/references.md
 //!
 //! # Published object and global form (issue #18 Ruling 3; issues #87, #54)
