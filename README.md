@@ -1,5 +1,11 @@
 # racah
 
+[![CI](https://github.com/Ryo-wtnb11/racah/actions/workflows/ci.yml/badge.svg)](https://github.com/Ryo-wtnb11/racah/actions/workflows/ci.yml)
+[![wheels](https://github.com/Ryo-wtnb11/racah/actions/workflows/wheels.yml/badge.svg)](https://github.com/Ryo-wtnb11/racah/actions/workflows/wheels.yml)
+[![crates.io](https://img.shields.io/crates/v/racah.svg)](https://crates.io/crates/racah)
+[![docs.rs](https://img.shields.io/docsrs/racah)](https://docs.rs/racah)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+
 Racah–Wigner calculus for compact Lie groups, in Rust: irreducible
 representations, Clebsch–Gordan coefficients, and recoupling coefficients
 (3j / 6j / F / R) for SU(2), SU(N), SO(N), and Sp(2N).
@@ -551,6 +557,23 @@ checked representation layer, and cache resource contract — is described under
   [#15](https://github.com/Ryo-wtnb11/racah/issues/15).
 - Build the docs locally with the same KaTeX math rendering as docs.rs:
   `RUSTDOCFLAGS="--html-in-header doc/katex-header.html" cargo doc --no-deps --all-features --open`.
+
+## Citation
+
+If you use racah in academic work, please cite it
+(machine-readable metadata in [`CITATION.cff`](CITATION.cff)):
+
+```bibtex
+@software{watanabe_racah_2026,
+  author  = {Watanabe, Ryo},
+  title   = {{racah}: Racah--Wigner calculus for compact Lie groups},
+  year    = {2026},
+  url     = {https://github.com/Ryo-wtnb11/racah},
+  license = {MIT OR Apache-2.0}
+}
+```
+
+A DOI will be added once a release is archived on Zenodo.
 
 ## License
 

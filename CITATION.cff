@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: racah
+authors:
+  - family-names: Watanabe
+    given-names: Ryo
+repository-code: "https://github.com/Ryo-wtnb11/racah"
+license:
+  - MIT
+  - Apache-2.0
+abstract: >-
+  A Rust library for Racah-Wigner calculus: Clebsch-Gordan and recoupling
+  (F/R) coefficients for SU(2), SU(N), SO(N), and Sp(2N), computed on demand
+  for any admissible labels under a gauge frozen as a normative specification,
+  with Python bindings.
