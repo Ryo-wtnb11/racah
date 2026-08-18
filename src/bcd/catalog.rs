@@ -251,6 +251,15 @@ impl CatalogCgc {
     }
     /// The isometry of outer-multiplicity copy `mu` (`< multiplicity`) as a flat
     /// column-major `d1·d2 × d3` buffer.
+    ///
+    /// Indexing, in full: element `(row, m3)` is at `copy[m3 * rows + row]`
+    /// with `rows = d1·d2` from [`copy_shape`](CatalogCgc::copy_shape). The
+    /// product-basis row index is **first factor fast**, `row = m1 + d1·m2`
+    /// with `d1 = dim(s1)`, so `m1 = row % d1` and `m2 = row / d1`.
+    ///
+    /// # Panics
+    ///
+    /// If `mu >= multiplicity()`.
     pub fn copy(&self, mu: usize) -> &[f64] {
         let stride = self.rows * self.d3;
         &self.cols[mu * stride..(mu + 1) * stride]

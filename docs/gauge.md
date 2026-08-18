@@ -7,6 +7,16 @@
 > by the golden tests. Code follows this document — where the two disagree, the
 > code is the bug.
 
+
+**Role in the documentation set.** This is a *specification*, not a tutorial:
+it is written to be checked against, not read through. If you are learning the
+library, start with the [User Guide](user-guide/README.md); if you want the
+mathematics, see [`theory.pdf`](theory.pdf); for per-item API semantics see
+[docs.rs](https://docs.rs/racah). Come here when you are comparing racah's
+values against another implementation, auditing a sign or an index order, or
+changing code that touches a coefficient value. Documentation map:
+[`docs/README.md`](README.md).
+
 This document specifies the **gauge** of the coefficients this crate returns —
 the deterministic rules that fix the otherwise free basis, sign, and ordering of
 every coefficient. It covers the base SU(2) family (§12) and the SU(N) family

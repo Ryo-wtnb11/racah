@@ -282,6 +282,20 @@ impl std::error::Error for SunError {}
 /// An irreducible representation of SU(N), labelled by its normalized highest
 /// weight (see module docs for the invariant).
 ///
+/// Build one from its `N-1` Dynkin labels with [`Irrep::from_dynkin`] — the
+/// label *length* fixes `N`, so `&[1, 0]` is SU(3). [`Irrep::rank`] returns `N`
+/// (not `N-1`).
+///
+/// ```
+/// use racah::sun::Irrep;
+///
+/// let three = Irrep::from_dynkin(&[1, 0]).unwrap(); // SU(3) fundamental
+/// assert_eq!(three.rank(), 3);
+/// assert_eq!(three.dim(), 3u32.into());
+/// assert_eq!(three.dual().dynkin(), vec![0, 1]);    // the 3-bar
+/// assert_eq!(Irrep::trivial(3).unwrap().dim(), 1u32.into());
+/// ```
+///
 /// `Ord`/`Hash` are on the normalized weight, so two `Irrep`s are equal iff
 /// they denote the same irrep; the order is deterministic (used as a map key).
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -780,6 +794,30 @@ fn subrow_rec(j: usize, m: usize, toprow: &[i64], cur: &mut Vec<i64>, out: &mut 
 /// zero-channel map — this signature is Layer 2's foundation. The reference
 /// iterates the smaller-dimensional basis; we replicate the `dim` swap (the
 /// result is independent of it, but the port stays faithful).
+///
+/// # Returns
+///
+/// Every irrep `c` with `N^c_ab > 0`, mapped to that multiplicity. Channels
+/// with `N^c_ab = 0` are **absent**, not present with value `0`. Iteration
+/// order is the deterministic `Ord` order of [`Irrep`] (the normalized weight),
+/// which is stable but carries no physical meaning. Use
+/// [`shared_directproduct`] instead when you decompose the same pair
+/// repeatedly and want the cached, cheaply cloneable form.
+///
+/// ```
+/// use racah::sun::{directproduct, Irrep};
+///
+/// let three = Irrep::from_dynkin(&[1, 0]).unwrap();
+/// let eight = Irrep::from_dynkin(&[1, 1]).unwrap();
+///
+/// // 3 (x) 3-bar = 1 (+) 8.
+/// let out = directproduct(&three, &three.dual()).unwrap();
+/// assert_eq!(out.len(), 2);
+/// assert_eq!(out[&eight], 1);
+///
+/// // 8 (x) 8 contains the adjoint twice: N^8_88 = 2.
+/// assert_eq!(directproduct(&eight, &eight).unwrap()[&eight], 2);
+/// ```
 pub fn directproduct(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, SunError> {
     let product = shared_directproduct(a, b)?;
     #[cfg(test)]
@@ -790,7 +828,14 @@ pub fn directproduct(a: &Irrep, b: &Irrep) -> Result<BTreeMap<Irrep, u32>, SunEr
         .collect())
 }
 
-/// Returns the cached, read-only tensor-product decomposition of `a ⊗ b`.
+/// The cached, read-only tensor-product decomposition of `a ⊗ b`.
+///
+/// Same content as [`directproduct`] — every `c` with `N^c_ab > 0` and its
+/// multiplicity — but returned as a cheaply cloneable [`SunProduct`] backed by
+/// the process-global product cache, so repeated queries on the same pair do
+/// not rebuild the map. Query it with [`SunProduct::multiplicity`] or iterate
+/// with [`SunProduct::iter`]. Errors identically ([`SunError::RankMismatch`]
+/// on mismatched `N`).
 pub fn shared_directproduct(a: &Irrep, b: &Irrep) -> Result<SunProduct, SunError> {
     if a.rank() != b.rank() {
         return Err(SunError::RankMismatch {

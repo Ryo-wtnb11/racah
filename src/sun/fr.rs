@@ -111,6 +111,34 @@ fn require_same_rank(labels: &[&Irrep]) -> Result<(), SunError> {
 /// four vertices are $a\otimes b\to e$ ($\mu$), $e\otimes c\to d$ ($\nu$),
 /// $b\otimes c\to f$ ($\kappa$), $a\otimes f\to d$ ($\lambda$).
 ///
+/// # Returns
+///
+/// An [`FBlock`]: a dense rank-4 `f64` array, **row-major** over
+/// `[μ, ν, κ, λ]`, with axis lengths `[N^e_ab, N^d_ec, N^f_bc, N^d_af]` — one
+/// axis per vertex, in the order listed above. Read [`FBlock::dims`] for those
+/// lengths, [`FBlock::at`]`(mu, nu, kappa, lambda)` for one element,
+/// [`FBlock::data`] for the flat buffer. The axis order matches the
+/// TensorKitSectors `GenericFusion` convention, so no permutation is needed to
+/// hand a block to a consumer expecting that layout. In a multiplicity-free
+/// situation all four lengths are 1 and the block holds a single scalar at
+/// `at(0, 0, 0, 0)`.
+///
+/// The first call on a given label set generates the underlying CGC; the block
+/// and the CGC are then cached, so repeated queries are lookups.
+///
+/// ```
+/// use racah::sun::{f_symbol, Irrep};
+///
+/// let three = Irrep::from_dynkin(&[1, 0]).unwrap();
+/// let anti = three.dual();
+/// let eight = Irrep::from_dynkin(&[1, 1]).unwrap();
+///
+/// // F^{3 3bar 3}_{3}[8, 8] — every vertex multiplicity-free here.
+/// let block = f_symbol(&three, &anti, &three, &three, &eight, &eight).unwrap();
+/// assert_eq!(block.dims(), [1, 1, 1, 1]);
+/// assert!((block.at(0, 0, 0, 0) - 1.0 / 3.0).abs() < 1e-12);
+/// ```
+///
 /// # Errors
 ///
 /// - [`SunError::RankMismatch`] if the six labels are not all SU(N) for one `N`.
@@ -180,6 +208,26 @@ pub fn f_symbol(
 /// The R-symbol $R^{ab}_c$ as a dense $N^c_{ab} \times N^c_{ba}$ matrix.
 ///
 /// Ports `sector.jl:_Rsymbol` (the contraction lives in the `frcore` core).
+///
+/// # Returns
+///
+/// An [`RBlock`]: a dense row-major `N^c_ab × N^c_ba` `f64` matrix.
+/// [`RBlock::dim`] is `N^c_ab`, [`RBlock::at`]`(mu, nu)` reads one element,
+/// [`RBlock::data`] is the flat buffer. Multiplicity-free means a `1×1` block
+/// holding the braiding phase. Unlike [`f_symbol`], R is a single sparse join
+/// of two CGC and is not separately cached.
+///
+/// ```
+/// use racah::sun::{r_symbol, Irrep};
+///
+/// let three = Irrep::from_dynkin(&[1, 0]).unwrap();
+/// let eight = Irrep::from_dynkin(&[1, 1]).unwrap();
+///
+/// // R^{3 3bar}_{8} is a 1x1 block holding a phase.
+/// let r = r_symbol(&three, &three.dual(), &eight).unwrap();
+/// assert_eq!(r.dim(), 1);
+/// assert!((r.at(0, 0).abs() - 1.0).abs() < 1e-12);
+/// ```
 ///
 /// # Errors
 ///

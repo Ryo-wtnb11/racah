@@ -364,6 +364,30 @@ impl std::error::Error for BcdError {}
 /// labelled by its highest weight (an integer partition in the ε-basis; see
 /// module docs for the normalization and chirality convention).
 ///
+/// Build one from its `r` Dynkin labels with [`Irrep::from_dynkin`] (tensor
+/// irreps of the historically published group) or [`Irrep::from_dynkin_in`]
+/// (any global form, including the `Spin(N)` covers and their spinors).
+/// [`Irrep::rank`] is the Cartan rank `r`, so `Series::C` at `r = 2` is
+/// `Sp(4)` and its defining representation is the **4**.
+///
+/// ```
+/// # #[cfg(feature = "cgc-gen")] {
+/// use racah::bcd::{Irrep, Series};
+///
+/// // SO(5) = B_2: the 5-dimensional vector representation.
+/// let v = Irrep::from_dynkin(Series::B, &[1, 0]).unwrap();
+/// assert_eq!(v.dim(), 5u32.into());
+/// assert_eq!(v.dual(), v);
+/// assert_eq!(v.frobenius_schur(), 1);           // real self-duality
+/// assert_eq!(v.partition(), Some(vec![1, 0]));  // λ = (1, 0)
+///
+/// // Sp(4) = C_2: the defining 4 is pseudo-real.
+/// let four = Irrep::from_dynkin(Series::C, &[1, 0]).unwrap();
+/// assert_eq!(four.dim(), 4u32.into());
+/// assert_eq!(four.frobenius_schur(), -1);
+/// # }
+/// ```
+///
 /// `Ord`/`Hash` are on `(series, weight)`, so two `Irrep`s are equal iff they
 /// denote the same irrep; the order is deterministic (used as a map key).
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -1090,6 +1114,27 @@ fn permute_rec(v: &[i64], idx: &mut Vec<usize>, k: usize, set: &mut HashSet<Vec<
 /// Requires `a` and `b` to label the same group (same series and rank); a
 /// mismatch is an ill-posed input across distinct groups and returns
 /// [`BcdError::GroupMismatch`].
+///
+/// Algorithm (Racah–Speiser / Brauer–Klimyk, Humphreys §24): for every weight
+/// # Returns
+///
+/// Every irrep `c` with `N^c_ab > 0`, mapped to that multiplicity. Channels
+/// with `N^c_ab = 0` are **absent**, not present with value `0`. Iteration
+/// order is the deterministic `Ord` order of [`Irrep`]. No
+/// [`CanonicalCatalog`] is needed — this is pure exact combinatorics, so you
+/// can explore fusion channels without generating any coefficient.
+///
+/// ```
+/// # #[cfg(feature = "cgc-gen")] {
+/// use racah::bcd::{directproduct, Irrep, Series};
+///
+/// // SO(5) = B_2: 5 (x) 5 = 1 (+) 10 (+) 14, each once.
+/// let v = Irrep::from_dynkin(Series::B, &[1, 0]).unwrap();
+/// let out = directproduct(&v, &v).unwrap();
+/// assert_eq!(out.len(), 3);
+/// assert!(out.values().all(|&m| m == 1));
+/// # }
+/// ```
 ///
 /// Algorithm (Racah–Speiser / Brauer–Klimyk, Humphreys §24): for every weight
 /// `μ` of `b` (multiplicity `m_b(μ)` from Freudenthal, expanded over its Weyl

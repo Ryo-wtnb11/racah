@@ -7,6 +7,16 @@
 > by the golden tests. Code follows this document — where the two disagree, the
 > code is the bug.
 
+
+**Role in the documentation set.** This is a *specification*, not a tutorial:
+it is written to be checked against, not read through. If you are learning the
+library, start with the [User Guide](user-guide/README.md); if you want the
+mathematics, see [`theory.pdf`](theory.pdf); for per-item API semantics see
+[docs.rs](https://docs.rs/racah). Come here when you are comparing racah's
+values against another implementation, auditing a sign or an index order, or
+changing code that touches a coefficient value. Documentation map:
+[`docs/README.md`](README.md).
+
 This document specifies the **gauge** of the SO(N)/Sp(2N) Clebsch–Gordan
 isometries and projected generators produced by `racah::bcd`'s decomposition
 sweep (`src/bcd/sweep.rs`, Layer S3.2) — the deterministic rules that fix the

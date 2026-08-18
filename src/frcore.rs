@@ -115,10 +115,39 @@ pub(crate) trait Family {
 /// A dense F-symbol block $F^{abc}_d[e, f]$, a rank-4 array over the outer
 /// multiplicity indices $[\mu, \nu, \kappa, \lambda]$ in **row-major** order.
 ///
-/// The axis lengths are $[N^e_{ab}, N^d_{ec}, N^f_{bc}, N^d_{af}]$
-/// ($\mu, \nu, \kappa, \lambda$), matching the TensorKitSectors `GenericFusion` convention
-/// (`sectors.jl:Fsymbol_from_fusiontensor`). For a multiplicity-free family
-/// (e.g. SU(2)) every axis is length 1, so the block holds the single scalar.
+/// One axis per vertex of the recoupling move:
+///
+/// | Axis | Index | Vertex | Length |
+/// |---|---|---|---|
+/// | 0 | $\mu$ | $a \otimes b \to e$ | $N^e_{ab}$ |
+/// | 1 | $\nu$ | $e \otimes c \to d$ | $N^d_{ec}$ |
+/// | 2 | $\kappa$ | $b \otimes c \to f$ | $N^f_{bc}$ |
+/// | 3 | $\lambda$ | $a \otimes f \to d$ | $N^d_{af}$ |
+///
+/// The axis order matches the TensorKitSectors `GenericFusion` convention
+/// (`sectors.jl:Fsymbol_from_fusiontensor`), so a block can be handed to a
+/// consumer expecting that layout without a permutation. Axes 0–1 belong to the
+/// left coupling tree and 2–3 to the right one; they are *not* interchangeable.
+/// For a multiplicity-free family (e.g. SU(2)) every axis is length 1, so the
+/// block holds the single scalar at `at(0, 0, 0, 0)`.
+///
+/// Row-major means the flat index of $(\mu,\nu,\kappa,\lambda)$ is
+/// $((\mu \cdot d_1 + \nu) \cdot d_2 + \kappa) \cdot d_3 + \lambda$ for
+/// `dims = [d_0, d_1, d_2, d_3]`.
+///
+/// ```
+/// # #[cfg(feature = "cgc-gen")] {
+/// use racah::sun::{f_symbol, Irrep};
+///
+/// let three = Irrep::from_dynkin(&[1, 0]).unwrap();
+/// let eight = Irrep::from_dynkin(&[1, 1]).unwrap();
+/// let block = f_symbol(&three, &three.dual(), &three, &three, &eight, &eight).unwrap();
+///
+/// assert_eq!(block.dims(), [1, 1, 1, 1]);
+/// assert_eq!(block.data().len(), 1);
+/// assert_eq!(block.at(0, 0, 0, 0), block.data()[0]);
+/// # }
+/// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct FBlock {
     dims: [usize; 4],
