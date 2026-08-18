@@ -36,7 +36,8 @@ The collectors that produce these are `src/cache_audit.rs`,
   rule by rule there and in the module rustdoc of `src/sun/`, `src/bcd/`.
 - [`../../CHANGELOG.md`](../../CHANGELOG.md) — the breaking-change ledger the
   gauge specification's fingerprint epochs are recorded in.
-- `benches/` — `cargo bench` harnesses (not CI gates).
+- [`benches/`](#benchmarks) — `cargo bench` harnesses (not CI gates); see the
+  index below.
 
 ## Implementation notes that used to live in the README
 
@@ -84,3 +85,16 @@ RUSTDOCFLAGS="-D warnings --html-in-header doc/katex-header.html" \
 The `RUSTDOCFLAGS` KaTeX header is the same one docs.rs uses
 (`Cargo.toml [package.metadata.docs.rs]`), so `$...$` math in doc comments
 renders locally exactly as it will on docs.rs. Add `--open` to read it.
+
+## Benchmarks
+
+Criterion harnesses under `benches/`, none of them CI gates. All but `wigner`
+need the `cgc-gen` feature.
+
+| Bench | What it measures | How to run |
+|---|---|---|
+| `wigner` | Prime-factorized exact 3j/6j vs `wigner-symbols 0.5.1` on the doubled-spin ≤ 254 overlap domain, plus the thousands-tier 6j labels the reference crate's u8 keys cannot reach. | `cargo bench --bench wigner` |
+| `sun_cgc` | SU(N) CGC generation cost across representative `(N, dim)` channels, plus the warm cache-hit path. | `cargo bench --bench sun_cgc --features cgc-gen` |
+| `sun_fr` | SU(N) F-symbol cost, cold (full four-CGC contraction, CGC caches cleared) and warm (derived-f64 F cache hit). R is not benched separately: a single sparse join of two CGC, no cache. | `cargo bench --bench sun_fr --features cgc-gen` |
+| `sun_product` | SU(N) tensor-product cache working set (counting global allocator) plus cold/warm decomposition timing. | `cargo bench --bench sun_product --features cgc-gen` |
+| `bcd_fr` | SO(N)/Sp(2N) F-symbol cost, cold (fresh catalog + full CGC sweep + four-CGC contraction) and warm (derived-f64 bcd F cache hit). Same R rationale as `sun_fr`. | `cargo bench --bench bcd_fr --features cgc-gen` |
