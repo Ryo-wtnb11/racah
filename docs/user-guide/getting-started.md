@@ -9,7 +9,7 @@
 
 ```toml
 [dependencies]
-racah = "0.1.1"
+racah = "0.2.0"
 ```
 
 That is the **base** build: exact SU(2) only, three small numeric dependencies,
@@ -18,7 +18,7 @@ the `cgc-gen` feature:
 
 ```toml
 [dependencies]
-racah = { version = "0.1.1", features = ["cgc-gen"] }
+racah = { version = "0.2.0", features = ["cgc-gen"] }
 ```
 
 There is no fixed MSRV; `racah` builds and is tested on current stable Rust.

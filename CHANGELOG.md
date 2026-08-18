@@ -7,6 +7,19 @@ value/gauge rule noted below.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-18
+
+**Value/gauge status of this release:** the one value-affecting change is the
+[#90](https://github.com/Ryo-wtnb11/racah/issues/90) base-case frame
+correction below — `SO(2r+1)`/`SO(2r)`/`Spin(N)` coefficient values move and
+`bcd_authority_fingerprint()` is now `epoch=2`; persisted B/D coefficients
+generated under `epoch=1` must be regenerated. `Sp(2r)` values are
+byte-identical, and the SU(2) and SU(N) fingerprints do not move. No
+coefficient, gauge, normalization or fingerprint change has landed since that
+`epoch=2` correction; everything else in this release is API surface
+(`racah::group`, `Spin(N)`, `from_dynkin_in`, the `BcdError` rename), docs,
+tests and CI.
+
 ### Added
 
 - **Documentation reorganized into five layers** with a top-level index
@@ -34,6 +47,74 @@ value/gauge rule noted below.
   moves**: a global form gates which weights may be requested, and every
   admissible weight goes through the one Gelfand–Tsetlin engine and the same
   (form-free) cache entry.
+- **`Spin(N)` — the spinor irreps of the `B`/`D` covers**
+  ([#54](https://github.com/Ryo-wtnb11/racah/issues/54), stage (b) of
+  [#87](https://github.com/Ryo-wtnb11/racah/issues/87)). `Irrep::from_dynkin_in`
+  takes a `GroupId`, so `GroupId::spin(N)` admits the spinor labels that
+  `SO(N)` rejects; their dimensions, duals, Frobenius–Schur indicators, fusion,
+  CGC and F/R are produced by the same bootstrap. Three parts:
+  - `bcd::Irrep` now stores the **doubled** ε-basis weight `2λ`, so a spinor's
+    half-integer highest weight is exact (`Irrep::two_partition`,
+    `Irrep::is_spinor`; `Irrep::partition` returns `Option`, `None` on a
+    spinor, and `Irrep::weight_multiplicities` likewise, with
+    `two_weight_multiplicities` always available).
+  - `bcd::spinor_seeds` — the second base case: the Clifford/Fock generator
+    seeds for `ω_r` (`B_r`) and `ω_{r-1}`, `ω_r` (`D_r`), gated by the same
+    exact `check_commutators`, specified in
+    [`docs/gauge_soN.md`](docs/gauge_soN.md) §16 and pinned by new
+    `tests/gauge_golden.rs` rows (`Spin(5)`, `Spin(6)`, `Spin(7)`, `Spin(10)`).
+  - The canonical-parent candidate set is **class-indexed** (§14.2): a tensor
+    irrep's parents are searched in the tensor sublattice only. **Every shipped
+    `SO(N)`/`Sp(2N)` coefficient is byte-identical** and the `bcd` `epoch` stays
+    at `1` at this stage; `bcd_authority_fingerprint()` gains no tag (§16.4
+    states why). (The separate #90 correction under **Changed** below is what
+    later moves the `bcd` epoch to `2`.)
+
+  Oracles in `tests/isomorphism.rs` and `tests/spin.rs`: `Spin(6) ≅ SU(4)` and
+  `Spin(5) ≅ Sp(4)` now agree on the **whole** weight lattice (dimensions,
+  duals, every ordered product, Frobenius–Schur), and `Spin(3) ≅ SU(2)` is the
+  form-aware low-rank redirect.
+
+- **`racah::group` — root datum plus global form** (stage (a) of
+  [#87](https://github.com/Ryo-wtnb11/racah/issues/87)). `RootSystem`,
+  `GlobalForm`, `CenterSubgroup`, `GroupId` with fallible named constructors
+  (`GroupId::su/su_quotient/psu/sp/psp/spin/so/pso/half_spin_plus/
+  half_spin_minus`), and `GroupId::admits(&[i64])` — the central-character
+  predicate that says which dominant weights are representations of which
+  connected compact group. Ungated (pure integer arithmetic). `bcd`'s spinor
+  rejection is now the one call site of that predicate, and
+  `Series::root_system(r)` is the single bridge to the label-lattice type.
+  Conventions pinned in [`docs/references.md`](docs/references.md): the
+  `D_r`-odd `Z4` generator `[ω_r]`, and the `D_r`-even half-spin forms named
+  by the class they retain. **No coefficient value changes**; no `epoch` moves.
+
+- **Frozen gauge specification.** [`docs/gauge.md`](docs/gauge.md) and
+  [`docs/gauge_soN.md`](docs/gauge_soN.md) are declared **normative**: the
+  documents are the authority and the code implements them. `docs/gauge.md` also
+  now specifies the base SU(2) conventions (§12) and marks the rules the
+  implementation fixes only implicitly. **No coefficient value changes** from
+  this declaration itself; all three `epoch` tags stayed at `1` at this stage
+  (the #90 correction below is the release's one epoch move). What changes is the meaning of the authority
+  fingerprints: they are now **specification versions**, moving only on a
+  specification correction (spec edit + `epoch` bump + CHANGELOG breaking-change
+  entry + regenerated goldens, in one PR), never because a refactor moved a
+  value. A refactor that moves a value is now a bug by definition.
+  ([#84](https://github.com/Ryo-wtnb11/racah/issues/84))
+- **`tests/gauge_golden.rs`**: the in-repo gauge tripwire — a small committed
+  table of SU(3) CGC (including the OM = 2 adjoint vertex), SU(3) F, and signed
+  SO(5)/Sp(4) CGC and F values, asserted at `1e-12` in the default `cgc-gen` test
+  run. It covers the drift the external oracles miss by default: SU(3) F symbols
+  are otherwise pinned only by an `#[ignore]`d heavy table oracle, and the QSpace
+  B/C/D anchor compares an isotypic projector that is blind to the coupled-side
+  gauge. It is a drift detector, not an oracle.
+- **`racah-py`**: PyO3/maturin Python bindings for the SU(N) surface, built as
+  a workspace member with `cgc-gen` always on. Import name `racah`,
+  distribution `racah-py`; abi3-py312 wheels are built by the `wheels`
+  workflow. See [`racah-py/README.md`](racah-py/README.md).
+- **Coverage badges** — self-hosted llvm-cov badge branch plus Codecov
+  integration ([#93](https://github.com/Ryo-wtnb11/racah/pull/93)).
+- **`CITATION.cff`**, README badges and a Citation section
+  ([#92](https://github.com/Ryo-wtnb11/racah/pull/92)).
 
 ### Changed
 
@@ -83,76 +164,15 @@ value/gauge rule noted below.
   `bcd::Irrep::weight_multiplicities` returns `Option<…>`, both `None` on a
   spinor irrep, whose ε-basis weights are half-integers. The always-exact
   doubled forms are `two_partition` / `two_weight_multiplicities`.
-
-### Added
-
-- **`Spin(N)` — the spinor irreps of the `B`/`D` covers**
-  ([#54](https://github.com/Ryo-wtnb11/racah/issues/54), stage (b) of
-  [#87](https://github.com/Ryo-wtnb11/racah/issues/87)). `Irrep::from_dynkin_in`
-  takes a `GroupId`, so `GroupId::spin(N)` admits the spinor labels that
-  `SO(N)` rejects; their dimensions, duals, Frobenius–Schur indicators, fusion,
-  CGC and F/R are produced by the same bootstrap. Three parts:
-  - `bcd::Irrep` now stores the **doubled** ε-basis weight `2λ`, so a spinor's
-    half-integer highest weight is exact (`Irrep::two_partition`,
-    `Irrep::is_spinor`; `Irrep::partition` returns `Option`, `None` on a
-    spinor, and `Irrep::weight_multiplicities` likewise, with
-    `two_weight_multiplicities` always available).
-  - `bcd::spinor_seeds` — the second base case: the Clifford/Fock generator
-    seeds for `ω_r` (`B_r`) and `ω_{r-1}`, `ω_r` (`D_r`), gated by the same
-    exact `check_commutators`, specified in
-    [`docs/gauge_soN.md`](docs/gauge_soN.md) §16 and pinned by new
-    `tests/gauge_golden.rs` rows (`Spin(5)`, `Spin(6)`, `Spin(7)`, `Spin(10)`).
-  - The canonical-parent candidate set is **class-indexed** (§14.2): a tensor
-    irrep's parents are searched in the tensor sublattice only. **Every shipped
-    `SO(N)`/`Sp(2N)` coefficient is byte-identical** and the `bcd` `epoch` stays
-    at `1`; `bcd_authority_fingerprint()` gains no tag (§16.4 states why).
-
-  Oracles in `tests/isomorphism.rs` and `tests/spin.rs`: `Spin(6) ≅ SU(4)` and
-  `Spin(5) ≅ Sp(4)` now agree on the **whole** weight lattice (dimensions,
-  duals, every ordered product, Frobenius–Schur), and `Spin(3) ≅ SU(2)` is the
-  form-aware low-rank redirect.
-
-- **`racah::group` — root datum plus global form** (stage (a) of
-  [#87](https://github.com/Ryo-wtnb11/racah/issues/87)). `RootSystem`,
-  `GlobalForm`, `CenterSubgroup`, `GroupId` with fallible named constructors
-  (`GroupId::su/su_quotient/psu/sp/psp/spin/so/pso/half_spin_plus/
-  half_spin_minus`), and `GroupId::admits(&[i64])` — the central-character
-  predicate that says which dominant weights are representations of which
-  connected compact group. Ungated (pure integer arithmetic). `bcd`'s spinor
-  rejection is now the one call site of that predicate, and
-  `Series::root_system(r)` is the single bridge to the label-lattice type.
-  Conventions pinned in [`docs/references.md`](docs/references.md): the
-  `D_r`-odd `Z4` generator `[ω_r]`, and the `D_r`-even half-spin forms named
-  by the class they retain. **No coefficient value changes**; no `epoch` moves.
-
-- **Frozen gauge specification.** [`docs/gauge.md`](docs/gauge.md) and
-  [`docs/gauge_soN.md`](docs/gauge_soN.md) are declared **normative**: the
-  documents are the authority and the code implements them. `docs/gauge.md` also
-  now specifies the base SU(2) conventions (§12) and marks the rules the
-  implementation fixes only implicitly. **No coefficient value changes**; all
-  three `epoch` tags stay at `1`. What changes is the meaning of the authority
-  fingerprints: they are now **specification versions**, moving only on a
-  specification correction (spec edit + `epoch` bump + CHANGELOG breaking-change
-  entry + regenerated goldens, in one PR), never because a refactor moved a
-  value. A refactor that moves a value is now a bug by definition.
-  ([#84](https://github.com/Ryo-wtnb11/racah/issues/84))
-- **`tests/gauge_golden.rs`**: the in-repo gauge tripwire — a small committed
-  table of SU(3) CGC (including the OM = 2 adjoint vertex), SU(3) F, and signed
-  SO(5)/Sp(4) CGC and F values, asserted at `1e-12` in the default `cgc-gen` test
-  run. It covers the drift the external oracles miss by default: SU(3) F symbols
-  are otherwise pinned only by an `#[ignore]`d heavy table oracle, and the QSpace
-  B/C/D anchor compares an isotypic projector that is blind to the coupled-side
-  gauge. It is a drift detector, not an oracle.
-- **`racah-py`**: PyO3/maturin Python bindings for the SU(N) surface, built as
-  a workspace member with `cgc-gen` always on. Import name `racah`,
-  distribution `racah-py`; abi3-py312 wheels are built by the `wheels`
-  workflow. See [`racah-py/README.md`](racah-py/README.md).
-
-### Changed
-
 - Docs: replaced the "no label ceiling" absolute with the machine-word label
   bounds that report a typed overflow, and corrected "selectable dense
   backend" to the single Tenferro seam with no public backend-selection API.
+- **`wheels` workflow: full abi3 wheel matrix + PyPI trusted publishing for
+  `racah-py`** ([#103](https://github.com/Ryo-wtnb11/racah/pull/103)): linux
+  x86_64/aarch64, macOS arm64/x86_64, windows x86_64, plus an sdist. Publishing
+  is gated on `py-v*` tags/releases, so the crate's own `v*` releases never
+  touch PyPI. `racah-py` itself is unversioned by this release (stays 0.1.0,
+  `publish = false` for crates.io) and releases separately.
 
 ## [0.1.1] - 2026-08-12
 
@@ -264,6 +284,7 @@ SU(2) provider this rule is mechanized by `su2_authority_fingerprint()`: its
 epoch is bumped only on such a value-affecting release, so a fingerprint change
 and a breaking release are one reviewable event.
 
-[Unreleased]: https://github.com/Ryo-wtnb11/racah/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Ryo-wtnb11/racah/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Ryo-wtnb11/racah/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Ryo-wtnb11/racah/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Ryo-wtnb11/racah/releases/tag/v0.1.0
