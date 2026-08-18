@@ -194,8 +194,11 @@ basis, gauge, and cached values.
 - [`racah::group`]: `GroupId`, `RootSystem`, `GlobalForm`, `CenterSubgroup`,
   `GroupId::admits`
 - [`sun::Irrep::from_dynkin_in`], [`bcd::Irrep::from_dynkin_in`]
-- Deeper background: [`../theory.pdf`](../theory.pdf) §5 (why each family gets
-  its algorithm), and the `racah::group` module docs for the lattice arithmetic.
+- Deeper background: [`../theory.pdf`](../theory.pdf) §3 (the Killing–Cartan
+  classification and the Dynkin diagrams), §4 (each family's compact group,
+  its centre, and the global forms as centre quotients), §5 (the
+  classification-to-code correspondence table), §8 (why each family gets its
+  algorithm), and the `racah::group` module docs for the lattice arithmetic.
 
 [`GroupId::admits`]: https://docs.rs/racah/latest/racah/group/struct.GroupId.html#method.admits
 [`RootSystem`]: https://docs.rs/racah/latest/racah/group/enum.RootSystem.html

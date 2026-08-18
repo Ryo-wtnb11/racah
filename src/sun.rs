@@ -16,7 +16,7 @@
 //! `U(N) ⊃ U(N-1) ⊃ … ⊃ U(1)` is multiplicity-free (the intermediate U(1) charge
 //! separates copies the SU chain alone would repeat): GT patterns label basis
 //! states of an SU(N) irrep uniquely, so the ladder operators have exact
-//! closed-form matrix elements. See [`docs/theory.pdf`] §5 for the rationale and
+//! closed-form matrix elements. See [`docs/theory.pdf`] §8 for the rationale and
 //! [`docs/references.md`] for the port provenance.
 //!
 //! [`docs/theory.pdf`]: https://github.com/Ryo-wtnb11/racah/blob/main/docs/theory.pdf

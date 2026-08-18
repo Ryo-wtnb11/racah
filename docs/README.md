@@ -32,7 +32,7 @@ symbol by symbol, plus the bibliography: [`references.md`](references.md).
   [`gauge.md`](gauge.md) / [`gauge_soN.md`](gauge_soN.md). These are frozen and
   normative; they are specifications, not tutorials.
 - *"Why Gelfand–Tsetlin for SU(N) but a generator bootstrap for SO(N)?"* →
-  [`theory.pdf`](theory.pdf) §5.
+  [`theory.pdf`](theory.pdf) §8.
 - *"How much memory will the caches hold, and how do I bound it?"* →
   [User Guide: resources](user-guide/resources.md); the measurement evidence is
   in [`developer/`](developer/README.md).

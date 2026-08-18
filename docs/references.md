@@ -48,7 +48,7 @@ intermediate $U(1)$ charge at each step separates copies the $SU$ chain alone
 would repeat), so states of an $SU(N)$ irrep are labelled uniquely by
 Gelfand–Tsetlin patterns and the ladder operators have exact closed-form matrix
 elements $[1]$. That closed form is what makes a direct, exact CGC construction
-possible, and it is $SU(N)$-specific (see [`docs/theory.tex`](theory.tex) §5).
+possible, and it is $SU(N)$-specific (see [`docs/theory.tex`](theory.tex) §8).
 
 | Implementation area (`file::symbol`) | Reference (project, version, `file:symbol`) | What was taken | Why this reference / algorithm | Deviations |
 |---|---|---|---|---|
@@ -69,7 +69,7 @@ implementation exists. So the
 whole $B/C/D$ set is built by a generator bootstrap — defining-rep seeds, tensor
 products, numeric highest-weight decomposition, harvest, recurse — which needs
 almost no family-specific structure. Its price, a procedurally-defined gauge, is
-pinned by [`docs/gauge_soN.md`](gauge_soN.md). See [`docs/theory.tex`](theory.tex) §5.
+pinned by [`docs/gauge_soN.md`](gauge_soN.md). See [`docs/theory.tex`](theory.tex) §8.
 
 | Implementation area (`file::symbol`) | Reference (project, version, `file:symbol`) | What was taken | Why this reference / algorithm | Deviations |
 |---|---|---|---|---|
@@ -151,6 +151,10 @@ Every identifier below was verified against the publisher/preprint record.
 8. J. E. Humphreys, *Introduction to Lie Algebras and Representation Theory*,
    Graduate Texts in Mathematics **9**, Springer (1972). ISBN 978-0-387-90053-7.
    DOI: [10.1007/978-1-4612-6398-2](https://doi.org/10.1007/978-1-4612-6398-2).
+   Cartan matrix and Dynkin diagram (§11.1–11.2), the Killing–Cartan
+   classification theorem (§11.4, with §11.5 and §12.1), the isomorphism
+   theorem (§14.2), the weight/root lattice quotient $P/Q$ (§13.1),
+   Freudenthal's recursion (§22.3), the Weyl dimension formula (§24.3).
 9. SUNRepresentations.jl (v0.4.0), a Julia implementation of $[1]$.
    <https://github.com/QuantumKitHub/SUNRepresentations.jl>.
 10. WignerSymbols.jl (v2.0.0), J. Haegeman.
@@ -171,7 +175,8 @@ Every identifier below was verified against the publisher/preprint record.
     Texts in Mathematics **98**, Springer (1985). ISBN 978-3-540-13678-1.
     DOI: [10.1007/978-3-662-12918-0](https://doi.org/10.1007/978-3-662-12918-0).
     Haar averaging and complete reducibility (§II.1–II.4), Peter–Weyl and Schur
-    orthogonality (§III.3), the Frobenius–Schur indicator (§II.6).
+    orthogonality (§III.3), the Frobenius–Schur indicator (§II.6), and
+    $Z(G_\mathrm{sc}) \cong P/Q$ for a simply connected compact group (§V.7).
 15. G. E. Baird, L. C. Biedenharn, "On the Representations of the Semisimple Lie
     Groups. II," *J. Math. Phys.* **4**, 1449–1466 (1963).
     DOI: [10.1063/1.1703926](https://doi.org/10.1063/1.1703926).
@@ -202,10 +207,21 @@ Every identifier below was verified against the publisher/preprint record.
     Mathematics, Springer (2002). ISBN 978-3-540-42650-9.
     DOI: [10.1007/978-3-540-89394-3](https://doi.org/10.1007/978-3-540-89394-3).
     Simple-root numbering (Plates I–IX), which fixes the order of the Dynkin
-    label tuple in the API; Ch. VIII §7 for the Frobenius–Schur indicator
+    label tuple in the API; Ch. VI §4 (Theorem 3, the plates, and the low-rank
+    identifications of §4.4) for the Killing–Cartan classification, the nine
+    Dynkin diagrams and the tabulated $P/Q$ of each family; Ch. VIII §7 for the
+    Frobenius–Schur indicator
     $(-1)^{\langle\lambda,\,2\rho^\vee\rangle}$ of a self-dual highest weight.
 
-Entries 14–20 are cited by the theory note ([`docs/theory.tex`](theory.tex)),
+21. A. W. Knapp, *Lie Groups Beyond an Introduction*, 2nd ed., Progress in
+    Mathematics **140**, Birkhäuser (2002). ISBN 978-0-8176-4259-4.
+    DOI: [10.1007/978-1-4757-2453-0](https://doi.org/10.1007/978-1-4757-2453-0).
+    Existence of a compact real form of a complex semisimple Lie algebra
+    (Theorem 6.11) and its uniqueness up to conjugacy (Corollary 6.20) — the
+    step from the Killing–Cartan classification of algebras to the compact
+    groups `racah` computes for.
+
+Entries 14–21 are cited by the theory note ([`docs/theory.tex`](theory.tex)),
 whose bibliography uses this numbering; entries 1–13 are cited by both. The
 port also follows the public conventions and F/R contraction wiring of
 TensorKitSectors ($[19]$), cited inline above as `sectors.jl:symbol`.
