@@ -327,6 +327,88 @@ fn recoupling_3() {
 /// `docs/user-guide/recoupling.md`, code block 4.
 #[test]
 fn recoupling_4() {
+    use racah::sun::{cgc, directproduct, f_symbol, Irrep};
+
+    let eight = Irrep::from_dynkin(&[1, 1]).unwrap();
+    let dim = 8usize;
+
+    // N^8_88 = 2, so every multiplicity axis below has length 2.
+    assert_eq!(directproduct(&eight, &eight).unwrap()[&eight], 2);
+
+    // Densify a sparse CGC into (row-major buffer, dims), indexed [m1][m2][m3][mu].
+    let dense = |s1: &Irrep, s2: &Irrep, s3: &Irrep| {
+        let t = cgc(s1, s2, s3).unwrap();
+        let [d1, d2, d3, n] = t.dims();
+        let mut buf = vec![0.0f64; d1 * d2 * d3 * n];
+        for e in t.entries() {
+            let (m1, m2, m3, mu) = (e.m1 as usize, e.m2 as usize, e.m3 as usize, e.mu as usize);
+            buf[((m1 * d2 + m2) * d3 + m3) * n + mu] = e.value;
+        }
+        (buf, [d1, d2, d3, n])
+    };
+    let at = |t: &(Vec<f64>, [usize; 4]), i: usize, j: usize, k: usize, l: usize| {
+        t.0[((i * t.1[1] + j) * t.1[2] + k) * t.1[3] + l]
+    };
+
+    // Left tree, e = 8: C^{ab->e} carries mu, C^{ec->d} carries nu (both [8, 8, 8, 2]).
+    let left = dense(&eight, &eight, &eight);
+
+    // Right tree: for every channel f of 8 x 8, the F block F^{888}_8[e=8, f]
+    // (shape [2, 2, N^f_88, N^8_8f]) and the two CGC carrying kappa and lambda.
+    let right: Vec<_> = directproduct(&eight, &eight)
+        .unwrap()
+        .keys()
+        .map(|f| {
+            (
+                f_symbol(&eight, &eight, &eight, &eight, &eight, f).unwrap(),
+                dense(&eight, &eight, f), // C^{bc->f}[mb, mc, mf, kappa]
+                dense(&eight, f, &eight), // C^{af->d}[ma, mf, md, lambda]
+            )
+        })
+        .collect();
+
+    // The F-move, one magnetic assignment at a time:
+    //   sum_me C^{ab->e}_mu C^{ec->d}_nu
+    //     = sum_f sum_{kappa, lambda} F[mu, nu, kappa, lambda] sum_mf C^{bc->f}_kappa C^{af->d}_lambda
+    let mut worst = 0.0f64;
+    for ma in 0..dim {
+        for mb in 0..dim {
+            for mc in 0..dim {
+                for md in 0..dim {
+                    for mu in 0..2 {
+                        for nu in 0..2 {
+                            let mut lhs = 0.0;
+                            for me in 0..dim {
+                                lhs += at(&left, ma, mb, me, mu) * at(&left, me, mc, md, nu);
+                            }
+                            let mut rhs = 0.0;
+                            for (fblock, c_bcf, c_afd) in &right {
+                                let [_, _, n_kappa, n_lambda] = fblock.dims();
+                                let dim_f = c_bcf.1[2];
+                                for kappa in 0..n_kappa {
+                                    for lambda in 0..n_lambda {
+                                        let mut pair = 0.0;
+                                        for mf in 0..dim_f {
+                                            pair += at(c_bcf, mb, mc, mf, kappa)
+                                                * at(c_afd, ma, mf, md, lambda);
+                                        }
+                                        rhs += fblock.at(mu, nu, kappa, lambda) * pair;
+                                    }
+                                }
+                            }
+                            worst = worst.max((lhs - rhs).abs());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(worst < 1e-9, "F-move residual {worst}");
+}
+
+/// `docs/user-guide/recoupling.md`, code block 5.
+#[test]
+fn recoupling_5() {
     use racah::sun::{check_f_unitarity, check_hexagon, check_pentagon, Irrep};
 
     let three = Irrep::from_dynkin(&[1, 0]).unwrap();
