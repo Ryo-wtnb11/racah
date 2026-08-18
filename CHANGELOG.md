@@ -7,6 +7,19 @@ value/gauge rule noted below.
 
 ## [Unreleased]
 
+### Added
+
+- **`racah-py` 0.1.1 — real Python documentation.** The wheel now ships full
+  type stubs ([`racah-py/racah.pyi`](racah-py/racah.pyi)) with per-function
+  docstrings (precise NumPy types, array shapes, the CGC/F/R multiplicity-axis
+  semantics, raised exceptions) plus the `py.typed` marker, so
+  `mypy`/`ty`/IDEs resolve the typed surface. Every PyO3 function and method
+  carries a matching `__doc__`. New User Guide chapter
+  [`docs/user-guide/python.md`](docs/user-guide/python.md): install from PyPI,
+  quickstart, worked CGC and F-symbol examples with the multiplicity axes in
+  NumPy code, and the fingerprint/epoch contract for Python consumers.
+  Documentation and packaging only — no behavior, value or fingerprint change.
+
 ## [0.2.0] - 2026-08-18
 
 **Value/gauge status of this release:** the one value-affecting change is the

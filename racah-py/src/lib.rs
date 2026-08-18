@@ -127,8 +127,9 @@ fn fusion_multiplicity(a: &PyIrrep, b: &PyIrrep, c: &PyIrrep) -> PyResult<u32> {
 }
 
 /// The m-basis Clebsch-Gordan tensor for `s1 ⊗ s2 → s3`, dense, with shape
-/// `[dim(s1), dim(s2), dim(s3), N^{s3}_{s1 s2}]` (the trailing axis is the
-/// outer multiplicity).
+/// `[dim(s1), dim(s2), dim(s3), N^{s3}_{s1 s2}]`: axes 0–2 index the
+/// Gelfand-Tsetlin m-basis states `m1`, `m2`, `m3`; the trailing axis `μ`
+/// indexes the outer-multiplicity copies of `s3`.
 #[pyfunction]
 fn clebsch_gordan<'py>(
     py: Python<'py>,
@@ -151,7 +152,9 @@ fn clebsch_gordan<'py>(
 }
 
 /// The F-symbol `F^{abc}_d[e, f]` as a `[μ, ν, κ, λ]` multiplicity block
-/// (magnetic indices contracted).
+/// (magnetic indices contracted), shape `[N^e_ab, N^d_ec, N^f_bc, N^d_af]` —
+/// one axis per vertex: μ: `a ⊗ b → e`, ν: `e ⊗ c → d`, κ: `b ⊗ c → f`,
+/// λ: `a ⊗ f → d` (TensorKitSectors `GenericFusion` axis order).
 #[pyfunction]
 fn f_symbol<'py>(
     py: Python<'py>,
@@ -170,7 +173,8 @@ fn f_symbol<'py>(
     Ok(array.into_pyarray(py))
 }
 
-/// The R-symbol `R^{ab}_c` as an `N^c_{ab} × N^c_{ba}` multiplicity matrix.
+/// The R-symbol `R^{ab}_c` as an `N^c_{ab} × N^c_{ba}` multiplicity matrix
+/// (row: `a ⊗ b → c` vertex copy, column: `b ⊗ a → c` copy).
 #[pyfunction]
 fn r_symbol<'py>(
     py: Python<'py>,

@@ -36,4 +36,3 @@ dev = ["pytest>=8"]
 module-name = "racah"
 # The SU(N) surface is the point of the bindings; wheels always carry `cgc-gen`.
 features = ["pyo3/extension-module"]
-include = ["racah.pyi"]
