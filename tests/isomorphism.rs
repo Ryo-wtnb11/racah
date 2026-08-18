@@ -12,7 +12,7 @@
 //! This strand verifies only the *tensor* (linear, non-spinor) image of each
 //! isomorphism: [`racah::bcd`] represents tensor irreps of `SO(N)`/`Sp(2N)`
 //! only (spinors belong to the covering group and are rejected with
-//! [`racah::bcd::BcdError::SpinorLabel`]). Labels outside the isomorphic
+//! [`racah::bcd::BcdError::NotAdmissible`]). Labels outside the isomorphic
 //! tensor image are out of scope here (role matrix).
 //!
 //! # Dynkin label maps

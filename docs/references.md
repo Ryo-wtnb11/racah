@@ -1,5 +1,10 @@
 # Porting provenance and references
 
+> **AI-generated, for agentic coding.** This document was written by an AI agent
+> as reference material for AI agents (and humans) working on this repository.
+> It may contain errors — check it against the code and tests rather than
+> trusting it blindly.
+
 `racah` is a faithful port: nearly every coefficient it computes traces to a
 named production implementation or a standard result. This page collects that
 provenance in one place — what was taken, from which reference at which version,
@@ -31,11 +36,12 @@ blow-up.
 
 ## SU(N) — `cgc-gen`, Gelfand–Tsetlin construction
 
-**Why this construction.** The unitary chain $U(N) \supset U(N-1) \supset \cdots
-\supset U(1)$ is multiplicity-free (the intermediate $U(1)$ charge at each step
-separates copies the $SU$ chain alone would repeat), so states of an $SU(N)$
-irrep are labelled uniquely by Gelfand–Tsetlin patterns and the ladder operators
-have exact closed-form matrix elements $[1]$. That closed form is what makes a direct, exact CGC construction
+**Why this construction.** The unitary chain
+$U(N) \supset U(N-1) \supset \cdots \supset U(1)$ is multiplicity-free (the
+intermediate $U(1)$ charge at each step separates copies the $SU$ chain alone
+would repeat), so states of an $SU(N)$ irrep are labelled uniquely by
+Gelfand–Tsetlin patterns and the ladder operators have exact closed-form matrix
+elements $[1]$. That closed form is what makes a direct, exact CGC construction
 possible, and it is $SU(N)$-specific (see [`docs/theory.md`](theory.md) §5).
 
 | Implementation area (`file::symbol`) | Reference (project, version, `file:symbol`) | What was taken | Why this reference / algorithm | Deviations |

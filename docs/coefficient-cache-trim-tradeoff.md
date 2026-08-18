@@ -1,5 +1,10 @@
 # Coefficient-cache trim semantics
 
+> **AI-generated, for agentic coding.** This document was written by an AI agent
+> as reference material for AI agents (and humans) working on this repository.
+> It may contain errors — check it against the code and tests rather than
+> trusting it blindly.
+
 Fresh release processes measured revision `78491855d1023545121020454989a6dee6859c6e`
 on macOS/aarch64 with rustc 1.96.0. Five samples per mode used:
 

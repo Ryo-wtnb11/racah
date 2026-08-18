@@ -215,6 +215,26 @@ pub enum GlobalForm {
 /// groups; only the retained class distinguishes them). The named
 /// constructors below are the ergonomic public surface; they are fallible,
 /// matching the house style of [`crate::bcd::Irrep::from_dynkin`].
+///
+/// # Why the fields stay public (issue #87 §9)
+///
+/// This is deliberately a **low-level root-datum record**, not a validated
+/// handle. Direct construction can pair a [`CenterSubgroup`] with a
+/// [`RootSystem`] whose center does not contain it (`A_3` with
+/// [`CenterSubgroup::DVector`], `B_2` with `Zk(2)`, any exceptional with any
+/// quotient). Such a pairing is not silently wrong and does not propagate:
+/// [`admits`](GroupId::admits) returns `false` for **every** weight, and the
+/// two form-aware constructors
+/// ([`crate::bcd::Irrep::from_dynkin_in`], [`crate::sun::Irrep::from_dynkin_in`])
+/// therefore reject every label with the ordinary not-admissible error. A
+/// nonsensical datum has no representations, which is the mathematically
+/// honest answer for a group that does not exist.
+///
+/// So no `try_new`, no private fields, no separate raw/validated pair: ordinary
+/// users go through [`su`](GroupId::su) / [`so`](GroupId::so) /
+/// [`spin`](GroupId::spin) / [`sp`](GroupId::sp) and never touch the root
+/// lattice, and the escape hatch is closed by the predicate rather than by
+/// encapsulation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct GroupId {
     /// The root system (and hence the Lie algebra).

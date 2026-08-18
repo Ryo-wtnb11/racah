@@ -510,7 +510,10 @@ oracle-checked:
 - **SU(2)** (base): exact 3j / 6j / Clebsch–Gordan / F / R in big-rational
   arithmetic.
 - **SU(N)** (`cgc-gen`): the full Gelfand–Tsetlin pipeline — CGC, F, R, with
-  outer-multiplicity indices.
+  outer-multiplicity indices. The central quotients `SU(N)/Z_k` and `PSU(N)`
+  are reached through `Irrep::from_dynkin_in(&GroupId::psu(n), …)`; they share
+  the engine, the gauge and the cache with `SU(N)` and only restrict which
+  highest weights may be asked for.
 - **SO(N) / Sp(2N)** (`cgc-gen`): the generator-bootstrap pipeline (B/C/D
   Cartan series) — CGC, F, R.
 - **Spin(N)** (`cgc-gen`): the same pipeline on the simply-connected form, so

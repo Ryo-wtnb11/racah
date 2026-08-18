@@ -34,7 +34,7 @@
 //!   (`B_r`), Sp(2r) (`C_r`), SO(2r) (`D_r`). Their irreps are exactly the
 //!   **tensor** irreps — integer highest weights in the orthonormal (ε) basis —
 //!   and a spinor label is rejected with
-//!   [`BcdError::SpinorLabel`](crate::bcd::BcdError::SpinorLabel), as before.
+//!   [`BcdError::NotAdmissible`](crate::bcd::BcdError::NotAdmissible), as before.
 //! - [`Irrep::from_dynkin_in`](crate::bcd::Irrep::from_dynkin_in) takes the group explicitly, so the **covers**
 //!   `Spin(2r+1)` and `Spin(2r)` are available and their **spinor** irreps —
 //!   half-integer ε-basis highest weights — are admitted (issue #54). Their
@@ -262,15 +262,25 @@ pub enum BcdError {
         /// The label length.
         got: usize,
     },
-    /// A Dynkin label the requested global form does not admit: its central
-    /// character is non-trivial on the quotiented-out subgroup of the center.
-    /// For the published `SO(N)` forms these are exactly the **spinor** labels
-    /// (`B_r`: `a_r` odd; `D_r`: `a_{r-1} + a_r` odd), which are
-    /// representations of the covering group `Spin(N)` — construct them
+    /// A valid dominant integral highest weight of the **cover** that the
+    /// requested global form does not admit: its central character is
+    /// non-trivial on the quotiented-out subgroup of the center.
+    ///
+    /// This is a global-form violation, not a malformed label — it is kept
+    /// distinct from [`BcdError::NegativeDynkin`] / [`BcdError::RankMismatch`]
+    /// (invalid labels), [`BcdError::ExcludedRank`] (out-of-scope rank) and the
+    /// generation/verification gates.
+    ///
+    /// For `SO(2r+1)` and `SO(2r)` the rejected labels are exactly the
+    /// **spinor** labels (`B_r`: `a_r` odd; `D_r`: `a_{r-1} + a_r` odd), which
+    /// are representations of the covering group `Spin(N)` — construct them
     /// through [`Irrep::from_dynkin_in`](crate::bcd::Irrep::from_dynkin_in) with `GroupId::spin(N)`.
-    SpinorLabel {
-        /// The series.
-        series: Series,
+    /// But the variant is *not* spinor-specific: `PSp(2r)` rejects
+    /// `a₁+a₃+… ` odd, `PSO(2r)` and the half-spin forms reject further tensor
+    /// classes, and none of those rejections is about spinors.
+    NotAdmissible {
+        /// The group whose global form rejected the weight.
+        group: GroupId,
         /// The offending Dynkin label.
         dynkin: Vec<i64>,
     },
@@ -321,12 +331,12 @@ impl fmt::Display for BcdError {
                 f,
                 "Dynkin label of length {got} for a rank-{expected} group"
             ),
-            BcdError::SpinorLabel { series, dynkin } => write!(
+            BcdError::NotAdmissible { group, dynkin } => write!(
                 f,
-                "Dynkin label {dynkin:?} is a spinor of Spin(N), not a tensor irrep of \
-                 series {} — spinors belong to the covering group; construct them \
-                 through Irrep::from_dynkin_in with the simply-connected form",
-                series.name()
+                "Dynkin label {dynkin:?} is a dominant integral weight of the cover but not \
+                 a representation of {group:?}: its central character is non-trivial on the \
+                 quotiented-out subgroup of the center — construct it through \
+                 Irrep::from_dynkin_in with the simply-connected form"
             ),
             BcdError::GroupMismatch { a, b } => write!(
                 f,
@@ -382,7 +392,7 @@ impl Irrep {
     /// Rejects: an empty label ([`BcdError::EmptyLabel`]); a negative component
     /// ([`BcdError::NegativeDynkin`]); an excluded low rank
     /// ([`BcdError::ExcludedRank`], with redirection); a spinor label
-    /// ([`BcdError::SpinorLabel`]).
+    /// ([`BcdError::NotAdmissible`]).
     pub fn from_dynkin(series: Series, dynkin: &[i64]) -> Result<Self, BcdError> {
         if dynkin.is_empty() {
             return Err(BcdError::EmptyLabel);
@@ -398,7 +408,7 @@ impl Irrep {
     /// this module implements) and `dynkin.len()` must equal its rank. A label
     /// the form does not admit — i.e. one whose central character is
     /// non-trivial on the quotiented-out subgroup — is
-    /// [`BcdError::SpinorLabel`].
+    /// [`BcdError::NotAdmissible`].
     ///
     /// Under `GlobalForm::SimplyConnected` the `B`/`D` families are `Spin(N)`
     /// and the spinor labels are admitted (issue #54). Their highest weights
@@ -450,8 +460,8 @@ impl Irrep {
         // `crate::group` (issue #87 §2). For a form that does not admit the
         // spinor lattice this is the tensor-irrep constraint.
         if !group.admits(dynkin) {
-            return Err(BcdError::SpinorLabel {
-                series,
+            return Err(BcdError::NotAdmissible {
+                group: *group,
                 dynkin: dynkin.to_vec(),
             });
         }

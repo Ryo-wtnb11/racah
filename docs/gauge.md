@@ -1,5 +1,12 @@
 # Coefficient gauge specification (base SU(2) and SU(N))
 
+> **AI-generated, for agentic coding.** This document was written by an AI agent
+> as reference material for AI agents (and humans) working on this repository,
+> and its prose may contain errors. Its **gauge values are not commentary**:
+> they are the frozen normative specification of racah's conventions, verified
+> by the golden tests. Code follows this document — where the two disagree, the
+> code is the bug.
+
 This document specifies the **gauge** of the coefficients this crate returns —
 the deterministic rules that fix the otherwise free basis, sign, and ordering of
 every coefficient. It covers the base SU(2) family (§12) and the SU(N) family
@@ -397,16 +404,16 @@ conventions the `su2_authority_fingerprint` tags name.
   Racah single-sum closed form, with the triangle coefficients from
   `su2.rs:delta_sq_pf`.
 - **Clebsch–Gordan — `cg=condon-shortley`.** `su2.rs:clebsch_gordan`, composed
-  from the 3j as $\sqrt{dj_3+1}\,(-1)^{(dj_2-dj_1-dm_3)/2}\,
-  \begin{pmatrix} dj_1 & dj_2 & dj_3 \\ dm_1 & dm_2 & -dm_3\end{pmatrix}$. Both
-  the $\sqrt{dj_3+1}$ normalization and the sign are part of the gauge: this is
-  its own convention, not inherited from the 3j.
+  from the 3j as
+  $\sqrt{dj_3+1}\,(-1)^{(dj_2-dj_1-dm_3)/2}\, \begin{pmatrix} dj_1 & dj_2 & dj_3 \\ dm_1 & dm_2 & -dm_3\end{pmatrix}$.
+  Both the $\sqrt{dj_3+1}$ normalization and the sign are part of the gauge:
+  this is its own convention, not inherited from the 3j.
 - **F symbol — `f=tks-su2irrep`.** `su2.rs:f_symbol_exact` is the value
-  authority: $F = (-1)^{j_1+j_2+j_3+j_4}\sqrt{(dj_5+1)(dj_6+1)}\;
-  \{dj_1\,dj_2\,dj_5 / dj_3\,dj_4\,dj_6\}$, matching TensorKitSectors
-  `su2irrep.jl:Fsymbol`. **The 6j argument order is gauge**, not an
-  implementation detail — a permuted argument order is a different F convention
-  with the same 6j.
+  authority:
+  $F = (-1)^{j_1+j_2+j_3+j_4}\sqrt{(dj_5+1)(dj_6+1)}\; \{dj_1\,dj_2\,dj_5 / dj_3\,dj_4\,dj_6\}$,
+  matching TensorKitSectors `su2irrep.jl:Fsymbol`. **The 6j argument order is
+  gauge**, not an implementation detail — a permuted argument order is a
+  different F convention with the same 6j.
 - **R symbol — `r=tks-su2irrep`.** `su2.rs:su2_r_symbol`: $(-1)^{j_1+j_2-j_3}$ on
   an admissible triangle, exact `0.0` otherwise (TensorKitSectors
   `su2irrep.jl:Rsymbol`). The zero on a non-admissible triple mirrors

@@ -148,14 +148,14 @@ fn malformed_and_spinor_labels_are_typed_errors() {
     // B_2 spinor: a_2 odd.
     assert!(matches!(
         Irrep::from_dynkin(Series::B, &[0, 1]),
-        Err(BcdError::SpinorLabel { .. })
+        Err(BcdError::NotAdmissible { .. })
     ));
     // D_3 tensor vs spinor by parity of a_2 + a_3.
     assert!(Irrep::from_dynkin(Series::D, &[1, 0, 0]).is_ok()); // 0+0 even (vector)
     assert!(Irrep::from_dynkin(Series::D, &[0, 1, 1]).is_ok()); // 1+1 even
     assert!(matches!(
         Irrep::from_dynkin(Series::D, &[0, 1, 2]),
-        Err(BcdError::SpinorLabel { .. }) // 1+2 = 3 odd
+        Err(BcdError::NotAdmissible { .. }) // 1+2 = 3 odd
     ));
     // C accepts every non-negative integer label (Sp is simply connected).
     assert!(Irrep::from_dynkin(Series::C, &[1, 1]).is_ok());
