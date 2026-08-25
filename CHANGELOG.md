@@ -9,7 +9,7 @@ value/gauge rule noted below.
 
 ### Added
 
-- **`racah-py` — the exact SU(2) surface is bound
+- **`racah-py` 0.1.2 — the exact SU(2) surface is bound
   ([#107](https://github.com/Ryo-wtnb11/racah/issues/107)).** Python could reach SU(2)
   only through the generated SU(N) pipeline at rank 1, paying a Gelfand–Tsetlin CGC
   construction, an SVD nullspace, a least-squares descent and a QR gauge fix for values
