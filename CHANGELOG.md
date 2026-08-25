@@ -43,6 +43,11 @@ value/gauge rule noted below.
   a test process cannot measure it, because the coefficient caches are process-global
   and whichever test ran first has already warmed them.
 
+  `racah-py/README.md` -- the PyPI long description -- now describes both surfaces and
+  the CGC phase relation, and its code blocks are executed by
+  `racah-py/tests/test_doc_examples.py` alongside the User Guide's, so the published
+  quickstart cannot rot silently.
+
 - **`racah-py` 0.1.1 — real Python documentation.** The wheel now ships full
   type stubs ([`racah-py/racah.pyi`](racah-py/racah.pyi)) with per-function
   docstrings (precise NumPy types, array shapes, the CGC/F/R multiplicity-axis
