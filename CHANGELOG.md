@@ -9,6 +9,36 @@ value/gauge rule noted below.
 
 ### Added
 
+- **`racah-py` — the exact SU(2) surface is bound
+  ([#107](https://github.com/Ryo-wtnb11/racah/issues/107)).** Python could reach SU(2)
+  only through the generated SU(N) pipeline at rank 1, paying a Gelfand–Tsetlin CGC
+  construction, an SVD nullspace, a least-squares descent and a QR gauge fix for values
+  the crate already has in closed form. Now bound: `wigner_3j`, `wigner_6j`,
+  `su2_clebsch_gordan`, `su2_f_symbol`, `su2_r_symbol`, `su2_authority_fingerprint`,
+  joining the `su2_frobenius_schur` that was already there. Labels are doubled
+  (`dj = 2j`, `dm = 2m`), values are scalars, and an inadmissible coupling is exactly
+  `0.0` rather than an error — the crate's infallible contract. The measured gap that
+  motivated it: ~3.8 ms per cold SU(2) R-symbol through the generated path, against a
+  sign (consumer evidence:
+  [TeNeT-py#307](https://github.com/Ryo-wtnb11/TeNeT-py/issues/307)).
+
+  **No existing surface changed and no value moved.** The SU(N) functions, their gauge
+  and `sun_authority_fingerprint()` are untouched; this adds a tier rather than
+  rerouting one, and which tier a consumer calls stays the consumer's choice.
+
+  Two relations between the tiers are now pinned by tests
+  (`racah-py/tests/test_su2_exact.py`) rather than left to be rediscovered: F-symbols
+  and R-symbols **agree** to round-off (worst |diff| 1.3e-15 over 55 R triangles and 76
+  F classes), while the **CGC differ by exactly one sign per channel**, uniform in the
+  magnetic indices and equal to `su2_r_symbol(dj1, dj2, dj3)`. The two are consistent:
+  F and R are gauge-invariant combinations in which that phase cancels, and CGC are
+  gauge data. Mixing the tiers' CGC without the factor gives wrong signs and no error.
+
+  The crate's `*_checked` twins are deliberately **not** bound: nothing has yet needed
+  to distinguish "zero because forbidden" from "zero because zero". New User Guide
+  section in [`docs/user-guide/python.md`](docs/user-guide/python.md), executed by
+  `racah-py/tests/test_doc_examples.py`.
+
 - **`racah-py` 0.1.1 — real Python documentation.** The wheel now ships full
   type stubs ([`racah-py/racah.pyi`](racah-py/racah.pyi)) with per-function
   docstrings (precise NumPy types, array shapes, the CGC/F/R multiplicity-axis
