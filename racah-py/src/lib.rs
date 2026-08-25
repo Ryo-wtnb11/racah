@@ -1,9 +1,23 @@
-//! Python bindings for the `racah` SU(N) surface (issue #81).
+//! Python bindings for the `racah` surfaces (issues #81, #107).
 //!
 //! Deliberately thin: irrep labels, fusion with outer multiplicities, the
 //! m-basis Clebsch-Gordan tensor, F/R symbols with their multiplicity axes, the
 //! verification gates, and the gauge fingerprint. Anything a consumer can write
 //! in ten lines of Python stays in Python.
+//!
+//! **Two surfaces, two authorities.** The SU(N) functions (`clebsch_gordan`,
+//! `f_symbol`, `r_symbol`) run the generated Gelfand-Tsetlin pipeline and carry
+//! [`sun_authority_fingerprint`]. The `su2_*` / `wigner_*` functions are the exact
+//! closed-form SU(2) engine -- big-rational arithmetic rounded once -- and carry
+//! [`su2_authority_fingerprint`]. SU(2) is reachable through *either*: an `Irrep([2j])`
+//! is a rank-1 SU(N) label, so the generated path answers for it too. They are not
+//! interchangeable bookkeeping: they agree numerically (issue #107 records the
+//! comparison) but are separate authorities with separate fingerprints, and a consumer
+//! that persists coefficients must record which one produced them.
+//!
+//! They are very far apart in cost. The generated path builds a CGC tensor by SVD
+//! nullspace, least-squares ladder descent and QR gauge fixing; `su2_r_symbol` is a
+//! sign. Issue #107 measured 3.8 ms against ~0 for the same value.
 
 use numpy::ndarray::{Array2, Array4};
 use numpy::{IntoPyArray, PyArray2, PyArray4};
@@ -221,6 +235,89 @@ fn su2_frobenius_schur(two_j: u32) -> f64 {
     racah_core::su2_frobenius_schur(two_j)
 }
 
+// --- the exact SU(2) surface (issue #107) ------------------------------------------
+//
+// Spins are doubled throughout (`dj = 2j`, `dm = 2m`), as in the crate: it keeps every
+// label an exact integer, which is the whole reason the engine below can be exact.
+//
+// These are the *infallible* engines. An inadmissible label set is exact zero, not an
+// error -- the crate's documented contract, and what a consumer that already guards with
+// a triangle test wants. The crate's `*_checked` twins are deliberately not bound yet:
+// nothing has asked to distinguish "zero because forbidden" from "zero because zero",
+// and each would add a stub, a test and an error mapping. Bind them when something does.
+
+/// The Wigner 3j symbol `(dj1 dj2 dj3; dm1 dm2 dm3)`, spins and projections doubled.
+///
+/// Exact big-rational arithmetic, rounded once to `float` on return. An inadmissible
+/// label set (m-sum, projection bound, or triangle) is exactly `0.0`.
+#[pyfunction]
+fn wigner_3j(dj1: u32, dj2: u32, dj3: u32, dm1: i32, dm2: i32, dm3: i32) -> f64 {
+    racah_core::wigner_3j(dj1, dj2, dj3, dm1, dm2, dm3).to_f64()
+}
+
+/// The Wigner 6j symbol `{dj1 dj2 dj3; dj4 dj5 dj6}`, spins doubled.
+///
+/// Exact big-rational arithmetic, rounded once to `float` on return. A label set
+/// violating any of the four triangle conditions is exactly `0.0`.
+#[pyfunction]
+fn wigner_6j(dj1: u32, dj2: u32, dj3: u32, dj4: u32, dj5: u32, dj6: u32) -> f64 {
+    racah_core::wigner_6j(dj1, dj2, dj3, dj4, dj5, dj6).to_f64()
+}
+
+/// The SU(2) Clebsch-Gordan coefficient `<dj1 dm1; dj2 dm2 | dj3 dm3>`, doubled labels.
+///
+/// Condon-Shortley phase, exact big-rational arithmetic rounded once. Note the argument
+/// order interleaves each spin with its projection, as the crate's does, and that this is
+/// the *scalar* SU(2) coefficient -- [`clebsch_gordan`] is the dense SU(N) m-basis tensor
+/// and a different object.
+///
+/// **The two tiers' CGC differ, and by exactly one sign.** F and R agree between them
+/// because a per-channel CGC phase cancels in any gauge-invariant combination; CGC are
+/// gauge *data* and do not. Measured over every channel up to `2j = 3`, the ratio is
+/// uniform in the magnetic indices and equals `(-1)^(j1 + j2 - j3)`, i.e. exactly
+/// [`su2_r_symbol`]:
+///
+/// ```text
+/// clebsch_gordan(Irrep([dj1]), Irrep([dj2]), Irrep([dj3]))[m1, m2, m3, 0]
+///     == su2_r_symbol(dj1, dj2, dj3) * su2_clebsch_gordan(dj1, dm1, dj2, dm2, dj3, dm3)
+/// ```
+///
+/// (with the rank-1 GT basis read as the magnetic basis ascending in m). Mixing the two
+/// tiers' CGC without that factor gives wrong signs and no error, so the relation is
+/// pinned by a test rather than left to this comment.
+#[pyfunction]
+fn su2_clebsch_gordan(dj1: u32, dm1: i32, dj2: u32, dm2: i32, dj3: u32, dm3: i32) -> f64 {
+    racah_core::clebsch_gordan(dj1, dm1, dj2, dm2, dj3, dm3).to_f64()
+}
+
+/// The SU(2) F-symbol `F^{dj1 dj2 dj3}_{dj4}[dj5, dj6]`, doubled spins.
+///
+/// Scalar: SU(2) has no outer multiplicity, so the four vertex axes of the SU(N)
+/// [`f_symbol`] block are all length 1 and this returns the single entry directly.
+#[pyfunction]
+fn su2_f_symbol(dj1: u32, dj2: u32, dj3: u32, dj4: u32, dj5: u32, dj6: u32) -> f64 {
+    racah_core::su2_f_symbol(dj1, dj2, dj3, dj4, dj5, dj6)
+}
+
+/// The SU(2) R-symbol `R^{dj1 dj2}_{dj3} = (-1)^{(j1 + j2 - j3)}`, doubled spins.
+///
+/// Scalar and exactly `+-1.0`; `0.0` when the triangle condition fails. SU(2) braiding is
+/// symmetric, so this is its own inverse.
+#[pyfunction]
+fn su2_r_symbol(dj1: u32, dj2: u32, dj3: u32) -> f64 {
+    racah_core::su2_r_symbol(dj1, dj2, dj3)
+}
+
+/// The exact-SU(2) gauge/authority fingerprint -- the twin of
+/// [`sun_authority_fingerprint`] for the functions above. A consumer that persists SU(2)
+/// coefficients records *this* one, and a consumer that reaches SU(2) through `Irrep`
+/// records the SU(N) one; they are different strings on purpose.
+#[pyfunction]
+fn su2_authority_fingerprint() -> String {
+    String::from_utf8(racah_core::su2_authority_fingerprint().to_vec())
+        .expect("the fingerprint is an ASCII literal")
+}
+
 #[pymodule]
 fn racah(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyIrrep>()?;
@@ -234,5 +331,12 @@ fn racah(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(check_hexagon, m)?)?;
     m.add_function(wrap_pyfunction!(sun_authority_fingerprint, m)?)?;
     m.add_function(wrap_pyfunction!(su2_frobenius_schur, m)?)?;
+    // the exact SU(2) surface (#107)
+    m.add_function(wrap_pyfunction!(wigner_3j, m)?)?;
+    m.add_function(wrap_pyfunction!(wigner_6j, m)?)?;
+    m.add_function(wrap_pyfunction!(su2_clebsch_gordan, m)?)?;
+    m.add_function(wrap_pyfunction!(su2_f_symbol, m)?)?;
+    m.add_function(wrap_pyfunction!(su2_r_symbol, m)?)?;
+    m.add_function(wrap_pyfunction!(su2_authority_fingerprint, m)?)?;
     Ok(())
 }

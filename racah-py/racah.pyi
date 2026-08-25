@@ -1,16 +1,30 @@
-"""Type stubs for `racah` — Python bindings for the racah crate's SU(N) surface.
+"""Type stubs for `racah` — Python bindings for the racah crate.
 
-Irreps from Dynkin labels, fusion with outer multiplicities, dense m-basis
-Clebsch-Gordan tensors, F/R symbols with their multiplicity axes, the
-verification gates, and the gauge fingerprint. All coefficient arrays are
-C-contiguous (row-major) ``numpy.float64`` arrays.
+**Two surfaces.** The SU(N) one takes :class:`Irrep` labels and runs the generated
+Gelfand-Tsetlin pipeline: fusion with outer multiplicities, dense m-basis
+Clebsch-Gordan tensors, F/R symbols with their multiplicity axes, and the
+verification gates. All its coefficient arrays are C-contiguous (row-major)
+``numpy.float64`` arrays. The exact SU(2) one takes doubled integer spins and
+returns scalars from closed-form big-rational arithmetic: :func:`wigner_3j`,
+:func:`wigner_6j`, :func:`su2_clebsch_gordan`, :func:`su2_f_symbol`,
+:func:`su2_r_symbol`, :func:`su2_frobenius_schur`.
 
-Errors: ill-posed input (bad label, mixed rank, empty fusion vertex) raises
-``ValueError``; a tripped generation/verification gate (orthonormality,
-F-unitarity, pentagon, hexagon, factorization) raises ``RuntimeError``.
+SU(2) is reachable through either — ``Irrep([2j])`` is a rank-1 SU(N) label — and the
+two agree numerically. They are still **separate authorities**:
+:func:`sun_authority_fingerprint` and :func:`su2_authority_fingerprint` are different
+strings, and whichever produced a coefficient is what you must record beside it.
 
-The values live in the crate's one frozen canonical gauge; pin
-``sun_authority_fingerprint()`` next to anything you persist.
+They are not close in cost. The generated path builds a CGC tensor by SVD nullspace,
+least-squares ladder descent and QR gauge fixing; ``su2_r_symbol`` is a sign.
+
+Errors: on the SU(N) surface, ill-posed input (bad label, mixed rank, empty fusion
+vertex) raises ``ValueError`` and a tripped generation/verification gate
+(orthonormality, F-unitarity, pentagon, hexagon, factorization) raises
+``RuntimeError``. The exact SU(2) functions do not raise: an inadmissible label set
+returns exactly ``0.0``.
+
+The values live in the crate's frozen canonical gauges; pin the matching fingerprint
+next to anything you persist.
 """
 
 from collections.abc import Sequence
@@ -268,4 +282,71 @@ def su2_frobenius_schur(two_j: int) -> float:
 
     Returns ``1.0`` for integer spin (``two_j`` even), ``-1.0`` for
     half-integer spin (``two_j`` odd).
+    """
+
+# --- the exact SU(2) surface (issue #107) -------------------------------------------
+#
+# Doubled labels throughout: ``dj = 2j`` and ``dm = 2m``, so ``dj1=1`` is spin 1/2 and
+# ``dm1=-1`` is m = -1/2. Doubling is what keeps every label an exact integer, which is
+# what lets the engine behind these be exact.
+
+def wigner_3j(dj1: int, dj2: int, dj3: int, dm1: int, dm2: int, dm3: int) -> float:
+    """The Wigner 3j symbol ``(j1 j2 j3; m1 m2 m3)``, spins and projections doubled.
+
+    Exact big-rational arithmetic, rounded once on return. Does not raise: an
+    inadmissible label set — m-sum nonzero, a projection out of range, or a violated
+    triangle condition — is exactly ``0.0``.
+    """
+
+def wigner_6j(dj1: int, dj2: int, dj3: int, dj4: int, dj5: int, dj6: int) -> float:
+    """The Wigner 6j symbol ``{j1 j2 j3; j4 j5 j6}``, spins doubled.
+
+    Exact big-rational arithmetic, rounded once on return. Does not raise: a label set
+    violating any of the four triangle conditions is exactly ``0.0``.
+    """
+
+def su2_clebsch_gordan(dj1: int, dm1: int, dj2: int, dm2: int, dj3: int, dm3: int) -> float:
+    """``<j1 m1; j2 m2 | j3 m3>`` in the Condon-Shortley phase, doubled labels.
+
+    Note the argument order: each spin is followed by its own projection. This is the
+    *scalar* SU(2) coefficient; :func:`clebsch_gordan` is the dense SU(N) m-basis
+    tensor and a different object. Does not raise; inadmissible is ``0.0``.
+
+    **The two tiers' CGC differ by one sign per channel.** :func:`f_symbol` and
+    :func:`r_symbol` agree with their exact twins because a per-channel CGC phase
+    cancels in a gauge-invariant combination; CGC are gauge data and do not. The ratio
+    is uniform in the magnetic indices and equals ``(-1)**(j1 + j2 - j3)``, which is
+    exactly :func:`su2_r_symbol`::
+
+        dense = clebsch_gordan(Irrep([dj1]), Irrep([dj2]), Irrep([dj3]))
+        dense[i1, i2, i3, 0] == su2_r_symbol(dj1, dj2, dj3) * su2_clebsch_gordan(
+            dj1, dm1, dj2, dm2, dj3, dm3
+        )
+
+    reading the rank-1 Gelfand-Tsetlin basis as the magnetic basis ascending in ``m``.
+    Mixing the two tiers' CGC without that factor gives wrong signs and no error.
+    """
+
+def su2_f_symbol(dj1: int, dj2: int, dj3: int, dj4: int, dj5: int, dj6: int) -> float:
+    """The SU(2) F-symbol ``F^{j1 j2 j3}_{j4}[j5, j6]``, spins doubled.
+
+    Scalar: SU(2) has no outer multiplicity, so the four vertex axes of the SU(N)
+    :func:`f_symbol` block are all length 1 and this is that single entry.
+    """
+
+def su2_r_symbol(dj1: int, dj2: int, dj3: int) -> float:
+    """The SU(2) R-symbol ``R^{j1 j2}_{j3} = (-1)^(j1 + j2 - j3)``, spins doubled.
+
+    Exactly ``+1.0`` or ``-1.0``, and ``0.0`` when the triangle condition fails. SU(2)
+    braiding is symmetric, so this is its own inverse.
+    """
+
+def su2_authority_fingerprint() -> str:
+    """The exact-SU(2) gauge/authority fingerprint string.
+
+    The twin of :func:`sun_authority_fingerprint`, for the functions above. Compare by
+    equality only. A consumer that persists SU(2) coefficients records *this* one; a
+    consumer that reached SU(2) through :class:`Irrep` records the SU(N) one. They are
+    different strings on purpose — the two surfaces are separate authorities even where
+    they agree numerically.
     """

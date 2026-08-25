@@ -149,12 +149,86 @@ assert f8.shape == (
 racah.check_f_unitarity(eight, eight, eight, eight)
 ```
 
+## The exact SU(2) surface
+
+SU(2) is reachable two ways, and they are not the same tier. `Irrep([2j])` is a rank-1
+SU(N) label, so every function above answers for it — by running the full generated
+pipeline: a Gelfand-Tsetlin CGC construction with an SVD nullspace, a least-squares
+ladder descent and a QR gauge fix. The crate also carries a closed-form SU(2) engine in
+exact big-rational arithmetic, and since #107 it is bound too.
+
+Labels are **doubled** here: `dj = 2j` and `dm = 2m`, so `1` is spin 1/2 and `dm=-1` is
+$m = -1/2$. Doubling keeps every label an exact integer, which is what lets the engine
+be exact.
+
+```python
+import racah
+
+# The Wigner symbols, exact big-rational arithmetic rounded once on return.
+assert abs(racah.wigner_6j(2, 2, 2, 2, 2, 2) - 1 / 6) < 1e-14
+assert abs(racah.wigner_3j(1, 1, 0, 1, -1, 0) - 2 ** -0.5) < 1e-15
+
+# The recoupling coefficients, as scalars: SU(2) has no outer multiplicity, so the
+# four-axis F block and the R matrix of the SU(N) surface are 1x1x1x1 and 1x1 here.
+assert racah.su2_r_symbol(1, 1, 0) == -1.0          # (-1)^(1/2 + 1/2 - 0)
+assert racah.su2_r_symbol(1, 1, 2) == +1.0
+
+# These do not raise. An inadmissible coupling is exactly zero.
+assert racah.wigner_6j(1, 1, 4, 1, 1, 1) == 0.0
+assert racah.su2_r_symbol(1, 1, 4) == 0.0
+```
+
+The cost difference is the reason to care. `su2_r_symbol` is a sign; reaching the same
+number through `r_symbol(Irrep([1]), Irrep([1]), Irrep([0]))` builds the CGC first.
+
+### Which surface produced your coefficients
+
+The two tiers are **separate authorities** with separate fingerprints, and the
+distinction survives the fact that they agree on F and R:
+
+```python
+import racah
+
+su2 = racah.su2_authority_fingerprint()
+sun = racah.sun_authority_fingerprint()
+assert su2 != sun
+assert su2.startswith("racah:su2-exact:")
+assert sun.startswith("racah:sun-gt:")
+```
+
+Record whichever one produced what you persisted. F-symbols and R-symbols do agree
+between the tiers to round-off (pinned by `racah-py/tests/test_su2_exact.py`), so a
+consumer switching tiers for those does not move any value.
+
+**The CGC do not agree, and the difference is one sign per channel.** F and R are
+gauge-invariant combinations in which a per-channel CGC phase cancels; the CGC
+themselves are gauge data. The ratio is uniform in the magnetic indices and is exactly
+the R-symbol:
+
+```python
+import racah
+
+dj1 = dj2 = 1
+for dj3 in (0, 2):
+    dense = racah.clebsch_gordan(racah.Irrep([dj1]), racah.Irrep([dj2]), racah.Irrep([dj3]))
+    phase = racah.su2_r_symbol(dj1, dj2, dj3)
+    for i1, dm1 in enumerate(range(-dj1, dj1 + 1, 2)):
+        for i2, dm2 in enumerate(range(-dj2, dj2 + 1, 2)):
+            for i3, dm3 in enumerate(range(-dj3, dj3 + 1, 2)):
+                scalar = racah.su2_clebsch_gordan(dj1, dm1, dj2, dm2, dj3, dm3)
+                assert abs(dense[i1, i2, i3, 0] - phase * scalar) < 1e-12
+```
+
+Mixing the two tiers' CGC without that factor gives wrong signs and no error, which is
+why the relation is a test rather than a remark.
+
 ## The fingerprint contract for Python consumers
 
 F/R/CGC values depend on the CGC gauge; `racah` publishes them in one frozen
 canonical gauge ([`../gauge.md`](../gauge.md)).
 `racah.sun_authority_fingerprint()` returns the opaque authority string
-identifying that convention, generation pipeline and tolerance policy.
+identifying that convention, generation pipeline and tolerance policy;
+`racah.su2_authority_fingerprint()` is its twin for the exact SU(2) surface above.
 
 The contract, identical to the Rust one:
 
