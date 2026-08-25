@@ -9,7 +9,7 @@ value/gauge rule noted below.
 
 ### Added
 
-- **`racah-py` — the exact SU(2) surface is bound
+- **`racah-py` 0.1.2 — the exact SU(2) surface is bound
   ([#107](https://github.com/Ryo-wtnb11/racah/issues/107)).** Python could reach SU(2)
   only through the generated SU(N) pipeline at rank 1, paying a Gelfand–Tsetlin CGC
   construction, an SVD nullspace, a least-squares descent and a QR gauge fix for values
@@ -38,6 +38,10 @@ value/gauge rule noted below.
   to distinguish "zero because forbidden" from "zero because zero". New User Guide
   section in [`docs/user-guide/python.md`](docs/user-guide/python.md), executed by
   `racah-py/tests/test_doc_examples.py`.
+
+  The cost figure above is the **cold** path and is recorded here rather than asserted:
+  a test process cannot measure it, because the coefficient caches are process-global
+  and whichever test ran first has already warmed them.
 
 - **`racah-py` 0.1.1 — real Python documentation.** The wheel now ships full
   type stubs ([`racah-py/racah.pyi`](racah-py/racah.pyi)) with per-function
