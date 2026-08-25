@@ -39,6 +39,10 @@ value/gauge rule noted below.
   section in [`docs/user-guide/python.md`](docs/user-guide/python.md), executed by
   `racah-py/tests/test_doc_examples.py`.
 
+  The cost figure above is the **cold** path and is recorded here rather than asserted:
+  a test process cannot measure it, because the coefficient caches are process-global
+  and whichever test ran first has already warmed them.
+
 - **`racah-py` 0.1.1 — real Python documentation.** The wheel now ships full
   type stubs ([`racah-py/racah.pyi`](racah-py/racah.pyi)) with per-function
   docstrings (precise NumPy types, array shapes, the CGC/F/R multiplicity-axis

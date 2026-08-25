@@ -1,10 +1,20 @@
 """The exact SU(2) surface (issue #107).
 
 Two questions, and the second is the reason this file exists. First, do the exact
-functions return the textbook values? Second, do they agree with the *generated* SU(N)
-surface at rank 1 — because SU(2) is reachable through both, and a consumer choosing
-between them on cost alone needs that agreement to be a test rather than a measurement
-someone once took.
+functions return the textbook values? Second, how do they relate to the *generated*
+SU(N) surface at rank 1 — because SU(2) is reachable through both, and a consumer
+choosing between them needs that relation to be a test rather than a measurement someone
+once took. It is not one relation but two: F and R **agree**, the Clebsch-Gordan
+coefficients **differ by one sign per channel**.
+
+**No timing assertion here, deliberately.** The cost argument for binding this surface is
+about the *cold* path — the generated tier builds a CGC tensor the first time it is asked
+— and a test process cannot measure that reliably: the caches are process-global, so
+whichever test ran first has already warmed them. An earlier draft compared a warm
+generated call against the closed form, measured 0.5 us against 0.5 us, and asserted a
+10x margin between them; it passed on one machine and failed in CI, which is what a
+benchmark wearing a test's clothes does. The measurement lives in issue #107 and the
+CHANGELOG, where it can carry its conditions.
 """
 
 import math
@@ -201,35 +211,6 @@ def test_the_two_fingerprints_are_different_strings():
     assert su2 != sun
     assert su2.startswith("racah:su2-exact:")
     assert sun.startswith("racah:sun-gt:")
-
-
-def test_the_exact_surface_is_much_cheaper_than_the_generated_one():
-    """Not a benchmark — a floor under the reason this surface was bound at all.
-
-    Cold, the generated path measured milliseconds per R-symbol against a sign. Asserting
-    a 10x margin on a warm-cache comparison is far inside that and still fails loudly if
-    ``su2_r_symbol`` ever starts routing through the generator.
-    """
-    import time
-
-    labels = [
-        (a, b, c) for a in SPINS for b in SPINS for c in SPINS if admissible(a, b, c)
-    ]
-    irreps = [tuple(su2_irrep(d) for d in t) for t in labels]
-    for a, b, c in irreps:  # warm the generated tier so the comparison is fair
-        racah.r_symbol(a, b, c)
-
-    t0 = time.perf_counter()
-    for a, b, c in labels:
-        racah.su2_r_symbol(a, b, c)
-    exact = time.perf_counter() - t0
-
-    t0 = time.perf_counter()
-    for a, b, c in irreps:
-        racah.r_symbol(a, b, c)
-    generated = time.perf_counter() - t0
-
-    assert exact * 10 < generated, f"exact {exact:.4f}s vs warm generated {generated:.4f}s"
 
 
 def test_stubs_cover_every_new_name():
