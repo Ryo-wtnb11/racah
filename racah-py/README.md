@@ -5,12 +5,24 @@
 > It may contain errors — check it against the code and tests rather than
 > trusting it blindly.
 
-Python bindings (PyO3 + maturin) for the [`racah`](../README.md) crate's SU(N)
-surface: irreps from Dynkin labels, fusion with outer multiplicities, dense
-m-basis Clebsch–Gordan tensors, F/R symbols with their multiplicity axes, the
-verification gates, and the gauge fingerprint. `racah` is the coefficient
-authority behind TeNeT-py's SU(N) symmetry provider; this package is how that
-consumer (and any other Python code) reaches it.
+Python bindings (PyO3 + maturin) for the [`racah`](../README.md) crate. `racah`
+is the coefficient authority behind TeNeT-py's symmetry providers; this package
+is how that consumer (and any other Python code) reaches it.
+
+Two surfaces:
+
+- **SU(N)**, taking `Irrep` labels and running the generated Gelfand–Tsetlin
+  pipeline — irreps from Dynkin labels, fusion with outer multiplicities, dense
+  m-basis Clebsch–Gordan tensors, F/R symbols with their multiplicity axes, and
+  the verification gates.
+- **exact SU(2)**, taking doubled integer spins and returning scalars from
+  closed-form big-rational arithmetic — `wigner_3j`, `wigner_6j`,
+  `su2_clebsch_gordan`, `su2_f_symbol`, `su2_r_symbol`, `su2_frobenius_schur`.
+
+SU(2) is reachable through either (`Irrep([2j])` is a rank-1 label), and they
+are separate authorities with separate fingerprints. They agree on F and R and
+**differ on the Clebsch–Gordan coefficients by one sign per fusion channel** —
+see "Versioning and the gauge fingerprint" below.
 
 Import name is `racah`; the distribution is `racah-py`. Wheels are always built
 with the crate's `cgc-gen` feature on, so the generated coefficients are
@@ -84,9 +96,25 @@ racah.check_pentagon(three, three.dual(), three, three.dual())
 print(racah.sun_authority_fingerprint())
 ```
 
+The exact SU(2) surface takes **doubled** labels (`dj = 2j`, `dm = 2m`), so
+every label stays an exact integer:
+
+```python
+import racah
+
+assert abs(racah.wigner_6j(2, 2, 2, 2, 2, 2) - 1 / 6) < 1e-14
+assert racah.su2_r_symbol(1, 1, 0) == -1.0        # (-1)^(1/2 + 1/2 - 0)
+assert racah.su2_r_symbol(1, 1, 4) == 0.0         # inadmissible is exact zero,
+                                                  # not an error
+print(racah.su2_authority_fingerprint())
+```
+
+Reaching the same R-symbol through `r_symbol(Irrep([1]), Irrep([1]), Irrep([0]))`
+builds a Clebsch–Gordan tensor first; `su2_r_symbol` is a sign.
+
 The rest of the surface: `Irrep.from_weight` / `Irrep.trivial` constructors,
-the `dynkin` / `weight` / `rank` properties, `check_f_unitarity` and
-`check_hexagon` alongside `check_pentagon`, and `su2_frobenius_schur(two_j)`.
+the `dynkin` / `weight` / `rank` properties, and `check_f_unitarity` and
+`check_hexagon` alongside `check_pentagon`.
 
 Ill-posed input (bad label, mixed rank, empty fusion vertex) raises
 `ValueError`; a tripped numerical gate (orthonormality, F-unitarity, pentagon,
@@ -103,6 +131,16 @@ bumps the fingerprint epoch and is recorded in the
 [CHANGELOG](../CHANGELOG.md). Same fingerprint means same convention and value
 agreement within the oracle tolerance, not cross-process bit-identity
 ([docs.rs: `sun_authority_fingerprint`](https://docs.rs/racah/latest/racah/sun/fn.sun_authority_fingerprint.html)).
+
+`racah.su2_authority_fingerprint()` is its twin for the exact SU(2) surface, and
+the two are different strings on purpose. Numerical agreement is not authority
+identity: F-symbols and R-symbols do agree between the tiers to round-off, but
+their **Clebsch–Gordan coefficients differ by exactly one sign per fusion
+channel**, uniform in the magnetic indices and equal to `su2_r_symbol` itself.
+F and R are gauge-invariant combinations in which that phase cancels; CGC are
+gauge data. Mixing the two tiers' CGC without the factor gives wrong signs and
+no error, so record the fingerprint of whichever surface produced what you
+persisted.
 
 ## Documentation
 
