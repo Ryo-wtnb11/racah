@@ -43,12 +43,12 @@ num-traits = "0.2"
 # ladder descent = least-squares, gauge = positive-diagonal QR). Only the
 # `cgc-gen` feature pulls these; base builds stay dependency-light.
 #
-# The generated-coefficient feature uses the published Tenferro 0.3.0 line.
+# The generated-coefficient feature uses the published Tenferro 0.6.0 line.
 # Local work against an in-progress checkout can still use the gitignored
 # `.cargo/config.toml` [patch] override described in AGENTS.md.
-tenferro-linalg = { version = "0.3.0", default-features = false, optional = true }
-tenferro-cpu = { version = "0.3.0", default-features = false, optional = true }
-tenferro-runtime = { version = "0.3.0", default-features = false, optional = true }
+tenferro-linalg = { version = "0.6.0", default-features = false, optional = true }
+tenferro-cpu = { version = "0.6.0", default-features = false, optional = true }
+tenferro-runtime = { version = "0.6.0", default-features = false, optional = true }
 
 [dev-dependencies]
 # Oracle on the doubled-spin <= 254 overlap domain; pulls rug/GMP in tests

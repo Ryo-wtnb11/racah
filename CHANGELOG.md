@@ -7,6 +7,23 @@ value/gauge rule noted below.
 
 ## [Unreleased]
 
+### Changed
+
+- **`cgc-gen` builds against Tenferro 0.6.0 (`tenferro-* = "0.6.0"`).** The
+  published 0.3.0 line no longer resolves to a building closure: `strided-kernel`
+  0.4.1 removed the fused API that `tenferro-internal-cpu-kernels` 0.3.0 imports
+  ([tensor4all/strided-rs#261](https://github.com/tensor4all/strided-rs/issues/261)),
+  so a fresh `cargo add racah --features cgc-gen` failed to compile. Tenferro 0.6.0
+  builds against `strided-kernel` 0.4.1. The dense seam (`src/sun/linalg.rs`,
+  `src/bcd/linalg.rs`) needed no source change and still routes every SVD, QR,
+  least-squares and matmul through the CPU faer provider. No tenferro type is part
+  of racah's public API (the seams are private modules and backend failures surface
+  as `String` payloads), so this is not a breaking change.
+
+  **No coefficient value moved.** `tests/gauge_golden.rs` passes unchanged, the
+  generation-time orthogonality/unitarity/pentagon/hexagon gates pass, and the
+  SU(2), SU(N) and B/C/D authority fingerprints are unchanged.
+
 ### Added
 
 - **`racah-py` 0.1.2 — the exact SU(2) surface is bound
