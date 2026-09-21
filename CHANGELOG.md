@@ -7,6 +7,8 @@ value/gauge rule noted below.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-21
+
 ### Changed
 
 - **`cgc-gen` builds against Tenferro 0.6.0 (`tenferro-* = "0.6.0"`).** The
@@ -353,7 +355,8 @@ SU(2) provider this rule is mechanized by `su2_authority_fingerprint()`: its
 epoch is bumped only on such a value-affecting release, so a fingerprint change
 and a breaking release are one reviewable event.
 
-[Unreleased]: https://github.com/Ryo-wtnb11/racah/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Ryo-wtnb11/racah/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Ryo-wtnb11/racah/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Ryo-wtnb11/racah/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Ryo-wtnb11/racah/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Ryo-wtnb11/racah/releases/tag/v0.1.0
