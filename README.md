@@ -48,9 +48,9 @@ For any admissible irreps of a supported group:
 
 ```toml
 [dependencies]
-racah = "0.2.1"
+racah = "0.2.2"
 # generated SU(N)/SO(N)/Sp(2N) families:
-# racah = { version = "0.2.1", features = ["cgc-gen"] }
+# racah = { version = "0.2.2", features = ["cgc-gen"] }
 ```
 
 | Feature | Adds | Pulls in |
