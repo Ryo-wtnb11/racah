@@ -7,6 +7,26 @@ value/gauge rule noted below.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-25
+
+### Changed
+
+- **`cgc-gen` builds against Tenferro 0.7.1 (`tenferro-* = "0.7.1"`).** Downstream
+  (TeNeT) moved to 0.7.1, and a workspace that pulls both TeNeT and racah with
+  `cgc-gen` on would otherwise link two different tenferro versions from one
+  feature build. 0.7.1 moves the strided-rs requirement to 0.4.4 (racah has no
+  direct `strided-*` dependency; this is transitive through tenferro).
+
+  0.7.0 made `tenferro_tensor_core::DefaultScalars`/`Tensor` opaque
+  ([tensor4all/tenferro-rs#1861](https://github.com/tensor4all/tenferro-rs/pull/1861)),
+  but racah's dense seams (`src/sun/linalg.rs`, `src/bcd/linalg.rs`) only ever
+  touch the unaffected `tenferro_runtime::Tensor` through `as_slice::<f64>()`, so
+  no source change was needed.
+
+  **No coefficient value moved.** `tests/gauge_golden.rs` passes unchanged, the
+  generation-time orthogonality/unitarity/pentagon/hexagon gates pass, and the
+  SU(2), SU(N) and B/C/D authority fingerprints are unchanged.
+
 ## [0.2.1] - 2026-09-21
 
 ### Changed
