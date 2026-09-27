@@ -293,11 +293,13 @@ pub(crate) fn f_block_raw<F: Family>(
     }
     // AB keyed by (ma,mb,mc) -> Vec<(μ, ν, value)>.
     let mut ab: PairGroup = HashMap::new();
-    for (me, alist) in &a_by_me {
-        let Some(blist) = b_by_me.get(me) else {
+    let mut me_keys: Vec<_> = a_by_me.keys().copied().collect();
+    me_keys.sort_unstable();
+    for me in me_keys {
+        let Some(blist) = b_by_me.get(&me) else {
             continue;
         };
-        for &(ma, mb, mu, va) in alist {
+        for &(ma, mb, mu, va) in &a_by_me[&me] {
             for &(mc, nu, vb) in blist {
                 ab.entry((ma, mb, mc)).or_default().push((mu, nu, va * vb));
             }
@@ -320,11 +322,13 @@ pub(crate) fn f_block_raw<F: Family>(
         }
     }
     let mut cd: PairGroup = HashMap::new();
-    for (mf, clist) in &c_by_mf {
-        let Some(dlist) = d_by_mf.get(mf) else {
+    let mut mf_keys: Vec<_> = c_by_mf.keys().copied().collect();
+    mf_keys.sort_unstable();
+    for mf in mf_keys {
+        let Some(dlist) = d_by_mf.get(&mf) else {
             continue;
         };
-        for &(mb, mc, kappa, vc) in clist {
+        for &(mb, mc, kappa, vc) in &c_by_mf[&mf] {
             for &(ma, lambda, vd) in dlist {
                 cd.entry((ma, mb, mc))
                     .or_default()
@@ -335,11 +339,13 @@ pub(crate) fn f_block_raw<F: Family>(
 
     // Step 3: F[μ,ν,κ,λ] = Σ_{ma,mb,mc} AB[(ma,mb,mc),(μ,ν)] · CD[(ma,mb,mc),(κ,λ)].
     let mut block = FBlock::zeros(dims);
-    for (key, ablist) in &ab {
-        let Some(cdlist) = cd.get(key) else {
+    let mut ab_keys: Vec<_> = ab.keys().copied().collect();
+    ab_keys.sort_unstable();
+    for key in ab_keys {
+        let Some(cdlist) = cd.get(&key) else {
             continue;
         };
-        for &(mu, nu, vab) in ablist {
+        for &(mu, nu, vab) in &ab[&key] {
             for &(kappa, lambda, vcd) in cdlist {
                 let idx = FBlock::flat(
                     dims,
@@ -400,11 +406,13 @@ pub(crate) fn r_block_raw<F: Family>(
     }
 
     let mut block = RBlock::zeros(n1);
-    for (key, alist) in &a_map {
-        let Some(blist) = b_map.get(key) else {
+    let mut keys: Vec<_> = a_map.keys().copied().collect();
+    keys.sort_unstable();
+    for key in keys {
+        let Some(blist) = b_map.get(&key) else {
             continue;
         };
-        for &(mu, va) in alist {
+        for &(mu, va) in &a_map[&key] {
             for &(nu, vb) in blist {
                 block.data[mu as usize * n1 + nu as usize] += va * vb;
             }

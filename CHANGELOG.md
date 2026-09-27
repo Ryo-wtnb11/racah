@@ -7,6 +7,18 @@ value/gauge rule noted below.
 
 ## [Unreleased]
 
+### Fixed
+
+- **SU(N) F/R contractions from cached CGC now use a stable summation order
+  ([#114](https://github.com/Ryo-wtnb11/racah/issues/114)).** Recomputing R or
+  an uncached F block in one process could previously change its last bits as
+  randomly seeded hash maps were traversed. The CGC descent also now accumulates
+  its right-hand side in sorted weight order, and the CGC orthogonality gate
+  sums in sorted coupling-index order. This can shift floating-point
+  results by round-off within the existing oracle tolerance; it does not change
+  the frozen gauge, its tolerance tier, or the SU(N) fingerprint epoch. Separate
+  processes are still not promised bit-identical results.
+
 ## [0.2.2] - 2026-09-25
 
 ### Changed

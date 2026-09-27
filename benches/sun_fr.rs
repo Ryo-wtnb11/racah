@@ -2,12 +2,12 @@
 //! four-CGC contraction, CGC caches cleared) and warm (derived-f64 F cache
 //! hit). Not a CI gate; run with `cargo bench --features cgc-gen`.
 //!
-//! R is not benched separately: it is a single sparse join of two CGC, an order
-//! of magnitude cheaper than a four-CGC F contraction, and needs no cache.
+//! The cached-CGC cases isolate F recomputation (by trimming only its F cache)
+//! and uncached R contraction from CGC generation.
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use racah::cache;
-use racah::sun::{f_symbol, Irrep};
+use racah::cache::{self, CoefficientCacheTier};
+use racah::sun::{f_symbol, r_symbol, Irrep};
 use std::hint::black_box;
 
 fn irr(d: &[i64]) -> Irrep {
@@ -114,5 +114,32 @@ fn bench_hit(c: &mut Criterion) {
     g.finish();
 }
 
-criterion_group!(benches, bench_cold, bench_hit);
+fn bench_cached_cgc(c: &mut Criterion) {
+    let mut f_group = c.benchmark_group("f_symbol_cached_cgc");
+    for (label, s) in cases().into_iter().skip(1) {
+        let _ = f_symbol(&s[0], &s[1], &s[2], &s[3], &s[4], &s[5]).unwrap();
+        f_group.bench_function(label, |b| {
+            b.iter(|| {
+                cache::trim_to(CoefficientCacheTier::SunF, 0);
+                black_box(f_symbol(&s[0], &s[1], &s[2], &s[3], &s[4], &s[5]).unwrap())
+            })
+        });
+    }
+    f_group.finish();
+
+    let mut r_group = c.benchmark_group("r_symbol_cached_cgc");
+    for (label, d) in [
+        ("su3_octet_om2", &[1, 1][..]),
+        ("su4_adjoint", &[1, 0, 1][..]),
+    ] {
+        let s = irr(d);
+        let _ = r_symbol(&s, &s, &s).unwrap();
+        r_group.bench_function(label, |b| {
+            b.iter(|| black_box(r_symbol(black_box(&s), &s, &s).unwrap()))
+        });
+    }
+    r_group.finish();
+}
+
+criterion_group!(benches, bench_cold, bench_hit, bench_cached_cgc);
 criterion_main!(benches);

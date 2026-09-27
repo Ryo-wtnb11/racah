@@ -124,7 +124,8 @@ fn require_same_rank(labels: &[&Irrep]) -> Result<(), SunError> {
 /// `at(0, 0, 0, 0)`.
 ///
 /// The first call on a given label set generates the underlying CGC; the block
-/// and the CGC are then cached, so repeated queries are lookups.
+/// and the CGC are then cached, so repeated queries are lookups. Recomputing a
+/// block from those cached CGC uses a stable summation order within the process.
 ///
 /// ```
 /// use racah::sun::{f_symbol, Irrep};
@@ -215,7 +216,8 @@ pub fn f_symbol(
 /// [`RBlock::dim`] is `N^c_ab`, [`RBlock::at`]`(mu, nu)` reads one element,
 /// [`RBlock::data`] is the flat buffer. Multiplicity-free means a `1×1` block
 /// holding the braiding phase. Unlike [`f_symbol`], R is a single sparse join
-/// of two CGC and is not separately cached.
+/// of two CGC and is not separately cached. Repeated calls from the same cached
+/// CGC sum in a stable order and return bit-identical blocks within the process.
 ///
 /// ```
 /// use racah::sun::{r_symbol, Irrep};
@@ -392,6 +394,42 @@ mod tests {
         let eight = irr(&[1, 1]);
         let block = r_symbol(&eight, &eight, &eight).unwrap();
         assert_eq!(block.dim(), 2);
+    }
+
+    #[test]
+    fn repeated_fr_contractions_use_cached_cgc_in_a_stable_order() {
+        for (name, label) in [("SU(3) 8", irr(&[1, 1])), ("SU(4) 15", irr(&[1, 0, 1]))] {
+            let r_bits = || {
+                r_symbol(&label, &label, &label)
+                    .unwrap()
+                    .data()
+                    .iter()
+                    .map(|v| v.to_bits())
+                    .collect::<Vec<_>>()
+            };
+            let f_bits = || {
+                f_block_raw(
+                    &mut SunFamily,
+                    &label,
+                    &label,
+                    &label,
+                    &label,
+                    &label,
+                    &label,
+                )
+                .unwrap()
+                .data()
+                .iter()
+                .map(|v| v.to_bits())
+                .collect::<Vec<_>>()
+            };
+            let r_first = r_bits();
+            let f_first = f_bits();
+            for _ in 0..32 {
+                assert_eq!(r_bits(), r_first, "{name} R changed with cached CGC");
+                assert_eq!(f_bits(), f_first, "{name} raw F changed with cached CGC");
+            }
+        }
     }
 
     // ---- gates on small SU(3) families (self-consistency) ----

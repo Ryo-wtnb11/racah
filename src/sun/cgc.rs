@@ -545,6 +545,8 @@ fn lower_weight_cgc(
     let mut w3list: Vec<Vec<i64>> = ctx.map3.keys().cloned().collect();
     w3list.sort();
     w3list.reverse();
+    let mut w1list: Vec<_> = ctx.map1.keys().collect();
+    w1list.sort_unstable();
 
     for alpha in 0..n123 {
         for w3 in w3list.iter().skip(1) {
@@ -579,7 +581,8 @@ fn lower_weight_cgc(
                         }
                     }
                     // RHS: (Jm1 ⊗ I + I ⊗ Jm2) acting on parent CGC[m1',m2',m3',α].
-                    for (w1p, m1plist) in &ctx.map1 {
+                    for &w1p in &w1list {
+                        let m1plist = &ctx.map1[w1p];
                         let w2p: Vec<i64> = (0..n).map(|c| w3p[c] - w1p[c] + ctx.wshift).collect();
                         let m2plist = get_indices(&ctx.map2, &w2p);
                         if m2plist.is_empty() {
@@ -731,7 +734,7 @@ fn freeze(
 /// `(m3,α)` -- not summed over `m3`.
 fn check_orthonormal(cgc: &Cgc) -> Result<(), SunError> {
     // Columns keyed by (m3, mu); each is a map (m1,m2) -> value.
-    let mut columns: BTreeMap<(u32, u32), HashMap<(u32, u32), f64>> = BTreeMap::new();
+    let mut columns: BTreeMap<(u32, u32), BTreeMap<(u32, u32), f64>> = BTreeMap::new();
     for e in &cgc.entries {
         columns
             .entry((e.m3, e.mu))
