@@ -7,6 +7,8 @@ value/gauge rule noted below.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-04
+
 ### Fixed
 
 - **SU(N) F/R contractions from cached CGC now use a stable summation order
@@ -17,7 +19,11 @@ value/gauge rule noted below.
   sums in sorted coupling-index order. This can shift floating-point
   results by round-off within the existing oracle tolerance; it does not change
   the frozen gauge, its tolerance tier, or the SU(N) fingerprint epoch. Separate
-  processes are still not promised bit-identical results.
+  processes are still not promised bit-identical results; as measured for this
+  release, 1082 SU(3) F blocks and 44 R blocks over `{3, 3̄, 6, 8}` (including the
+  multiplicity-2 channel `8 ⊗ 8 → 8`) hashed bit-identically across ten fresh
+  processes and independently of call order, whereas 0.2.2 gave ten distinct
+  hashes.
 
 ## [0.2.2] - 2026-09-25
 
@@ -387,7 +393,9 @@ SU(2) provider this rule is mechanized by `su2_authority_fingerprint()`: its
 epoch is bumped only on such a value-affecting release, so a fingerprint change
 and a breaking release are one reviewable event.
 
-[Unreleased]: https://github.com/Ryo-wtnb11/racah/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Ryo-wtnb11/racah/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/Ryo-wtnb11/racah/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/Ryo-wtnb11/racah/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Ryo-wtnb11/racah/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Ryo-wtnb11/racah/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Ryo-wtnb11/racah/releases/tag/v0.1.1
