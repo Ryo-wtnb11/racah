@@ -7,6 +7,18 @@ value/gauge rule noted below.
 
 ## [Unreleased]
 
+### Added
+
+- **Twists for every family
+  ([#118](https://github.com/Ryo-wtnb11/racah/issues/118)):**
+  `su2_twist(dj)`, `sun::Irrep::twist()` and `bcd::Irrep::twist()`, each
+  exactly `1.0`. This is TensorKitSectors' generic
+  `twist_from_Rsymbol`, θ_a = Σ_c (d_c/d_a) tr R^{aa}_c, for the `Bosonic`
+  braiding of group irreps; the sum equals the trace of the tensor flip
+  divided by d_a. A new test evaluates that sum from racah's own R-symbols
+  over SU(2) up to j = 5, SU(3)/SU(4) irreps and Spin(5)/Sp(4)/Spin(6)
+  irreps, spinors included. Downstream code no longer needs to hard-code it.
+
 ## [0.2.3] - 2026-10-04
 
 ### Fixed

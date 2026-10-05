@@ -552,6 +552,22 @@ impl Irrep {
         Irrep::from_dynkin(&d).expect("reversed nonnegative Dynkin label is valid")
     }
 
+    /// The twist $\theta_a$: exactly `1.0` for every irrep.
+    ///
+    /// SUNRepresentations 0.4.0 `src/sector.jl` sets
+    /// `BraidingStyle(::Type{<:SUNIrrep}) = Bosonic()` and does not override
+    /// `twist`, so the value is TensorKitSectors 0.3.9
+    /// `src/sectors.jl:twist_from_Rsymbol`,
+    /// $\theta_a = \sum_{c \in a \otimes a} (d_c / d_a)\, \operatorname{tr} R^{aa}_c$.
+    /// It is exactly one: the group braiding is the tensor flip $\tau$, which
+    /// acts on the $c$-isotypic part of $V_a \otimes V_a$ as
+    /// $R^{aa}_c \otimes \mathrm{id}_{V_c}$, so
+    /// $\sum_c d_c \operatorname{tr} R^{aa}_c = \operatorname{Tr}\tau = d_a$.
+    /// Base-crate API: no R-symbol is generated to answer it.
+    pub fn twist(&self) -> f64 {
+        1.0
+    }
+
     /// All GT patterns of this irrep, in the reference basis order.
     ///
     /// Ported from `gtpatterns.jl:GTPatternIterator` /

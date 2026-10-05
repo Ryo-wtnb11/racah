@@ -633,6 +633,24 @@ impl Irrep {
         }
     }
 
+    /// The twist $\theta_a$: exactly `1.0` for every irrep.
+    ///
+    /// TensorKitSectors has no dedicated Spin(N)/Sp(2N) sector; its rule for
+    /// every group irrep applies. Group irreps are `Bosonic` in TensorKitSectors 0.3.9
+    /// `src/irreps/irreps.jl` (`BraidingStyle(::Type{<:AbstractIrrep}) =
+    /// Bosonic()`), whose twist is the generic
+    /// `src/sectors.jl:twist_from_Rsymbol`,
+    /// $\theta_a = \sum_{c \in a \otimes a} (d_c / d_a)\, \operatorname{tr} R^{aa}_c$.
+    /// It is exactly one: the group braiding is the tensor flip $\tau$, which
+    /// acts on the $c$-isotypic part of $V_a \otimes V_a$ as
+    /// $R^{aa}_c \otimes \mathrm{id}_{V_c}$, so
+    /// $\sum_c d_c \operatorname{tr} R^{aa}_c = \operatorname{Tr}\tau = d_a$.
+    /// This holds for spinor irreps of `Spin(N)` too. No R-symbol is
+    /// generated to answer it.
+    pub fn twist(&self) -> f64 {
+        1.0
+    }
+
     /// Exact dominant-weight multiplicities of this irrep, computed by
     /// Freudenthal's recursion (Humphreys §13.4) in integer arithmetic.
     ///

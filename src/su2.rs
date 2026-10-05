@@ -412,6 +412,29 @@ pub fn su2_frobenius_schur(dj: u32) -> f64 {
     }
 }
 
+/// Twist $\theta_j$ of an SU(2) irrep: exactly `1.0` for every `dj`.
+///
+/// Group braiding is the tensor flip $\tau$ on $V_j \otimes V_j$
+/// (TensorKitSectors 0.3.9 `src/irreps/irreps.jl`:
+/// `BraidingStyle(::Type{<:AbstractIrrep}) = Bosonic()`), and `SU2Irrep` does
+/// not override `twist`, so TensorKitSectors evaluates the generic
+/// `src/sectors.jl:twist_from_Rsymbol`,
+/// $\theta_a = \sum_{c \in a \otimes a} (d_c / d_a)\, \operatorname{tr} R^{aa}_c$.
+/// That sum is exactly one, not merely to rounding: $\tau$ acts on the
+/// $c$-isotypic part as $R^{aa}_c \otimes \mathrm{id}_{V_c}$, so
+/// $\sum_c d_c \operatorname{tr} R^{aa}_c = \operatorname{Tr}\tau = d_a$.
+/// With [`su2_r_symbol`] it reads $\sum_c (-1)^{2j-c}(2c+1) = 2j+1$.
+///
+/// ```
+/// use racah::su2_twist;
+///
+/// assert_eq!(su2_twist(1), 1.0); // spin 1/2
+/// ```
+pub fn su2_twist(dj: u32) -> f64 {
+    let _ = dj;
+    1.0
+}
+
 /// Exact SU(2) F-symbol as a [`SignedSqrtRational`] -- the value authority.
 ///
 /// $F = (-1)^{j_1+j_2+j_3+j_4}\, \sqrt{(dj_5+1)(dj_6+1)}\; \{6j\!: dj_1\, dj_2\, dj_5 / dj_3\, dj_4\, dj_6\}$,
