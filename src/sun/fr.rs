@@ -158,24 +158,6 @@ pub fn f_symbol(
     f: &Irrep,
 ) -> Result<FBlock, SunError> {
     require_same_rank(&[a, b, c, d, e, f])?;
-    // Guard: every vertex must be non-empty (the reference's
-    // `Nsymbol(...) == 0 && return zeros` short-circuit becomes a typed error).
-    let vertices = [
-        (a, b, e), // N1 = μ
-        (e, c, d), // N2 = ν
-        (b, c, f), // N3 = κ
-        (a, f, d), // N4 = λ
-    ];
-    for (x, y, z) in vertices {
-        if mult(x, y, z)? == 0 {
-            return Err(SunError::ZeroFusionChannel {
-                a: x.dynkin(),
-                b: y.dynkin(),
-                c: z.dynkin(),
-            });
-        }
-    }
-
     // Derived-f64 cache: key = the plain ordered six-label tuple.
     //
     // Why no Regge-style canonicalization: the 6j symmetry group that lets the
@@ -196,6 +178,25 @@ pub fn f_symbol(
     );
     if let Some(hit) = cache.get(&key) {
         return Ok((*hit).clone());
+    }
+    // Guard: every vertex must be non-empty (the reference's
+    // `Nsymbol(...) == 0 && return zeros` short-circuit becomes a typed error).
+    // It runs on a miss only: this function is the cache's sole writer and
+    // inserts a key only after the label-only guard passed.
+    let vertices = [
+        (a, b, e), // N1 = μ
+        (e, c, d), // N2 = ν
+        (b, c, f), // N3 = κ
+        (a, f, d), // N4 = λ
+    ];
+    for (x, y, z) in vertices {
+        if mult(x, y, z)? == 0 {
+            return Err(SunError::ZeroFusionChannel {
+                a: x.dynkin(),
+                b: y.dynkin(),
+                c: z.dynkin(),
+            });
+        }
     }
     let block = f_block_raw(&mut SunFamily, a, b, c, d, e, f)?;
     let stored = cache.insert(key, Arc::new(block));

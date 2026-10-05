@@ -73,8 +73,14 @@ pub struct CgcEntry {
 ///
 /// Coefficient values realize the SUNRepresentations.jl v0.4.0 gauge (see
 /// `docs/gauge.md`); they are a versioned part of this crate's contract.
+///
+/// Cloning is cheap: the tensor is shared (`Arc`), so a cache hit hands out the
+/// cached coefficients without copying them.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Cgc {
+pub struct Cgc(std::sync::Arc<CgcData>);
+
+#[derive(Debug, PartialEq)]
+struct CgcData {
     s1: Irrep,
     s2: Irrep,
     s3: Irrep,
@@ -85,39 +91,39 @@ pub struct Cgc {
 impl Cgc {
     /// The left factor irrep `s1`.
     pub fn s1(&self) -> &Irrep {
-        &self.s1
+        &self.0.s1
     }
     /// The right factor irrep `s2`.
     pub fn s2(&self) -> &Irrep {
-        &self.s2
+        &self.0.s2
     }
     /// The coupled irrep `s3`.
     pub fn s3(&self) -> &Irrep {
-        &self.s3
+        &self.0.s3
     }
     /// The outer multiplicity `N^{s3}_{s1 s2}` (length of the trailing axis).
     pub fn multiplicity(&self) -> usize {
-        self.dims[3]
+        self.0.dims[3]
     }
     /// The tensor shape `[dim(s1), dim(s2), dim(s3), multiplicity]`.
     pub fn dims(&self) -> [usize; 4] {
-        self.dims
+        self.0.dims
     }
     /// The stored nonzero entries, sorted by `(m1, m2, m3, mu)`.
     pub fn entries(&self) -> &[CgcEntry] {
-        &self.entries
+        &self.0.entries
     }
     /// The number of stored nonzero entries.
     pub fn nnz(&self) -> usize {
-        self.entries.len()
+        self.0.entries.len()
     }
     /// Conservative retained charge used by the cache: the entry vector plus
     /// the three irrep weight buffers and value shell. Container scaffolding,
     /// allocator metadata/RSS, and external clones are outside this charge.
     pub(crate) fn storage_bytes(&self) -> usize {
-        self.entries.len() * std::mem::size_of::<CgcEntry>()
-            + std::mem::size_of::<Cgc>()
-            + (self.s1.rank() + self.s2.rank() + self.s3.rank()) * std::mem::size_of::<i64>()
+        self.0.entries.len() * std::mem::size_of::<CgcEntry>()
+            + std::mem::size_of::<CgcData>()
+            + (self.0.s1.rank() + self.0.s2.rank() + self.0.s3.rank()) * std::mem::size_of::<i64>()
     }
 }
 
@@ -212,8 +218,8 @@ fn is_trivial(s: &Irrep) -> bool {
 pub fn cgc(s1: &Irrep, s2: &Irrep, s3: &Irrep) -> Result<Cgc, SunError> {
     // Transparent, byte-accounted cache (WignerSymbols.jl / SUNRepresentations
     // `_get_CGC` model): a warm hit skips the whole SVD/QR/descent pipeline.
-    // The cached value is an Arc<Cgc>; we hand back an owned clone to honor the
-    // `-> Cgc` signature. A miss surfaces its error uncached (errors are not
+    // A hit clones the shared `Cgc` handle (a reference-count bump, no
+    // coefficient copy). A miss surfaces its error uncached (errors are not
     // stored).
     use std::sync::Arc;
     let key = (s1.clone(), s2.clone(), s3.clone());
@@ -312,13 +318,13 @@ fn trivial_cgc(s1: Irrep, s2: Irrep, s3: Irrep, dims: [usize; 4], is_left: bool)
             }
         })
         .collect();
-    Cgc {
+    Cgc(std::sync::Arc::new(CgcData {
         s1,
         s2,
         s3,
         dims,
         entries,
-    }
+    }))
 }
 
 /// Precomputed per-pair data shared by the highest-weight and descent stages.
@@ -715,13 +721,13 @@ fn freeze(
         })
         .collect();
     entries.sort_by_key(|e| (e.m1, e.m2, e.m3, e.mu));
-    Cgc {
+    Cgc(std::sync::Arc::new(CgcData {
         s1,
         s2,
         s3,
         dims,
         entries,
-    }
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -735,7 +741,7 @@ fn freeze(
 fn check_orthonormal(cgc: &Cgc) -> Result<(), SunError> {
     // Columns keyed by (m3, mu); each is a map (m1,m2) -> value.
     let mut columns: BTreeMap<(u32, u32), BTreeMap<(u32, u32), f64>> = BTreeMap::new();
-    for e in &cgc.entries {
+    for e in cgc.entries() {
         columns
             .entry((e.m3, e.mu))
             .or_default()
@@ -783,7 +789,7 @@ fn check_ladder(cgc: &Cgc, ctx: &Ctx) -> Result<(), SunError> {
     let n123 = cgc.multiplicity();
     // Index CGC for random access.
     let mut idx: HashMap<(u32, u32, u32, u32), f64> = HashMap::new();
-    for e in &cgc.entries {
+    for e in cgc.entries() {
         idx.insert((e.m1, e.m2, e.m3, e.mu), e.value);
     }
     let get = |m1: usize, m2: usize, m3: usize, a: usize| -> f64 {
@@ -797,7 +803,7 @@ fn check_ladder(cgc: &Cgc, ctx: &Ctx) -> Result<(), SunError> {
         // LHS[(m1,m2)] = Σ over lowering of the parent state m3'.
         let mut lhs: HashMap<(usize, usize), f64> = HashMap::new();
         // parent (m1',m2') states carrying nonzero CGC at m3'.
-        for e in &cgc.entries {
+        for e in cgc.entries() {
             if e.m3 != m3p || e.mu as usize != alpha {
                 continue;
             }
@@ -821,7 +827,7 @@ fn check_ladder(cgc: &Cgc, ctx: &Ctx) -> Result<(), SunError> {
         if let Some(col) = ctx.annih3[l].by_col.get(&(m3p as usize)) {
             for &(m3, jm3) in col {
                 // m3 is a child (lower) state; find CGC entries at that m3.
-                for e in &cgc.entries {
+                for e in cgc.entries() {
                     if e.m3 as usize != m3 || e.mu as usize != alpha {
                         continue;
                     }

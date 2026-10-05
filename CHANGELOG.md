@@ -18,6 +18,31 @@ value/gauge rule noted below.
   divided by d_a. A new test evaluates that sum from racah's own R-symbols
   over SU(2) up to j = 5, SU(3)/SU(4) irreps and Spin(5)/Sp(4)/Spin(6)
   irreps, spinors included. Downstream code no longer needs to hard-code it.
+- **SU(N) Frobenius–Schur data
+  ([#118](https://github.com/Ryo-wtnb11/racah/issues/118)):**
+  `sun::Irrep::frobenius_schur_phase()` (`±1.0` for every irrep;
+  TensorKitSectors `frobenius_schur_phase` = sign F[a,ā,a,a,1,1]) and
+  `sun::Irrep::frobenius_schur()` (`1`/`0`/`-1`, as
+  `bcd::Irrep::frobenius_schur`; TensorKitSectors
+  `frobenius_schur_indicator`). The phase is the closed form
+  (-1)^⟨λ,2ρ⟩ = (-1)^{Σ aᵢ·i(N−i)}, exact in the SUNRepresentations gauge
+  and checked against the F-symbol sweep and SUNRepresentations 0.4.0. It
+  is not `+1` on every complex irrep: the SU(4) fundamental has `-1`.
+  Downstream code no longer needs to derive it from an F-symbol.
+
+### Changed
+
+- **Warm F/CGC cache hits no longer copy coefficients
+  ([#118](https://github.com/Ryo-wtnb11/racah/issues/118)):** `FBlock` and
+  `sun::Cgc` now share their buffers behind an `Arc`, so cloning one (and
+  every hit of `sun::f_symbol`, `bcd::f_symbol`, `sun::cgc`) is a
+  reference-count bump. `sun::f_symbol` and `bcd::f_symbol` also run their
+  vertex guard on a miss only. A warm hit of an SU(3) 8⁶ block went from
+  15 allocations (464 B) to 6 (144 B, the owned cache key), an SU(3) 8⊗8→8
+  CGC from 7 (2352 B) to 3 (72 B), and a Spin(6) adjoint F block from 731
+  (27 280 B) to 6 (144 B). No signature or accessor changed, so callers
+  (TeNeT `tenet-sectors`) need no migration; `Debug` output of `Cgc` now
+  shows the shared wrapper.
 
 ## [0.2.3] - 2026-10-04
 

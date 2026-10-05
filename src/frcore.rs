@@ -36,6 +36,7 @@
 
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::sync::Arc;
 
 /// CGC entries grouped by one magnetic index → `(idx_i, idx_j, mult, value)`.
 type GroupBy4 = HashMap<u32, Vec<(u32, u32, u32, f64)>>;
@@ -148,18 +149,25 @@ pub(crate) trait Family {
 /// assert_eq!(block.at(0, 0, 0, 0), block.data()[0]);
 /// # }
 /// ```
+///
+/// Cloning is cheap: the coefficient buffer is shared (`Arc<[f64]>`), so a
+/// cache hit hands out the cached block without copying its data.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FBlock {
     dims: [usize; 4],
     /// Row-major over `[μ, ν, κ, λ]`.
-    data: Vec<f64>,
+    data: Arc<[f64]>,
 }
 
 impl FBlock {
     fn zeros(dims: [usize; 4]) -> Self {
+        Self::from_vec(dims, vec![0.0; dims[0] * dims[1] * dims[2] * dims[3]])
+    }
+
+    fn from_vec(dims: [usize; 4], data: Vec<f64>) -> Self {
         FBlock {
             dims,
-            data: vec![0.0; dims[0] * dims[1] * dims[2] * dims[3]],
+            data: data.into(),
         }
     }
 
@@ -338,7 +346,7 @@ pub(crate) fn f_block_raw<F: Family>(
     }
 
     // Step 3: F[μ,ν,κ,λ] = Σ_{ma,mb,mc} AB[(ma,mb,mc),(μ,ν)] · CD[(ma,mb,mc),(κ,λ)].
-    let mut block = FBlock::zeros(dims);
+    let mut data = vec![0.0; dims[0] * dims[1] * dims[2] * dims[3]];
     let mut ab_keys: Vec<_> = ab.keys().copied().collect();
     ab_keys.sort_unstable();
     for key in ab_keys {
@@ -354,11 +362,11 @@ pub(crate) fn f_block_raw<F: Family>(
                     kappa as usize,
                     lambda as usize,
                 );
-                block.data[idx] += vab * vcd;
+                data[idx] += vab * vcd;
             }
         }
     }
-    Ok(block)
+    Ok(FBlock::from_vec(dims, data))
 }
 
 // ---------------------------------------------------------------------------
