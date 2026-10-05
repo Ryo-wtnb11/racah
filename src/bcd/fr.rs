@@ -270,19 +270,6 @@ pub fn f_symbol(
     f: &Irrep,
 ) -> Result<FBlock, FrError> {
     require_catalog_family(cat, &[a, b, c, d, e, f])?;
-    // Guard: every vertex non-empty, decided by the exact S3.0 decomposition
-    // before any float work (PR #14 lesson; issue #15). Mirrors sun::f_symbol.
-    let vertices = [(a, b, e), (e, c, d), (b, c, f), (a, f, d)];
-    for (x, y, z) in vertices {
-        if bcd_mult(x, y, z)? == 0 {
-            return Err(FrError::Catalog(CatalogError::ZeroFusionChannel {
-                a: x.dynkin(),
-                b: y.dynkin(),
-                c: z.dynkin(),
-            }));
-        }
-    }
-
     let cache = crate::cache::cache_bcd_f();
     let key = (
         a.clone(),
@@ -294,6 +281,20 @@ pub fn f_symbol(
     );
     if let Some(hit) = cache.get(&key) {
         return Ok((*hit).clone());
+    }
+    // Guard: every vertex non-empty, decided by the exact S3.0 decomposition
+    // before any float work (PR #14 lesson; issue #15). Mirrors sun::f_symbol.
+    // It runs on a miss only: this function is the cache's sole writer and
+    // inserts a key only after the label-only guard passed.
+    let vertices = [(a, b, e), (e, c, d), (b, c, f), (a, f, d)];
+    for (x, y, z) in vertices {
+        if bcd_mult(x, y, z)? == 0 {
+            return Err(FrError::Catalog(CatalogError::ZeroFusionChannel {
+                a: x.dynkin(),
+                b: y.dynkin(),
+                c: z.dynkin(),
+            }));
+        }
     }
     let block = {
         let mut fam = BcdFamily { cat };

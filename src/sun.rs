@@ -552,6 +552,74 @@ impl Irrep {
         Irrep::from_dynkin(&d).expect("reversed nonnegative Dynkin label is valid")
     }
 
+    /// The Frobenius–Schur phase $\kappa_a = \operatorname{sign} F^{a\bar a a}_a[1, 1]$
+    /// as `±1.0`, for **every** irrep, self-dual or not.
+    ///
+    /// This is TensorKitSectors 0.3.9 `src/sectors.jl:frobenius_schur_phase`
+    /// (`frobenius_schur_phase_from_Fsymbol`, the line-bending phase used by
+    /// `Asymbol`); SUNRepresentations 0.4.0 does not override it. On a
+    /// self-dual irrep it is the gauge-invariant indicator
+    /// ([`frobenius_schur`](Self::frobenius_schur)); on a complex irrep it is
+    /// fixed by the CGC gauge (`docs/gauge.md`), and in that gauge it is
+    /// **not** always `+1` — e.g. the SU(4) fundamental has `-1`.
+    ///
+    /// Closed form: $\kappa_a = (-1)^{\langle\lambda, 2\rho\rangle}$, with
+    /// $\langle\lambda, 2\rho\rangle = \sum_i a_i\, i(N - i)$ over the Dynkin
+    /// labels. Why it is exact in this gauge: with `e = f = 1` the F
+    /// contraction reduces to $F \cdot d_a = \sqrt{d_a}\,C^{a\bar a}_1[\ell_a, h_{\bar a}]
+    /// \cdot \sqrt{d_a}\,C^{\bar a a}_1[h_{\bar a}, \ell_a]$ ($\ell$/$h$ = lowest/highest
+    /// GT pattern). The gauge (§2, §4) makes the first coupling pair of a
+    /// singlet, $(\ell_{x}, h_{\bar x})$, positive, so the first factor is
+    /// `+1` and $C^{\bar a a}_1[\ell_{\bar a}, h_a] > 0$. With
+    /// $L = \sum_l J^-_l$, whose GT matrix elements are non-negative
+    /// (`gtpatterns.jl:creation`, transposed), the singlet obeys
+    /// $(L^h \otimes 1)\psi = (-1)^h (1 \otimes L^h)\psi$; its
+    /// $(\ell_{\bar a}, \ell_a)$ component relates
+    /// $C^{\bar a a}_1[h_{\bar a}, \ell_a]$ to $C^{\bar a a}_1[\ell_{\bar a}, h_a]$
+    /// by $(-1)^h$ times two positive matrix elements $\langle\ell|L^h|h\rangle$,
+    /// where $h = \langle\lambda + \bar\lambda, \rho\rangle = \langle\lambda, 2\rho\rangle$
+    /// is the number of simple lowering steps from highest to lowest weight.
+    /// `tests/frobenius_schur.rs` checks the closed form against the F-symbol
+    /// sweep and SUNRepresentations' own values. No CGC is generated to
+    /// answer it.
+    pub fn frobenius_schur_phase(&self) -> f64 {
+        let n = self.rank();
+        // Only the parity of Σ aᵢ·i(N−i) matters; summing parities avoids overflow.
+        let odd = self
+            .weight
+            .windows(2)
+            .enumerate()
+            .filter(|&(i, w)| (w[0] - w[1]) % 2 != 0 && !((i + 1) * (n - i - 1)).is_multiple_of(2))
+            .count()
+            % 2
+            == 1;
+        if odd {
+            -1.0
+        } else {
+            1.0
+        }
+    }
+
+    /// The Frobenius–Schur indicator: `+1` (real), `-1` (quaternionic), or `0`
+    /// (complex, i.e. not self-dual), as [`crate::bcd::Irrep::frobenius_schur`]
+    /// for B/C/D.
+    ///
+    /// TensorKitSectors 0.3.9 `src/sectors.jl:frobenius_schur_indicator`: the
+    /// [`frobenius_schur_phase`](Self::frobenius_schur_phase) on a self-dual
+    /// irrep, `0` otherwise. On a self-dual irrep $a_i = a_{N-i}$, so only the
+    /// middle label survives the parity: the indicator is `-1` exactly when
+    /// `N ≡ 2 (mod 4)` and $a_{N/2}$ is odd (SU(2) half-integer spins, the
+    /// SU(6) `20`).
+    pub fn frobenius_schur(&self) -> i32 {
+        if *self != self.dual() {
+            0
+        } else if self.frobenius_schur_phase() > 0.0 {
+            1
+        } else {
+            -1
+        }
+    }
+
     /// The twist $\theta_a$: exactly `1.0` for every irrep.
     ///
     /// SUNRepresentations 0.4.0 `src/sector.jl` sets
