@@ -230,6 +230,10 @@ gauge drift with no reference toolchain in the loop.
 
 ## Citation
 
+racah is inspired by [TensorKitSectors.jl](https://github.com/QuantumKitHub/TensorKitSectors.jl).
+
+**If you use racah in research, please cite [TensorKit](https://github.com/QuantumKitHub/TensorKit.jl) and [TensorKitSectors.jl](https://github.com/QuantumKitHub/TensorKitSectors.jl).**
+
 If you use racah in academic work, please cite it
 (machine-readable metadata in [`CITATION.cff`](CITATION.cff)):
 
